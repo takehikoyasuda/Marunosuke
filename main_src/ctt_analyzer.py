@@ -37,13 +37,22 @@ from openpyxl.drawing.text import (
 )
 from openpyxl.drawing.text import Font as ChartFont
 
+from constants import (
+    safe_print,
+    escape_excel_formula,
+    MARK_FORMAT_STANDARD,
+    MARK_FORMAT_MULTI_DIGIT,
+    setup_japanese_matplotlib_font,
+    get_excel_font_family,
+)
+
 # Optional: matplotlib for CTT plots
 try:
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     import matplotlib.font_manager as fm
-    plt.rcParams['font.family'] = 'MS Gothic'
+    setup_japanese_matplotlib_font()
     HAS_MATPLOTLIB = True
 except ImportError:
     matplotlib = None
@@ -62,17 +71,11 @@ try:
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import inch, mm
     from reportlab.pdfbase import pdfmetrics
-    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
     HAS_REPORTLAB = True
 except ImportError:
     HAS_REPORTLAB = False
 
-from constants import (
-    safe_print,
-    escape_excel_formula,
-    MARK_FORMAT_STANDARD,
-    MARK_FORMAT_MULTI_DIGIT,
-)
 from scoring_engine import (
     number_to_circled,
     normalize_value,
@@ -785,7 +788,7 @@ class CTTExcelExporter:
         if 'Sheet' in self.wb.sheetnames:
             del self.wb['Sheet']
 
-        FN = 'Yu Gothic'
+        FN = get_excel_font_family()
         self.f_title   = Font(name=FN, bold=True, size=16)
         self.f_h1      = Font(name=FN, bold=True, size=12)
         self.f_h2w     = Font(name=FN, bold=True, size=11, color='FFFFFF')
@@ -867,7 +870,7 @@ class CTTExcelExporter:
         ws.sheet_properties.tabColor = '1F4E79'
         ws.merge_cells('A1:F1')
         self._c(ws, 1, 1, 'テスト分析レポート',
-                font=Font(name='Yu Gothic', bold=True, size=18, color='FFFFFF'),
+                font=Font(name=get_excel_font_family(), bold=True, size=18, color='FFFFFF'),
                 fill=self.bg_toc, border=self.b_med)
         ws.row_dimensions[1].height = 45
         ws.merge_cells('A2:F2')
@@ -911,7 +914,7 @@ class CTTExcelExporter:
                 '本レポートは、各設問を「正解=1 / 不正解=0」の二値（バイナリ）データとして処理しています。\n'
                 '・中間点（部分点）のあるデータ→不正解(0点)として処理  ・配点(重みづけ)のあるデータ→正解は一律1点として処理\n'
                 '・得点・満点・平均点等は「各問1点換算」で算出されています'))
-        warn_cell.font = Font(name='Yu Gothic', size=9, color='8B4513')
+        warn_cell.font = Font(name=get_excel_font_family(), size=9, color='8B4513')
         warn_cell.fill = PatternFill('solid', fgColor='FFF8E1')
         warn_cell.alignment = Alignment(wrap_text=True, vertical='top')
         warn_cell.border = Border(
@@ -952,7 +955,7 @@ class CTTExcelExporter:
 
         ws.merge_cells('A1:E1')
         self._c(ws, 1, 1, 'テスト得点  ─  要約統計量',
-                font=Font(name='Yu Gothic', bold=True, size=14, color='FFFFFF'),
+                font=Font(name=get_excel_font_family(), bold=True, size=14, color='FFFFFF'),
                 fill=self.bg_toc, border=self.b_med)
         ws.row_dimensions[1].height = 32
 
@@ -1248,7 +1251,7 @@ class CTTExcelExporter:
 
             ws.merge_cells('A1:G1')
             self._c(ws, 1, 1, f'項目 {qid}',
-                    font=Font(name='Yu Gothic', bold=True, size=14, color='FFFFFF'),
+                    font=Font(name=get_excel_font_family(), bold=True, size=14, color='FFFFFF'),
                     fill=self.bg_toc, border=self.b_med)
             ws.row_dimensions[1].height = 32
 
@@ -1436,14 +1439,10 @@ class CTTPDFReporter:
         self.plot_gen = CTTPlotGenerator()
 
         try:
-            pdfmetrics.registerFont(TTFont('Gothic', 'C:\\Windows\\Fonts\\msgothic.ttc'))
-            self.fn = 'Gothic'
+            pdfmetrics.registerFont(UnicodeCIDFont('HeiseiKakuGo-W5'))
+            self.fn = 'HeiseiKakuGo-W5'
         except Exception:
-            try:
-                pdfmetrics.registerFont(TTFont('Gothic', 'C:\\Windows\\Fonts\\msmincho.ttc'))
-                self.fn = 'Gothic'
-            except Exception:
-                self.fn = 'Helvetica'
+            self.fn = 'Helvetica'
 
         self.styles = getSampleStyleSheet()
         self._create_styles()

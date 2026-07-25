@@ -38,6 +38,8 @@ from constants import (
     R_EXPORT_FOLDER,
     MARK_FORMAT_STANDARD,
     escape_excel_formula,
+    setup_japanese_matplotlib_font,
+    get_excel_font_family,
 )
 
 from scoring_engine import (
@@ -324,22 +326,7 @@ def generate_student_summary(template_path, mark2_result_path, output_path, skip
 # ============================================================
 
 # 日本語フォント設定
-_FONT_CANDIDATES = ['Yu Gothic', 'Yu Gothic UI', 'Meiryo', 'MS Gothic',
-                     'Hiragino Kaku Gothic Pro', 'IPAexGothic', 'Noto Sans CJK JP']
-
-def _setup_japanese_font():
-    """日本語表示可能なフォントを検出して設定する"""
-    import matplotlib.font_manager as fm
-    available = {f.name for f in fm.fontManager.ttflist}
-    for candidate in _FONT_CANDIDATES:
-        if candidate in available:
-            rcParams['font.family'] = candidate
-            return candidate
-    # 見つからない場合は sans-serif にフォールバック
-    rcParams['font.family'] = 'sans-serif'
-    return 'sans-serif'
-
-_setup_japanese_font()
+setup_japanese_matplotlib_font()
 
 
 def _apply_clean_style(ax):
@@ -556,13 +543,14 @@ def generate_exam_summary(template_path, mark2_result_path, output_path, skip_qu
     logger.info("✓ 統計計算完了")
 
     # ══════ 共通スタイル定義 ══════
-    HEADER_FONT = Font(name='Yu Gothic UI', bold=True, size=10, color='FFFFFF')
+    _EXCEL_FONT = get_excel_font_family()
+    HEADER_FONT = Font(name=_EXCEL_FONT, bold=True, size=10, color='FFFFFF')
     HEADER_FILL = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
-    TITLE_FONT = Font(name='Yu Gothic UI', bold=True, size=14, color='1F4E79')
-    SUBTITLE_FONT = Font(name='Yu Gothic UI', bold=True, size=11, color='2E75B6')
-    DATA_FONT = Font(name='Yu Gothic UI', size=10)
-    NUM_FONT = Font(name='Yu Gothic UI', size=10)
-    LABEL_FONT = Font(name='Yu Gothic UI', bold=True, size=10, color='333333')
+    TITLE_FONT = Font(name=_EXCEL_FONT, bold=True, size=14, color='1F4E79')
+    SUBTITLE_FONT = Font(name=_EXCEL_FONT, bold=True, size=11, color='2E75B6')
+    DATA_FONT = Font(name=_EXCEL_FONT, size=10)
+    NUM_FONT = Font(name=_EXCEL_FONT, size=10)
+    LABEL_FONT = Font(name=_EXCEL_FONT, bold=True, size=10, color='333333')
     THIN_BORDER = Border(
         left=Side(style='thin', color='BFBFBF'),
         right=Side(style='thin', color='BFBFBF'),

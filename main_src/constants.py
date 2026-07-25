@@ -327,6 +327,97 @@ def load_json_safe(filepath, *, required_keys=None):
 
 
 # ========================================
+# クロスプラットフォーム対応ヘルパー (Windows/Mac)
+# ========================================
+
+import subprocess
+
+
+def open_in_default_viewer(path):
+    """ファイルをOS既定のビューア/アプリケーションで開く。
+
+    Windows: os.startfile、Mac: open、それ以外: xdg-open。
+    """
+    if sys.platform == 'win32':
+        os.startfile(str(path))
+    elif sys.platform == 'darwin':
+        subprocess.Popen(['open', str(path)])
+    else:
+        subprocess.Popen(['xdg-open', str(path)])
+
+
+def open_in_file_manager(path):
+    """フォルダをOS標準のファイラーで開く。
+
+    Windows: エクスプローラー、Mac: Finder、それ以外: xdg-open。
+    """
+    if sys.platform == 'win32':
+        subprocess.Popen(['explorer', str(path)])
+    elif sys.platform == 'darwin':
+        subprocess.Popen(['open', str(path)])
+    else:
+        subprocess.Popen(['xdg-open', str(path)])
+
+
+def get_cjk_font_path():
+    """Pillow ImageFont.truetype 用の日本語フォント (path, ttcインデックス) を返す。"""
+    if sys.platform == 'darwin':
+        return ("/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc", 0)
+    return ("C:/Windows/Fonts/msgothic.ttc", 0)
+
+
+def get_ui_font_family():
+    """tkinterウィジェット用の日本語UIフォントファミリー名を返す。"""
+    return "Hiragino Sans" if sys.platform == 'darwin' else "Yu Gothic UI"
+
+
+MAC_FONT_SCALE = 1.6
+
+
+def get_ui_font_size(base_size):
+    """WindowsとMacのポイント→ピクセル換算の差を補正したフォントサイズを返す。
+
+    tkinterの正の整数フォントサイズは「ポイント」指定だが、WindowsのTkは
+    96dpi、MacのTkは72dpi換算でピクセルに変換するため、同じ数値を指定しても
+    Macでは約25%小さく表示される（tk scalingでは補正できないことを実機検証済み）。
+    実機での見え方を踏まえ、96/72(約1.33倍)よりさらに大きい1.6倍を採用している。
+    """
+    if sys.platform == 'darwin':
+        return round(base_size * MAC_FONT_SCALE)
+    return base_size
+
+
+def get_excel_font_family():
+    """openpyxl Font(name=...) 用の日本語フォントファミリー名を返す。"""
+    return "Hiragino Sans" if sys.platform == 'darwin' else "Yu Gothic"
+
+
+# matplotlibで日本語表示に使うフォント候補（先頭から探索し最初に見つかったものを使う）
+JAPANESE_FONT_CANDIDATES = [
+    'Yu Gothic', 'Yu Gothic UI', 'Meiryo', 'MS Gothic',
+    'Hiragino Sans', 'Hiragino Kaku Gothic Pro', 'Hiragino Kaku Gothic ProN',
+    'IPAexGothic', 'Noto Sans CJK JP',
+]
+
+
+def setup_japanese_matplotlib_font():
+    """インストール済みフォントから日本語表示可能なものを選び matplotlib に設定する。
+
+    候補が1つも見つからない場合は sans-serif にフォールバックする
+    （グラフ生成自体は継続し、日本語ラベルが文字化けするだけに留める）。
+    """
+    import matplotlib.font_manager as fm
+    from matplotlib import rcParams
+    available = {f.name for f in fm.fontManager.ttflist}
+    for candidate in JAPANESE_FONT_CANDIDATES:
+        if candidate in available:
+            rcParams['font.family'] = candidate
+            return candidate
+    rcParams['font.family'] = 'sans-serif'
+    return 'sans-serif'
+
+
+# ========================================
 # 汎用ユーティリティ関数
 # ========================================
 

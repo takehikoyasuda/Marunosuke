@@ -44,7 +44,11 @@ from constants import (
     WHITENESS_CACHE_FILE,
     MODE_MARK_ONLY, MODE_MARK_AND_DESCRIPTIVE, MODE_DESCRIPTIVE_ONLY,
     MARK_FORMAT_STANDARD, MARK_FORMAT_MULTI_DIGIT,
+    get_ui_font_family, get_ui_font_size,
 )
+
+# 日本語UIフォント（Windows: Yu Gothic UI, Mac: Hiragino Sans）
+UI_FONT = get_ui_font_family()
 
 # Checker機能（mark_checker.pyから）
 from mark_checker import (
@@ -410,12 +414,12 @@ class MarkCheckerGUI:
         self._side_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(8, 0), pady=8)
         self._side_panel.pack_propagate(False)
 
-        tk.Label(self._side_panel, text="カテゴリ", font=('Yu Gothic UI', 12, 'bold'),
+        tk.Label(self._side_panel, text="カテゴリ", font=(UI_FONT, get_ui_font_size(12), 'bold'),
                  bg='#F5F7FA').pack(pady=(0, 5))
 
         # カテゴリリストボックス
         self._category_listbox = tk.Listbox(
-            self._side_panel, font=('Yu Gothic UI', 11), activestyle='none',
+            self._side_panel, font=(UI_FONT, get_ui_font_size(11)), activestyle='none',
             selectbackground='#42A5F5', selectforeground='white',
         )
         self._category_listbox.pack(fill=tk.BOTH, expand=True)
@@ -425,7 +429,7 @@ class MarkCheckerGUI:
         sort_frame = tk.Frame(self._side_panel, bg='#F5F7FA')
         sort_frame.pack(fill=tk.X, pady=(5, 0))
         tk.Label(sort_frame, text="並び順:", bg='#F5F7FA',
-                 font=('Yu Gothic UI', 9)).pack(side=tk.LEFT)
+                 font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT)
         self._sort_var = tk.StringVar(value="白さ順（白い順）")
         self._sort_combo = ttk.Combobox(
             sort_frame, textvariable=self._sort_var,
@@ -437,7 +441,7 @@ class MarkCheckerGUI:
 
         # 統計ラベル
         self._stats_label = tk.Label(self._side_panel, text="",
-                                      bg='#F5F7FA', font=('Yu Gothic UI', 9),
+                                      bg='#F5F7FA', font=(UI_FONT, get_ui_font_size(9)),
                                       fg='#555', justify=tk.LEFT)
         self._stats_label.pack(fill=tk.X, pady=(5, 0))
 
@@ -445,7 +449,7 @@ class MarkCheckerGUI:
         self._btn_batch_minus1 = tk.Button(
             self._side_panel, text="ノーマーク全件 → 無効回答(-1)",
             command=self._batch_set_minus1,
-            bg='#FFCDD2', fg='#333', font=('Yu Gothic UI', 9, 'bold'),
+            bg='#FFCDD2', fg='#333', font=(UI_FONT, get_ui_font_size(9), 'bold'),
             relief=tk.FLAT, cursor='hand2',
         )
         # 初期状態では非表示（ノーマークカテゴリ選択時のみ表示）
@@ -454,7 +458,7 @@ class MarkCheckerGUI:
         self._btn_apply = tk.Button(
             self._side_panel, text="データの更新(再読み込み)",
             command=self.apply_to_xlsx,
-            bg='#2E7D32', fg='white', font=('Yu Gothic UI', 10, 'bold'),
+            bg='#2E7D32', fg='white', font=(UI_FONT, get_ui_font_size(10), 'bold'),
             relief=tk.FLAT, cursor='hand2',
         )
         self._btn_apply.pack(fill=tk.X, pady=(3, 0))
@@ -550,7 +554,7 @@ class MarkCheckerGUI:
 
         # グリッドの件数ラベル
         self._grid_count_label = tk.Label(
-            toolbar, text="", font=('Yu Gothic UI', 9), bg='#37474F', fg='#FFD54F',
+            toolbar, text="", font=(UI_FONT, get_ui_font_size(9)), bg='#37474F', fg='#FFD54F',
         )
         self._grid_count_label.pack(side=tk.LEFT, padx=10)
 
@@ -563,7 +567,7 @@ class MarkCheckerGUI:
         )
         self._btn_prev_page.pack(side=tk.LEFT, padx=(8, 2))
         self._page_label = tk.Label(
-            self._pager_frame, text="1/1", font=('Yu Gothic UI', 9), bg='#37474F', fg='white',
+            self._pager_frame, text="1/1", font=(UI_FONT, get_ui_font_size(9)), bg='#37474F', fg='white',
         )
         self._page_label.pack(side=tk.LEFT, padx=2)
         self._btn_next_page = tk.Button(
@@ -577,21 +581,21 @@ class MarkCheckerGUI:
         self._btn_tab_light = tk.Button(
             self._tab_frame, text="薄い解答(ノーマーク疑惑)",
             command=lambda: self._switch_choice_tab("薄い"),
-            bg='#42A5F5', fg='white', font=('Yu Gothic UI', 9, 'bold'),
+            bg='#42A5F5', fg='white', font=(UI_FONT, get_ui_font_size(9), 'bold'),
             relief=tk.FLAT, cursor='hand2', padx=8,
         )
         self._btn_tab_light.pack(side=tk.LEFT, padx=(8, 2))
         self._btn_tab_dark = tk.Button(
             self._tab_frame, text="濃い解答(複数マーク疑惑)",
             command=lambda: self._switch_choice_tab("濃い"),
-            bg='#546E7A', fg='white', font=('Yu Gothic UI', 9),
+            bg='#546E7A', fg='white', font=(UI_FONT, get_ui_font_size(9)),
             relief=tk.FLAT, cursor='hand2', padx=8,
         )
         self._btn_tab_dark.pack(side=tk.LEFT, padx=(2, 8))
 
         # カードサイズスライダー
         self._grid_size_var = tk.IntVar(value=self._grid_thumb_size)
-        tk.Label(toolbar, text="サイズ:", font=('Yu Gothic UI', 9),
+        tk.Label(toolbar, text="サイズ:", font=(UI_FONT, get_ui_font_size(9)),
                  bg='#37474F', fg='white').pack(side=tk.RIGHT)
         self._grid_size_slider = tk.Scale(
             toolbar, variable=self._grid_size_var, from_=80, to=300,
@@ -751,11 +755,11 @@ class MarkCheckerGUI:
     def _update_tab_button_styles(self):
         """タブボタンのアクティブ/非アクティブスタイルを更新"""
         if self._choice_tab_current == "薄い":
-            self._btn_tab_light.config(bg='#42A5F5', font=('Yu Gothic UI', 9, 'bold'))
-            self._btn_tab_dark.config(bg='#546E7A', font=('Yu Gothic UI', 9))
+            self._btn_tab_light.config(bg='#42A5F5', font=(UI_FONT, get_ui_font_size(9), 'bold'))
+            self._btn_tab_dark.config(bg='#546E7A', font=(UI_FONT, get_ui_font_size(9)))
         else:
-            self._btn_tab_light.config(bg='#546E7A', font=('Yu Gothic UI', 9))
-            self._btn_tab_dark.config(bg='#42A5F5', font=('Yu Gothic UI', 9, 'bold'))
+            self._btn_tab_light.config(bg='#546E7A', font=(UI_FONT, get_ui_font_size(9)))
+            self._btn_tab_dark.config(bg='#42A5F5', font=(UI_FONT, get_ui_font_size(9), 'bold'))
 
     def _show_tab_mode(self, show):
         """タブモードの表示/非表示を切り替える"""
@@ -1006,7 +1010,7 @@ class MarkCheckerGUI:
         loading_id = self._grid_canvas.create_text(
             canvas_w // 2, canvas_h // 3,
             text=f"読み込み中... ({len(page_indices)}件)",
-            font=('Yu Gothic UI', 14), fill='gray',
+            font=(UI_FONT, get_ui_font_size(14)), fill='gray',
         )
         self._grid_canvas.update_idletasks()
 
@@ -1092,7 +1096,7 @@ class MarkCheckerGUI:
         }.get(category, category)
         status_text = f"→{after_val}" if is_corrected else ""
         info_text = f"{Path(filename).stem}\nQ{question_no} [{cat_short}] {status_text}"
-        info_label = tk.Label(inner, text=info_text, font=('Yu Gothic UI', 7),
+        info_label = tk.Label(inner, text=info_text, font=(UI_FONT, get_ui_font_size(7)),
                               bg='white', fg='#333', justify=tk.CENTER,
                               wraplength=thumb_size)
         info_label.pack(padx=2, pady=(0, 2))
@@ -1312,7 +1316,7 @@ class MarkCheckerGUI:
         loading_id = self._grid_canvas.create_text(
             canvas_w // 2, canvas_h // 3,
             text=f"白さ指標を計算中... 0/{len(uncached)}件",
-            font=('Yu Gothic UI', 14), fill='gray',
+            font=(UI_FONT, get_ui_font_size(14)), fill='gray',
         )
         self._grid_canvas.update_idletasks()
 
@@ -1927,9 +1931,9 @@ class StudentAnswerSheetViewer:
     def _create_widgets(self):
         BG = "#F5F7FA"
         SEC_BG = "#FFFFFF"
-        FONT = ("Yu Gothic UI", 9)
-        FONT_B = ("Yu Gothic UI", 9, "bold")
-        FONT_S = ("Yu Gothic UI", 8)
+        FONT = (UI_FONT, get_ui_font_size(9))
+        FONT_B = (UI_FONT, get_ui_font_size(9), "bold")
+        FONT_S = (UI_FONT, get_ui_font_size(8))
 
         main = tk.Frame(self.window, bg=BG, padx=4, pady=4)
         main.pack(fill=tk.BOTH, expand=True)
@@ -1939,7 +1943,7 @@ class StudentAnswerSheetViewer:
         right.pack(side=tk.RIGHT, fill=tk.Y, padx=(4, 0))
         right.pack_propagate(False)
 
-        tk.Label(right, text="📋 答案ビューア", font=("Yu Gothic UI", 11, "bold"),
+        tk.Label(right, text="📋 答案ビューア", font=(UI_FONT, get_ui_font_size(11), "bold"),
                  bg=SEC_BG, fg="#1565C0").pack(anchor=tk.W, pady=(0, 5))
 
         # ファイル名
@@ -2288,9 +2292,9 @@ class ThresholdCalibratorGUI:
     def _create_widgets(self):
         BG = "#F5F7FA"
         SEC_BG = "#FFFFFF"
-        FONT = ("Yu Gothic UI", 9)
-        FONT_B = ("Yu Gothic UI", 9, "bold")
-        FONT_S = ("Yu Gothic UI", 8)
+        FONT = (UI_FONT, get_ui_font_size(9))
+        FONT_B = (UI_FONT, get_ui_font_size(9), "bold")
+        FONT_S = (UI_FONT, get_ui_font_size(8))
         BTN_PURPLE = "#CE93D8"
         BTN_GRAY = "#EEEEEE"
 
@@ -2302,7 +2306,7 @@ class ThresholdCalibratorGUI:
         left.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 8))
         left.pack_propagate(False)
 
-        tk.Label(left, text="🔧 閾値キャリブレーション", font=("Yu Gothic UI", 11, "bold"),
+        tk.Label(left, text="🔧 閾値キャリブレーション", font=(UI_FONT, get_ui_font_size(11), "bold"),
                  bg=SEC_BG, fg="#7B1FA2").pack(anchor=tk.W, pady=(0, 10))
 
         # --- 自動計算セクション ---
@@ -2387,7 +2391,7 @@ class ThresholdCalibratorGUI:
 
         # 初期メッセージ
         self._gallery_placeholder = tk.Label(self.gallery_frame, text="自動計算を実行中です...\nしばらくお待ちください",
-                                             font=("Yu Gothic UI", 12), fg="gray", bg=SEC_BG)
+                                             font=(UI_FONT, get_ui_font_size(12)), fg="gray", bg=SEC_BG)
         self._gallery_placeholder.pack(pady=50)
 
     # ─────────────────────────────────────────────
@@ -2535,8 +2539,8 @@ class ThresholdCalibratorGUI:
             w.destroy()
         self._thumb_refs.clear()
 
-        FONT_S = ("Yu Gothic UI", 8)
-        FONT_B = ("Yu Gothic UI", 9, "bold")
+        FONT_S = (UI_FONT, get_ui_font_size(8))
+        FONT_B = (UI_FONT, get_ui_font_size(9), "bold")
         SEC_BG = "#FFFFFF"
 
         a = self.current_analysis
@@ -2553,10 +2557,10 @@ class ThresholdCalibratorGUI:
             f"マーク有: {marked_total}  (うち境界付近: {border_marked})  |  "
             f"マーク無: {unmarked_total}  (うち境界付近: {border_unmarked})"
         )
-        tk.Label(summary_frame, text=summary_text, font=("Yu Gothic UI", 9),
+        tk.Label(summary_frame, text=summary_text, font=(UI_FONT, get_ui_font_size(9)),
                  bg="#E8EAF6", fg="#283593").pack(anchor=tk.W)
         tk.Label(summary_frame, text="※ サムネイルをクリックすると答案を詳細表示できます",
-                 font=("Yu Gothic UI", 8), bg="#E8EAF6", fg="#5C6BC0").pack(anchor=tk.W)
+                 font=(UI_FONT, get_ui_font_size(8)), bg="#E8EAF6", fg="#5C6BC0").pack(anchor=tk.W)
 
         categories = [
             ("✓ 確実にマーク有  (安定)", a['stable_marked'], "#2E7D32", "#E8F5E9"),
@@ -2839,9 +2843,9 @@ class RenderingSettingsGUI:
     def _create_widgets(self):
         BG = "#F5F7FA"
         SEC_BG = "#FFFFFF"
-        FONT = ("Yu Gothic UI", 9)
-        FONT_B = ("Yu Gothic UI", 9, "bold")
-        FONT_S = ("Yu Gothic UI", 8)
+        FONT = (UI_FONT, get_ui_font_size(9))
+        FONT_B = (UI_FONT, get_ui_font_size(9), "bold")
+        FONT_S = (UI_FONT, get_ui_font_size(8))
         HEADER_FG = "#546E7A"
 
         main = tk.Frame(self.window, bg=BG, padx=12, pady=8)
@@ -2899,7 +2903,7 @@ class RenderingSettingsGUI:
                   relief=tk.FLAT, bg="#F0F0F0", cursor="hand2").pack(side=tk.LEFT)
 
         self._offset_label = tk.Label(offset_ctrl, text="0.0",
-                                      font=("Yu Gothic UI", 11, "bold"), bg=SEC_BG,
+                                      font=(UI_FONT, get_ui_font_size(11), "bold"), bg=SEC_BG,
                                       width=5, anchor=tk.CENTER)
         self._offset_label.pack(side=tk.LEFT, padx=5)
         # var_offset 変更時にラベル更新
@@ -2976,7 +2980,7 @@ class RenderingSettingsGUI:
                   relief=tk.FLAT, bg="#EEEEEE", cursor="hand2",
                   width=10).pack(side=tk.RIGHT, padx=(5, 0))
 
-        tk.Button(btn_frame, text="適用", font=("Yu Gothic UI", 9, "bold"),
+        tk.Button(btn_frame, text="適用", font=(UI_FONT, get_ui_font_size(9), "bold"),
                   command=self._on_apply,
                   relief=tk.FLAT, bg="#A5D6A7", cursor="hand2",
                   width=10).pack(side=tk.RIGHT)
@@ -3173,9 +3177,9 @@ class _PositionPreviewWindow:
 
     def _build_ui(self):
         BG = "#F5F7FA"
-        FONT = ("Yu Gothic UI", 9)
-        FONT_B = ("Yu Gothic UI", 9, "bold")
-        FONT_S = ("Yu Gothic UI", 8)
+        FONT = (UI_FONT, get_ui_font_size(9))
+        FONT_B = (UI_FONT, get_ui_font_size(9), "bold")
+        FONT_S = (UI_FONT, get_ui_font_size(8))
 
         # コントロール行
         ctrl = tk.Frame(self.win, bg=BG, padx=8, pady=5)
@@ -3197,7 +3201,7 @@ class _PositionPreviewWindow:
                   relief=tk.FLAT, bg="#F0F0F0", cursor="hand2").pack(side=tk.LEFT)
 
         self._lbl_offset = tk.Label(ctrl, text="0.0",
-                                    font=("Yu Gothic UI", 12, "bold"), bg=BG,
+                                    font=(UI_FONT, get_ui_font_size(12), "bold"), bg=BG,
                                     width=5, anchor=tk.CENTER)
         self._lbl_offset.pack(side=tk.LEFT, padx=5)
         # var変更時にラベル更新
@@ -3354,11 +3358,11 @@ class StartupModeDialog:
         header.pack(fill=tk.X)
         tk.Label(
             header, text="採点侍",
-            font=("Yu Gothic UI", 22, "bold"), fg="#1976D2", bg=BG,
+            font=(UI_FONT, get_ui_font_size(22), "bold"), fg="#1976D2", bg=BG,
         ).pack()
         tk.Label(
             header, text="採点モードを選択してください",
-            font=("Yu Gothic UI", 10), fg="#546E7A", bg=BG,
+            font=(UI_FONT, get_ui_font_size(10)), fg="#546E7A", bg=BG,
         ).pack(pady=(5, 0))
 
         # ボタンエリア
@@ -3367,8 +3371,8 @@ class StartupModeDialog:
 
         BTN_W = 32
         BTN_H = 3
-        BTN_FONT = ("Yu Gothic UI", 11, "bold")
-        DESC_FONT = ("Yu Gothic UI", 8)
+        BTN_FONT = (UI_FONT, get_ui_font_size(11), "bold")
+        DESC_FONT = (UI_FONT, get_ui_font_size(8))
 
         # マーク採点のみ
         self._make_mode_button(
@@ -3416,7 +3420,7 @@ class StartupModeDialog:
         self._resume_btn = tk.Button(
             resume_frame, text="📂  採点再開（セッション復元）",
             command=self._on_resume,
-            font=("Yu Gothic UI", 9), bg="#EEEEEE", fg="#546E7A",
+            font=(UI_FONT, get_ui_font_size(9)), bg="#EEEEEE", fg="#546E7A",
             relief=tk.FLAT, cursor="hand2", height=2, width=BTN_W,
         )
         self._resume_btn.pack(fill=tk.X)

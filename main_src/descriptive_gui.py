@@ -10,7 +10,6 @@ import json
 import logging
 import os
 import shutil
-import subprocess
 import tempfile
 import tkinter as tk
 from tkinter import messagebox, ttk
@@ -22,7 +21,13 @@ import numpy as np
 from PIL import Image, ImageTk, ImageDraw, ImageFont
 
 from name_trimmer import select_region_on_image, get_image_files
-from constants import get_app_temp_dir, atomic_json_save, load_json_safe
+from constants import (
+    get_app_temp_dir, atomic_json_save, load_json_safe, open_in_default_viewer,
+    get_ui_font_family, get_ui_font_size,
+)
+
+# 日本語UIフォント（Windows: Yu Gothic UI, Mac: Hiragino Sans）
+UI_FONT = get_ui_font_family()
 from descriptive_scorer import (
     DESCRIPTIVE_CONFIG_FILE, DESCRIPTIVE_SCORES_FILE,
     load_descriptive_config, save_descriptive_config,
@@ -197,7 +202,7 @@ def _ask_add_more(
     tk.Label(
         frame,
         text=f"記述{question_number}「{question_name}」を登録しました。",
-        font=("Yu Gothic UI", 10),
+        font=(UI_FONT, get_ui_font_size(10)),
         wraplength=320,
     ).pack(pady=(0, 15))
 
@@ -214,13 +219,13 @@ def _ask_add_more(
 
     tk.Button(
         btn_frame, text="＋ 問題を追加する", command=_add,
-        font=("Yu Gothic UI", 10, "bold"), bg="#81C784", fg="black",
+        font=(UI_FONT, get_ui_font_size(10), "bold"), bg="#81C784", fg="black",
         width=16, height=2, relief=tk.FLAT, cursor="hand2",
     ).pack(side=tk.LEFT, padx=(0, 8))
 
     tk.Button(
         btn_frame, text="終了する", command=_finish,
-        font=("Yu Gothic UI", 10), bg="#E0E0E0", fg="black",
+        font=(UI_FONT, get_ui_font_size(10)), bg="#E0E0E0", fg="black",
         width=16, height=2, relief=tk.FLAT, cursor="hand2",
     ).pack(side=tk.LEFT)
 
@@ -393,7 +398,7 @@ class IntegratedDescriptiveSetup:
         left.pack(side=tk.LEFT, fill=tk.BOTH)
 
         tk.Label(left, text="答案画像（ドラッグで領域を選択）",
-                 font=("Yu Gothic UI", 10, "bold"), bg=BG, fg="#333").pack(anchor=tk.W, pady=(0, 3))
+                 font=(UI_FONT, get_ui_font_size(10), "bold"), bg=BG, fg="#333").pack(anchor=tk.W, pady=(0, 3))
 
         self._canvas = tk.Canvas(left, width=self._disp_w, height=self._disp_h,
                                  bg="white", highlightthickness=1, highlightbackground="#999",
@@ -405,14 +410,14 @@ class IntegratedDescriptiveSetup:
         self._canvas.bind("<ButtonRelease-1>", self._on_release)
 
         tk.Label(left, text="💡 ドラッグで新しい記述領域を追加できます",
-                 font=("Yu Gothic UI", 8), bg=BG, fg="#777").pack(anchor=tk.W, pady=(3, 0))
+                 font=(UI_FONT, get_ui_font_size(8)), bg=BG, fg="#777").pack(anchor=tk.W, pady=(3, 0))
 
         # ===== 右: テーブル + 操作 =====
         right = tk.Frame(main, bg=BG, padx=(10))
         right.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         tk.Label(right, text="設問一覧",
-                 font=("Yu Gothic UI", 11, "bold"), bg=BG, fg="#333").pack(anchor=tk.W, pady=(0, 5))
+                 font=(UI_FONT, get_ui_font_size(11), "bold"), bg=BG, fg="#333").pack(anchor=tk.W, pady=(0, 5))
 
         # Treeview（問題リスト）
         cols = ("id", "name", "score", "aspect")
@@ -441,21 +446,21 @@ class IntegratedDescriptiveSetup:
         btn_frame.pack(fill=tk.X, pady=(8, 0))
 
         tk.Button(btn_frame, text="🗑 選択行を削除", command=self._delete_selected,
-                  font=("Yu Gothic UI", 9), bg="#FFCDD2", relief=tk.FLAT,
+                  font=(UI_FONT, get_ui_font_size(9)), bg="#FFCDD2", relief=tk.FLAT,
                   cursor="hand2").pack(side=tk.LEFT, padx=(0, 5))
 
         tk.Label(btn_frame, text="", bg=BG).pack(side=tk.LEFT, expand=True)  # spacer
 
         tk.Button(btn_frame, text="キャンセル", command=self._on_cancel,
-                  font=("Yu Gothic UI", 9), bg="#E0E0E0", relief=tk.FLAT,
+                  font=(UI_FONT, get_ui_font_size(9)), bg="#E0E0E0", relief=tk.FLAT,
                   cursor="hand2").pack(side=tk.RIGHT, padx=(5, 0))
 
         tk.Button(btn_frame, text="✔ 設定を保存", command=self._on_save,
-                  font=("Yu Gothic UI", 10, "bold"), bg="#81C784", fg="white",
+                  font=(UI_FONT, get_ui_font_size(10), "bold"), bg="#81C784", fg="white",
                   relief=tk.FLAT, cursor="hand2").pack(side=tk.RIGHT)
 
         # ステータス
-        self._status_label = tk.Label(right, text="", bg=BG, font=("Yu Gothic UI", 9), fg="#555")
+        self._status_label = tk.Label(right, text="", bg=BG, font=(UI_FONT, get_ui_font_size(9)), fg="#555")
         self._status_label.pack(anchor=tk.W, pady=(5, 0))
         self._update_status()
 
@@ -607,7 +612,7 @@ class IntegratedDescriptiveSetup:
         current_val = self._tree.item(item, "values")[col_idx]
 
         # 一時Entryウィジェットでインライン編集
-        entry = tk.Entry(self._tree, font=("Yu Gothic UI", 9))
+        entry = tk.Entry(self._tree, font=(UI_FONT, get_ui_font_size(9)))
         entry.place(x=bbox[0], y=bbox[1], width=bbox[2], height=bbox[3])
         entry.insert(0, str(current_val))
         entry.select_range(0, tk.END)
@@ -822,7 +827,7 @@ def select_total_position(
         # プレビューテキストを表示（width指定なし＝折り返し無し、\nで改行）
         canvas.create_text(
             cx, cy, text=display_label, fill="#1565C0",
-            font=("Yu Gothic UI", 9), tags="totalbox",
+            font=(UI_FONT, get_ui_font_size(9)), tags="totalbox",
         )
         
         # リサイズハンドル（四隅）
@@ -921,18 +926,18 @@ def select_total_position(
     canvas.bind("<Motion>", _on_motion)
     
     # --- 操作パネル ---
-    tk.Label(panel, text="合計点表示位置", font=("Yu Gothic UI", 12, "bold")).pack(pady=(0, 10))
+    tk.Label(panel, text="合計点表示位置", font=(UI_FONT, get_ui_font_size(12), "bold")).pack(pady=(0, 10))
     
-    tk.Label(panel, text="操作方法", font=("Yu Gothic UI", 10, "bold")).pack()
+    tk.Label(panel, text="操作方法", font=(UI_FONT, get_ui_font_size(10), "bold")).pack()
     tk.Label(panel, text=(
         "■ ボックス内をドラッグ\n  → 移動\n\n"
         "■ 四隅の□をドラッグ\n  → サイズ変更\n\n"
         "この枠の位置に\n合計点が表示されます。"
-    ), font=("Yu Gothic UI", 8), justify=tk.LEFT, wraplength=180).pack(pady=(5, 15))
+    ), font=(UI_FONT, get_ui_font_size(8)), justify=tk.LEFT, wraplength=180).pack(pady=(5, 15))
     
-    tk.Label(panel, text="ボックスサイズ:", font=("Yu Gothic UI", 9)).pack()
+    tk.Label(panel, text="ボックスサイズ:", font=(UI_FONT, get_ui_font_size(9))).pack()
     size_var = tk.StringVar()
-    tk.Label(panel, textvariable=size_var, font=("Yu Gothic UI", 9, "bold"),
+    tk.Label(panel, textvariable=size_var, font=(UI_FONT, get_ui_font_size(9), "bold"),
              fg="#1976D2").pack(pady=(0, 10))
     
     def _confirm():
@@ -950,9 +955,9 @@ def select_total_position(
         win.destroy()
     
     tk.Button(panel, text="✔ 決定", command=_confirm, width=15, height=2,
-              bg="#4CAF50", fg="white", font=("Yu Gothic UI", 11, "bold")).pack(pady=5)
+              bg="#4CAF50", fg="white", font=(UI_FONT, get_ui_font_size(11), "bold")).pack(pady=5)
     tk.Button(panel, text="✖ キャンセル", command=_cancel, width=15, height=2,
-              font=("Yu Gothic UI", 10)).pack(pady=5)
+              font=(UI_FONT, get_ui_font_size(10))).pack(pady=5)
     
     win.protocol("WM_DELETE_WINDOW", _cancel)
     
@@ -1000,37 +1005,37 @@ def _ask_question_info(
     tk.Label(
         frame,
         text=f"記述問題 {question_number} の情報を入力",
-        font=("Yu Gothic UI", 11, "bold"),
+        font=(UI_FONT, get_ui_font_size(11), "bold"),
     ).pack(pady=(0, 15))
 
     # 問題名
     row1 = tk.Frame(frame)
     row1.pack(fill=tk.X, pady=3)
-    tk.Label(row1, text="問題名:", width=8, anchor=tk.W, font=("Yu Gothic UI", 9)).pack(side=tk.LEFT)
+    tk.Label(row1, text="問題名:", width=8, anchor=tk.W, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT)
     name_var = tk.StringVar(value=f"記述{question_number}")
-    tk.Entry(row1, textvariable=name_var, font=("Yu Gothic UI", 9)).pack(side=tk.LEFT, fill=tk.X, expand=True)
+    tk.Entry(row1, textvariable=name_var, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT, fill=tk.X, expand=True)
 
     # 配点
     row2 = tk.Frame(frame)
     row2.pack(fill=tk.X, pady=3)
-    tk.Label(row2, text="配点:", width=8, anchor=tk.W, font=("Yu Gothic UI", 9)).pack(side=tk.LEFT)
+    tk.Label(row2, text="配点:", width=8, anchor=tk.W, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT)
     max_score_var = tk.StringVar(value="5")
-    tk.Entry(row2, textvariable=max_score_var, width=5, font=("Yu Gothic UI", 9)).pack(side=tk.LEFT)
-    tk.Label(row2, text="点", font=("Yu Gothic UI", 8), fg="gray").pack(side=tk.LEFT, padx=5)
+    tk.Entry(row2, textvariable=max_score_var, width=5, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT)
+    tk.Label(row2, text="点", font=(UI_FONT, get_ui_font_size(8)), fg="gray").pack(side=tk.LEFT, padx=5)
 
     # 観点
     row3 = tk.Frame(frame)
     row3.pack(fill=tk.X, pady=3)
-    tk.Label(row3, text="観点:", width=8, anchor=tk.W, font=("Yu Gothic UI", 9)).pack(side=tk.LEFT)
+    tk.Label(row3, text="観点:", width=8, anchor=tk.W, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT)
     aspect_var = tk.StringVar(value="1")
-    tk.Entry(row3, textvariable=aspect_var, width=5, font=("Yu Gothic UI", 9)).pack(side=tk.LEFT)
-    tk.Label(row3, text="(1以上の整数)", font=("Yu Gothic UI", 8), fg="gray").pack(side=tk.LEFT, padx=5)
+    tk.Entry(row3, textvariable=aspect_var, width=5, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT)
+    tk.Label(row3, text="(1以上の整数)", font=(UI_FONT, get_ui_font_size(8)), fg="gray").pack(side=tk.LEFT, padx=5)
 
     # 注意書き
     tk.Label(
         frame,
         text="※ 配点が10点以上の場合、採点時に数値入力欄を使用します",
-        font=("Yu Gothic UI", 7), fg="#999",
+        font=(UI_FONT, get_ui_font_size(7)), fg="#999",
     ).pack(pady=(8, 0))
 
     def _ok():
@@ -1063,11 +1068,11 @@ def _ask_question_info(
     btn_frame.pack(pady=(15, 0))
     tk.Button(
         btn_frame, text="OK", command=_ok, width=10,
-        bg="#4CAF50", fg="white", font=("Yu Gothic UI", 9, "bold"),
+        bg="#4CAF50", fg="white", font=(UI_FONT, get_ui_font_size(9), "bold"),
     ).pack(side=tk.LEFT, padx=5)
     tk.Button(
         btn_frame, text="キャンセル", command=_cancel, width=10,
-        font=("Yu Gothic UI", 9),
+        font=(UI_FONT, get_ui_font_size(9)),
     ).pack(side=tk.LEFT, padx=5)
 
     dialog.protocol("WM_DELETE_WINDOW", _cancel)
@@ -1167,19 +1172,19 @@ class DescriptiveScorerGUI:
 
         tk.Label(
             frame, text="記述問題 採点",
-            font=("Yu Gothic UI", 13, "bold"),
+            font=(UI_FONT, get_ui_font_size(13), "bold"),
         ).pack(pady=(0, 5))
         tk.Label(
             frame,
             text="採点する問題を選択してください。完了後「採点完了」を押してください。",
-            font=("Yu Gothic UI", 8), fg="gray", wraplength=520,
+            font=(UI_FONT, get_ui_font_size(8)), fg="gray", wraplength=520,
         ).pack(pady=(0, 10))
 
         # --- 採点モード選択 ---
         mode_frame = tk.Frame(frame, bg="#F3E5F5", padx=10, pady=6)
         mode_frame.pack(fill=tk.X, pady=(0, 10))
 
-        tk.Label(mode_frame, text="採点モード:", font=("Yu Gothic UI", 9, "bold"),
+        tk.Label(mode_frame, text="採点モード:", font=(UI_FONT, get_ui_font_size(9), "bold"),
                  bg="#F3E5F5").pack(side=tk.LEFT, padx=(0, 5))
         # 前回の採点モードを復元（config に保存済みなら）
         saved_mode = self.config.get("scoring_mode", "1枚ずつ")
@@ -1187,10 +1192,10 @@ class DescriptiveScorerGUI:
         mode_combo = ttk.Combobox(mode_frame, textvariable=self._scoring_mode_var,
                                   values=["1枚ずつ", "一覧（グリッド）"],
                                   state="readonly", width=16,
-                                  font=("Yu Gothic UI", 9))
+                                  font=(UI_FONT, get_ui_font_size(9)))
         mode_combo.pack(side=tk.LEFT, padx=(0, 10))
         tk.Label(mode_frame, text="※ モードを変えるには一度採点を中断してください",
-                 font=("Yu Gothic UI", 8), fg="#7B1FA2", bg="#F3E5F5"
+                 font=(UI_FONT, get_ui_font_size(8)), fg="#7B1FA2", bg="#F3E5F5"
                  ).pack(side=tk.LEFT)
 
         # --- 問題リスト（スクロール対応） ---
@@ -1235,7 +1240,7 @@ class DescriptiveScorerGUI:
             info_text = f"{q['name']}  (配点:{q['max_score']}点  観点:{q['aspect']})"
             info_label = tk.Label(
                 q_row, text=info_text,
-                font=("Yu Gothic UI", 9), anchor=tk.W,
+                font=(UI_FONT, get_ui_font_size(9)), anchor=tk.W,
             )
             info_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
             self._info_labels[q_id] = info_label
@@ -1243,7 +1248,7 @@ class DescriptiveScorerGUI:
             status = self._get_question_status(q_id)
             status_label = tk.Label(
                 q_row, text=status,
-                font=("Yu Gothic UI", 8), width=14,
+                font=(UI_FONT, get_ui_font_size(8)), width=14,
                 fg="green" if "完了" in status else "gray",
             )
             status_label.pack(side=tk.LEFT, padx=5)
@@ -1252,14 +1257,14 @@ class DescriptiveScorerGUI:
             tk.Button(
                 q_row, text="採点",
                 command=lambda qid=q_id: self._score_question(qid),
-                width=5, font=("Yu Gothic UI", 9),
+                width=5, font=(UI_FONT, get_ui_font_size(9)),
                 bg="#90CAF9", relief=tk.FLAT, cursor="hand2",
             ).pack(side=tk.LEFT, padx=(0, 2))
 
             tk.Button(
                 q_row, text="設定",
                 command=lambda qid=q_id: self._edit_question(qid),
-                width=3, font=("Yu Gothic UI", 8),
+                width=3, font=(UI_FONT, get_ui_font_size(8)),
                 bg="#FFE082", relief=tk.FLAT, cursor="hand2",
             ).pack(side=tk.LEFT)
 
@@ -1279,14 +1284,14 @@ class DescriptiveScorerGUI:
             btn_frame, text="✔ 採点完了・保存",
             command=lambda: self._finish(win),
             bg="#4CAF50", fg="white",
-            font=("Yu Gothic UI", 10, "bold"),
+            font=(UI_FONT, get_ui_font_size(10), "bold"),
             width=20, height=2, relief=tk.FLAT, cursor="hand2",
         ).pack(side=tk.LEFT, padx=5)
 
         tk.Button(
             btn_frame, text="キャンセル",
             command=lambda: self._cancel(win),
-            font=("Yu Gothic UI", 9), width=10,
+            font=(UI_FONT, get_ui_font_size(9)), width=10,
         ).pack(side=tk.LEFT, padx=5)
 
         win.protocol("WM_DELETE_WINDOW", lambda: self._cancel(win))
@@ -1356,37 +1361,37 @@ class DescriptiveScorerGUI:
         tk.Label(
             frame,
             text=f"問題 {q_config['id']} の設定を変更",
-            font=("Yu Gothic UI", 11, "bold"),
+            font=(UI_FONT, get_ui_font_size(11), "bold"),
         ).pack(pady=(0, 12))
 
         # 問題名
         row1 = tk.Frame(frame)
         row1.pack(fill=tk.X, pady=3)
-        tk.Label(row1, text="問題名:", width=8, anchor=tk.W, font=("Yu Gothic UI", 9)).pack(side=tk.LEFT)
+        tk.Label(row1, text="問題名:", width=8, anchor=tk.W, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT)
         name_var = tk.StringVar(value=q_config["name"])
-        tk.Entry(row1, textvariable=name_var, font=("Yu Gothic UI", 9)).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        tk.Entry(row1, textvariable=name_var, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         # 配点
         row2 = tk.Frame(frame)
         row2.pack(fill=tk.X, pady=3)
-        tk.Label(row2, text="配点:", width=8, anchor=tk.W, font=("Yu Gothic UI", 9)).pack(side=tk.LEFT)
+        tk.Label(row2, text="配点:", width=8, anchor=tk.W, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT)
         max_score_var = tk.StringVar(value=str(q_config["max_score"]))
-        tk.Entry(row2, textvariable=max_score_var, width=5, font=("Yu Gothic UI", 9)).pack(side=tk.LEFT)
-        tk.Label(row2, text=f"点  (現在: {q_config['max_score']}点)", font=("Yu Gothic UI", 8), fg="gray").pack(side=tk.LEFT, padx=5)
+        tk.Entry(row2, textvariable=max_score_var, width=5, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT)
+        tk.Label(row2, text=f"点  (現在: {q_config['max_score']}点)", font=(UI_FONT, get_ui_font_size(8)), fg="gray").pack(side=tk.LEFT, padx=5)
 
         # 観点
         row3 = tk.Frame(frame)
         row3.pack(fill=tk.X, pady=3)
-        tk.Label(row3, text="観点:", width=8, anchor=tk.W, font=("Yu Gothic UI", 9)).pack(side=tk.LEFT)
+        tk.Label(row3, text="観点:", width=8, anchor=tk.W, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT)
         aspect_var = tk.StringVar(value=str(q_config["aspect"]))
-        tk.Entry(row3, textvariable=aspect_var, width=5, font=("Yu Gothic UI", 9)).pack(side=tk.LEFT)
+        tk.Entry(row3, textvariable=aspect_var, width=5, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT)
 
         # 採点リセットボタン
         tk.Label(frame, text="─" * 30, fg="#ccc").pack(pady=(10, 5))
         tk.Button(
             frame, text="🔄 この問題の採点をリセット",
             command=lambda: self._reset_question_scores(question_id, dialog),
-            font=("Yu Gothic UI", 9), bg="#FFCDD2",
+            font=(UI_FONT, get_ui_font_size(9)), bg="#FFCDD2",
             relief=tk.FLAT, cursor="hand2",
         ).pack(fill=tk.X, pady=2)
 
@@ -1454,11 +1459,11 @@ class DescriptiveScorerGUI:
         btn_frame.pack(pady=(10, 0))
         tk.Button(
             btn_frame, text="OK", command=_ok, width=10,
-            bg="#4CAF50", fg="white", font=("Yu Gothic UI", 9, "bold"),
+            bg="#4CAF50", fg="white", font=(UI_FONT, get_ui_font_size(9), "bold"),
         ).pack(side=tk.LEFT, padx=5)
         tk.Button(
             btn_frame, text="キャンセル", command=dialog.destroy, width=10,
-            font=("Yu Gothic UI", 9),
+            font=(UI_FONT, get_ui_font_size(9)),
         ).pack(side=tk.LEFT, padx=5)
 
         dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
@@ -1692,7 +1697,7 @@ class _SingleQuestionScorer:
         self._zoom_frame.pack(side=tk.RIGHT, fill=tk.X, expand=True)
 
         tk.Label(self._zoom_frame, text="🔍 サイズ:",
-                 font=("Yu Gothic UI", 9), bg="#37474F", fg="white"
+                 font=(UI_FONT, get_ui_font_size(9)), bg="#37474F", fg="white"
                  ).pack(side=tk.LEFT)
 
         self._zoom_slider = tk.Scale(
@@ -1706,7 +1711,7 @@ class _SingleQuestionScorer:
 
         self._zoom_label_var = tk.StringVar(value="160px")
         tk.Label(self._zoom_frame, textvariable=self._zoom_label_var,
-                 font=("Yu Gothic UI", 9, "bold"), bg="#37474F", fg="#FFD54F",
+                 font=(UI_FONT, get_ui_font_size(9), "bold"), bg="#37474F", fg="#FFD54F",
                  width=8, anchor=tk.CENTER).pack(side=tk.LEFT, padx=2)
 
         # 一覧モードならズームバーを表示
@@ -1730,33 +1735,33 @@ class _SingleQuestionScorer:
         self.progress_var = tk.StringVar()
         tk.Label(
             top_bar, textvariable=self.progress_var,
-            font=("Yu Gothic UI", 14, "bold"), bg="#37474F", fg="#FFD54F",
+            font=(UI_FONT, get_ui_font_size(14), "bold"), bg="#37474F", fg="#FFD54F",
         ).pack(side=tk.LEFT, padx=(0, 12))
 
         # ファイル名
         self.filename_var = tk.StringVar()
         tk.Label(
             top_bar, textvariable=self.filename_var,
-            font=("Yu Gothic UI", 8), bg="#37474F", fg="#B0BEC5",
+            font=(UI_FONT, get_ui_font_size(8)), bg="#37474F", fg="#B0BEC5",
         ).pack(side=tk.LEFT, padx=(0, 10))
 
         # 得点表示
-        tk.Label(top_bar, text="得点:", font=("Yu Gothic UI", 9),
+        tk.Label(top_bar, text="得点:", font=(UI_FONT, get_ui_font_size(9)),
                  bg="#37474F", fg="#FFD54F").pack(side=tk.LEFT)
         self.score_var = tk.StringVar(value="—")
         tk.Label(
             top_bar, textvariable=self.score_var,
-            font=("Yu Gothic UI", 16, "bold"), bg="#37474F", fg="#FFD54F",
+            font=(UI_FONT, get_ui_font_size(16), "bold"), bg="#37474F", fg="#FFD54F",
         ).pack(side=tk.LEFT, padx=(2, 10))
 
         # 数値入力欄（配点>9の場合のみ表示）
         if self.use_entry:
-            self.score_entry = tk.Entry(top_bar, width=4, font=("Yu Gothic UI", 12),
+            self.score_entry = tk.Entry(top_bar, width=4, font=(UI_FONT, get_ui_font_size(12)),
                                         justify=tk.CENTER)
             self.score_entry.pack(side=tk.LEFT, padx=(0, 3))
             tk.Button(
                 top_bar, text="確定", command=self._submit_entry_score,
-                font=("Yu Gothic UI", 8), bg="#90CAF9", relief=tk.FLAT,
+                font=(UI_FONT, get_ui_font_size(8)), bg="#90CAF9", relief=tk.FLAT,
             ).pack(side=tk.LEFT, padx=(0, 8))
             self.score_entry.bind("<Return>", lambda e: self._submit_entry_score())
 
@@ -1765,7 +1770,7 @@ class _SingleQuestionScorer:
             top_bar, text=f"〇 正解({self.max_score}点)",
             command=self._on_maru,
             bg="#E3F2FD", fg="#1565C0",
-            font=("Yu Gothic UI", 9, "bold"),
+            font=(UI_FONT, get_ui_font_size(9), "bold"),
             relief=tk.RAISED, cursor="hand2",
             activebackground="#BBDEFB", padx=6, pady=1,
         )
@@ -1775,7 +1780,7 @@ class _SingleQuestionScorer:
             top_bar, text="× 不正解(0点)",
             command=self._on_batsu,
             bg="#FFEBEE", fg="#C62828",
-            font=("Yu Gothic UI", 9, "bold"),
+            font=(UI_FONT, get_ui_font_size(9), "bold"),
             relief=tk.RAISED, cursor="hand2",
             activebackground="#FFCDD2", padx=6, pady=1,
         )
@@ -1785,7 +1790,7 @@ class _SingleQuestionScorer:
         tk.Button(
             top_bar, text="キャンセル",
             command=self._cancel,
-            font=("Yu Gothic UI", 8), bg="#37474F", fg="#B0BEC5",
+            font=(UI_FONT, get_ui_font_size(8)), bg="#37474F", fg="#B0BEC5",
             relief=tk.FLAT, cursor="hand2",
         ).pack(side=tk.RIGHT, padx=2)
 
@@ -1793,7 +1798,7 @@ class _SingleQuestionScorer:
             top_bar, text="✔ 採点完了",
             command=self._finish,
             bg="#4CAF50", fg="white",
-            font=("Yu Gothic UI", 9, "bold"),
+            font=(UI_FONT, get_ui_font_size(9), "bold"),
             relief=tk.FLAT, cursor="hand2", padx=8,
         ).pack(side=tk.RIGHT, padx=2)
 
@@ -1805,7 +1810,7 @@ class _SingleQuestionScorer:
         self._single_zoom_factor = 100  # % (100 = auto-fit)
         self._single_zoom_after_id: Optional[str] = None
 
-        tk.Label(mid_bar, text="🔍", font=("Yu Gothic UI", 9),
+        tk.Label(mid_bar, text="🔍", font=(UI_FONT, get_ui_font_size(9)),
                  bg="#ECEFF1").pack(side=tk.LEFT)
         self._single_zoom_slider = tk.Scale(
             mid_bar, from_=25, to=300, orient=tk.HORIZONTAL,
@@ -1817,7 +1822,7 @@ class _SingleQuestionScorer:
         self._single_zoom_slider.pack(side=tk.LEFT, padx=(0, 2))
         self._single_zoom_label = tk.Label(
             mid_bar, text="100%",
-            font=("Yu Gothic UI", 8), fg="#555", bg="#ECEFF1",
+            font=(UI_FONT, get_ui_font_size(8)), fg="#555", bg="#ECEFF1",
         )
         self._single_zoom_label.pack(side=tk.LEFT, padx=(0, 8))
 
@@ -1826,7 +1831,7 @@ class _SingleQuestionScorer:
         tk.Checkbutton(
             mid_bar, text="未採点のみ",
             variable=self._filter_unscored_var,
-            font=("Yu Gothic UI", 8), bg="#ECEFF1",
+            font=(UI_FONT, get_ui_font_size(8)), bg="#ECEFF1",
             command=self._on_filter_change,
         ).pack(side=tk.LEFT, padx=(0, 5))
 
@@ -1834,15 +1839,15 @@ class _SingleQuestionScorer:
         self._unscored_var = tk.StringVar()
         tk.Label(
             mid_bar, textvariable=self._unscored_var,
-            font=("Yu Gothic UI", 8), fg="#E65100", bg="#ECEFF1",
+            font=(UI_FONT, get_ui_font_size(8)), fg="#E65100", bg="#ECEFF1",
         ).pack(side=tk.LEFT, padx=(0, 10))
 
         # 有効得点チェックボックス（配点<=9のときのみ）
         if not self.use_entry:
             tk.Label(mid_bar, text="|", fg="#ccc", bg="#ECEFF1",
-                     font=("Yu Gothic UI", 9)).pack(side=tk.LEFT, padx=3)
+                     font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT, padx=3)
             tk.Label(mid_bar, text="入力可能:",
-                     font=("Yu Gothic UI", 8), bg="#ECEFF1").pack(side=tk.LEFT)
+                     font=(UI_FONT, get_ui_font_size(8)), bg="#ECEFF1").pack(side=tk.LEFT)
 
             self.score_checks: Dict[int, tk.BooleanVar] = {}
             for i in range(min(10, self.max_score + 1)):
@@ -1850,14 +1855,14 @@ class _SingleQuestionScorer:
                 self.score_checks[i] = var
                 cb = tk.Checkbutton(
                     mid_bar, text=str(i), variable=var,
-                    font=("Yu Gothic UI", 8), bg="#ECEFF1",
+                    font=(UI_FONT, get_ui_font_size(8)), bg="#ECEFF1",
                 )
                 cb.pack(side=tk.LEFT, padx=1)
 
         # 右端リンク
         help_link = tk.Label(
             mid_bar, text="❓操作方法",
-            font=("Yu Gothic UI", 8, "underline"), fg="#1976D2",
+            font=(UI_FONT, get_ui_font_size(8), "underline"), fg="#1976D2",
             bg="#ECEFF1", cursor="hand2",
         )
         help_link.pack(side=tk.RIGHT, padx=5)
@@ -1866,7 +1871,7 @@ class _SingleQuestionScorer:
         # 元画像を開くリンク
         open_link = tk.Label(
             mid_bar, text="📷元画像を開く",
-            font=("Yu Gothic UI", 8, "underline"), fg="#1976D2",
+            font=(UI_FONT, get_ui_font_size(8), "underline"), fg="#1976D2",
             bg="#ECEFF1", cursor="hand2",
         )
         open_link.pack(side=tk.RIGHT, padx=5)
@@ -1941,7 +1946,7 @@ class _SingleQuestionScorer:
         frame = tk.Frame(hw, padx=15, pady=10)
         frame.pack(fill=tk.BOTH, expand=True)
 
-        tk.Label(frame, text="キーボード操作", font=("Yu Gothic UI", 11, "bold")).pack(anchor=tk.W, pady=(0, 5))
+        tk.Label(frame, text="キーボード操作", font=(UI_FONT, get_ui_font_size(11), "bold")).pack(anchor=tk.W, pady=(0, 5))
 
         if self.use_entry:
             lines = [
@@ -1967,14 +1972,14 @@ class _SingleQuestionScorer:
         for key, desc in lines:
             row = tk.Frame(frame)
             row.pack(fill=tk.X, pady=1)
-            tk.Label(row, text=key, font=("Yu Gothic UI", 9, "bold"),
+            tk.Label(row, text=key, font=(UI_FONT, get_ui_font_size(9), "bold"),
                      fg="#1976D2", width=10, anchor=tk.W).pack(side=tk.LEFT)
-            tk.Label(row, text=desc, font=("Yu Gothic UI", 9),
+            tk.Label(row, text=desc, font=(UI_FONT, get_ui_font_size(9)),
                      fg="#333", anchor=tk.W).pack(side=tk.LEFT)
 
         tk.Button(
             frame, text="閉じる", command=hw.destroy,
-            font=("Yu Gothic UI", 9), padx=10,
+            font=(UI_FONT, get_ui_font_size(9)), padx=10,
         ).pack(pady=(10, 0))
 
     def _open_current_original(self):
@@ -1995,7 +2000,7 @@ class _SingleQuestionScorer:
         top_bar = tk.Frame(gf, bg=BG)
         top_bar.pack(fill=tk.X, padx=8, pady=(8, 3))
 
-        tk.Label(top_bar, text="並び順:", font=("Yu Gothic UI", 9), bg=BG).pack(side=tk.LEFT)
+        tk.Label(top_bar, text="並び順:", font=(UI_FONT, get_ui_font_size(9)), bg=BG).pack(side=tk.LEFT)
         self._grid_sort_var = tk.StringVar(value="ファイル名順")
         sort_combo = ttk.Combobox(top_bar, textvariable=self._grid_sort_var,
                                   values=["ファイル名順", "得点 昇順", "得点 降順",
@@ -2006,12 +2011,12 @@ class _SingleQuestionScorer:
 
         self._grid_progress_var = tk.StringVar()
         tk.Label(top_bar, textvariable=self._grid_progress_var,
-                 font=("Yu Gothic UI", 9, "bold"), bg=BG, fg="#555").pack(side=tk.LEFT, padx=(10, 0))
+                 font=(UI_FONT, get_ui_font_size(9), "bold"), bg=BG, fg="#555").pack(side=tk.LEFT, padx=(10, 0))
 
         tk.Label(top_bar, text="", bg=BG).pack(side=tk.LEFT, expand=True)  # spacer
 
         tk.Button(top_bar, text="✔ この問題の採点完了", command=self._finish,
-                  bg="#4CAF50", fg="white", font=("Yu Gothic UI", 9, "bold"),
+                  bg="#4CAF50", fg="white", font=(UI_FONT, get_ui_font_size(9), "bold"),
                   relief=tk.FLAT, cursor="hand2").pack(side=tk.RIGHT)
 
         # スクロール領域
@@ -2042,11 +2047,11 @@ class _SingleQuestionScorer:
         score_bar.pack(fill=tk.X, side=tk.BOTTOM)
 
         tk.Label(score_bar, text="得点ボタン（クリック後、サムネイルをクリックで得点付与）:",
-                 font=("Yu Gothic UI", 9), bg="#ECEFF1", fg="#555").pack(side=tk.LEFT, padx=(0, 8))
+                 font=(UI_FONT, get_ui_font_size(9)), bg="#ECEFF1", fg="#555").pack(side=tk.LEFT, padx=(0, 8))
 
         self._grid_score_buttons: Dict[int, tk.Button] = {}
         for i in range(min(self.max_score + 1, 11)):
-            btn = tk.Button(score_bar, text=str(i), width=3, font=("Yu Gothic UI", 10, "bold"),
+            btn = tk.Button(score_bar, text=str(i), width=3, font=(UI_FONT, get_ui_font_size(10), "bold"),
                             bg="#E3F2FD", relief=tk.RAISED, cursor="hand2",
                             command=lambda s=i: self._on_grid_score_btn(s))
             btn.pack(side=tk.LEFT, padx=2)
@@ -2054,30 +2059,30 @@ class _SingleQuestionScorer:
 
         # 配点 > 10 の場合はEntry
         if self.max_score > 10:
-            tk.Label(score_bar, text="得点:", font=("Yu Gothic UI", 9),
+            tk.Label(score_bar, text="得点:", font=(UI_FONT, get_ui_font_size(9)),
                      bg="#ECEFF1").pack(side=tk.LEFT, padx=(10, 3))
-            self._grid_score_entry = tk.Entry(score_bar, width=5, font=("Yu Gothic UI", 10),
+            self._grid_score_entry = tk.Entry(score_bar, width=5, font=(UI_FONT, get_ui_font_size(10)),
                                               justify=tk.CENTER)
             self._grid_score_entry.pack(side=tk.LEFT)
-            tk.Button(score_bar, text="選択", font=("Yu Gothic UI", 9), bg="#90CAF9",
+            tk.Button(score_bar, text="選択", font=(UI_FONT, get_ui_font_size(9)), bg="#90CAF9",
                       relief=tk.FLAT, command=self._on_grid_score_entry_select).pack(side=tk.LEFT, padx=3)
 
         # 答案プレビューボタン
         self._grid_preview_btn = tk.Button(
             score_bar, text="📷 答案を表示",
-            font=("Yu Gothic UI", 9, "bold"),
+            font=(UI_FONT, get_ui_font_size(9), "bold"),
             bg="#E3F2FD", relief=tk.RAISED, cursor="hand2",
             command=self._on_grid_preview_btn,
         )
         self._grid_preview_btn.pack(side=tk.RIGHT, padx=(6, 0))
 
         # クリアボタン
-        tk.Button(score_bar, text="選択解除", font=("Yu Gothic UI", 8),
+        tk.Button(score_bar, text="選択解除", font=(UI_FONT, get_ui_font_size(8)),
                   bg="#E0E0E0", relief=tk.FLAT, cursor="hand2",
                   command=self._grid_clear_active).pack(side=tk.RIGHT, padx=(4, 0))
 
         self._grid_active_label = tk.Label(score_bar, text="",
-                                           font=("Yu Gothic UI", 9, "bold"),
+                                           font=(UI_FONT, get_ui_font_size(9), "bold"),
                                            bg="#ECEFF1", fg="#E65100")
         self._grid_active_label.pack(side=tk.RIGHT, padx=(0, 10))
 
@@ -2204,9 +2209,7 @@ class _SingleQuestionScorer:
             img_path = Path(folder) / fn
             if img_path.exists():
                 try:
-                    os.startfile(str(img_path))
-                except AttributeError:
-                    subprocess.Popen(['xdg-open', str(img_path)])
+                    open_in_default_viewer(img_path)
                 except Exception:
                     pass
                 return
@@ -2282,19 +2285,19 @@ class _SingleQuestionScorer:
             score_frame.bind("<Button-1>", lambda e, f=fn: self._on_grid_card_click(f, e))
 
             mark_label = tk.Label(score_frame, text=mark_text,
-                                  font=("Yu Gothic UI", 12, "bold"),
+                                  font=(UI_FONT, get_ui_font_size(12), "bold"),
                                   fg=mark_fg, bg=card_bg)
             mark_label.pack(side=tk.LEFT)
 
             score_text = f"{score}点" if score is not None else "未採点"
             score_label = tk.Label(score_frame, text=score_text,
-                                   font=("Yu Gothic UI", 8),
+                                   font=(UI_FONT, get_ui_font_size(8)),
                                    fg="#555", bg=card_bg)
             score_label.pack(side=tk.LEFT, padx=3)
 
             # ファイル名ラベル
             short_fn = fn[:20] + "…" if len(fn) > 20 else fn
-            fn_label = tk.Label(card, text=short_fn, font=("Yu Gothic UI", 7),
+            fn_label = tk.Label(card, text=short_fn, font=(UI_FONT, get_ui_font_size(7)),
                                 fg="#777", bg=card_bg, wraplength=thumb_size)
             fn_label.pack()
 
@@ -2648,7 +2651,7 @@ class _SingleQuestionScorer:
             self.canvas.configure(scrollregion=(0, 0, 600, 400))
             self.canvas.create_text(
                 300, 180, text="✅ すべての答案に得点が登録されています",
-                font=("Yu Gothic UI", 13, "bold"), fill="#388E3C",
+                font=(UI_FONT, get_ui_font_size(13), "bold"), fill="#388E3C",
             )
             self.progress_var.set(f"全 {len(self.filenames)} 枚 採点済み")
             self.score_var.set("—")
@@ -2767,7 +2770,7 @@ class _SingleQuestionScorer:
         tk.Label(
             body,
             text=f"✅ {len(self.filenames)} 枚すべての採点が完了しました",
-            font=("Yu Gothic UI", 11, "bold"), fg="#2E7D32",
+            font=(UI_FONT, get_ui_font_size(11), "bold"), fg="#2E7D32",
         ).pack(pady=(0, 15))
 
         btn_frame = tk.Frame(body)
@@ -2786,7 +2789,7 @@ class _SingleQuestionScorer:
         tk.Button(
             btn_frame, text="問題選択に戻る",
             command=_go_back,
-            font=("Yu Gothic UI", 10, "bold"),
+            font=(UI_FONT, get_ui_font_size(10), "bold"),
             bg="#4CAF50", fg="white", relief=tk.FLAT,
             cursor="hand2", padx=12, pady=4,
         ).pack(side=tk.LEFT, padx=8)
@@ -2794,7 +2797,7 @@ class _SingleQuestionScorer:
         tk.Button(
             btn_frame, text="採点を続ける",
             command=_continue,
-            font=("Yu Gothic UI", 10),
+            font=(UI_FONT, get_ui_font_size(10)),
             bg="#E0E0E0", relief=tk.FLAT,
             cursor="hand2", padx=12, pady=4,
         ).pack(side=tk.LEFT, padx=8)
@@ -2987,7 +2990,7 @@ class DescriptiveReviewGUI:
         zoom_bar.pack(fill=tk.X)
 
         tk.Label(zoom_bar, text="🔍 サイズ:",
-                 font=("Yu Gothic UI", 9), bg="#37474F", fg="white"
+                 font=(UI_FONT, get_ui_font_size(9)), bg="#37474F", fg="white"
                  ).pack(side=tk.LEFT)
         self._review_zoom_slider = tk.Scale(
             zoom_bar, from_=80, to=800, orient=tk.HORIZONTAL,
@@ -3000,7 +3003,7 @@ class DescriptiveReviewGUI:
 
         self._review_zoom_label = tk.StringVar(value=f"{self._thumb_size}px")
         tk.Label(zoom_bar, textvariable=self._review_zoom_label,
-                 font=("Yu Gothic UI", 9, "bold"), bg="#37474F", fg="#FFD54F",
+                 font=(UI_FONT, get_ui_font_size(9), "bold"), bg="#37474F", fg="#FFD54F",
                  width=8, anchor=tk.CENTER).pack(side=tk.LEFT, padx=2)
 
         # スクロール可能キャンバス
@@ -3221,7 +3224,7 @@ class DescriptiveReviewGUI:
 
             # 元画像を開くリンク
             open_lbl = tk.Label(cell, text="📷開く", bg=card_bg, fg="#1976D2",
-                                font=("Yu Gothic UI", 8, "underline"), cursor="hand2")
+                                font=(UI_FONT, get_ui_font_size(8), "underline"), cursor="hand2")
             open_lbl.pack()
             open_lbl.bind("<Button-1>", lambda e, f=fname: self._open_original_image(f))
 
@@ -3303,9 +3306,7 @@ class DescriptiveReviewGUI:
             img_path = Path(folder) / fname
             if img_path.exists():
                 try:
-                    os.startfile(str(img_path))
-                except AttributeError:
-                    subprocess.Popen(['xdg-open', str(img_path)])
+                    open_in_default_viewer(img_path)
                 except Exception:
                     pass
                 return

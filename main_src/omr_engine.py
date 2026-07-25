@@ -56,6 +56,7 @@ from constants import (
     MARK_FORMAT_MULTI_DIGIT,
     MULTI_DIGIT_VALUE_TO_SYMBOL,
     escape_excel_formula,
+    get_excel_font_family,
 )
 
 logger = logging.getLogger(__name__)
@@ -472,9 +473,9 @@ def _write_styled_template(df_template, template_path):
     from openpyxl.utils import get_column_letter
     from openpyxl.worksheet.datavalidation import DataValidation
 
-    header_font = Font(name='Yu Gothic UI', bold=True, size=10, color='FFFFFF')
+    header_font = Font(name=get_excel_font_family(), bold=True, size=10, color='FFFFFF')
     header_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
-    data_font = Font(name='Yu Gothic UI', size=10)
+    data_font = Font(name=get_excel_font_family(), size=10)
     thin_border = Border(
         left=Side(style='thin', color='BFBFBF'),
         right=Side(style='thin', color='BFBFBF'),

@@ -21,6 +21,7 @@ from constants import (
     MARKER_CACHE_FILE,
     MARK_FORMAT_STANDARD,
     MARK_FORMAT_MULTI_DIGIT,
+    get_cjk_font_path,
 )
 from scoring_engine import (
     number_to_circled,
@@ -39,7 +40,7 @@ from omr_engine import (
 # ---------------------------------------------------------------------------
 # フォントキャッシュ — サイズごとに1回だけディスクI/Oを行いキャッシュする
 # ---------------------------------------------------------------------------
-_FONT_PATH = "C:/Windows/Fonts/msgothic.ttc"
+_FONT_PATH, _FONT_INDEX = get_cjk_font_path()
 _font_cache: dict[int, ImageFont.FreeTypeFont] = {}
 
 
@@ -48,7 +49,7 @@ def _get_cached_font(size: int) -> ImageFont.FreeTypeFont:
     font = _font_cache.get(size)
     if font is None:
         try:
-            font = ImageFont.truetype(_FONT_PATH, size)
+            font = ImageFont.truetype(_FONT_PATH, size, index=_FONT_INDEX)
         except Exception:
             font = ImageFont.load_default()  # type: ignore[assignment]
         _font_cache[size] = font

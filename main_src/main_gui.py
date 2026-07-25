@@ -9,6 +9,8 @@ SaitenSamuraiGUI クラスを提供する。マークシート解析・採点・
 saitensamurai.py から分離されたモジュール。
 """
 
+from __future__ import annotations
+
 # ========================================
 # インポート
 # ========================================
@@ -46,7 +48,11 @@ from constants import (
     MARK_FORMAT_STANDARD, MARK_FORMAT_MULTI_DIGIT,
     OMR_MODE_THRESHOLD, OMR_MODE_KMEANS,
     atomic_json_save, load_json_safe,
+    open_in_file_manager, get_ui_font_family, get_ui_font_size,
 )
+
+# 日本語UIフォント（Windows: Yu Gothic UI, Mac: Hiragino Sans）
+UI_FONT = get_ui_font_family()
 
 # 採点コアロジック（scoring_engine.pyから）
 from scoring_engine import (
@@ -122,7 +128,7 @@ class _ToolTip:
             tw, text=self.text, justify=tk.LEFT,
             background="#FFFDE7", foreground="#333333",
             relief=tk.SOLID, borderwidth=1,
-            font=("Yu Gothic UI", 9), wraplength=320, padx=6, pady=4,
+            font=(UI_FONT, get_ui_font_size(9)), wraplength=320, padx=6, pady=4,
         )
         label.pack()
         self._tipwindow = tw
@@ -248,9 +254,9 @@ class SaitenSamuraiGUI:
         BTN_AMBER = "#FFE082"     # サマリー (Amber 200)
         BTN_GRAY = "#EEEEEE"      # 参照・開くボタン
         
-        FONT_NORMAL = ("Yu Gothic UI", 9)
-        FONT_BOLD = ("Yu Gothic UI", 9, "bold")
-        FONT_TITLE = ("Yu Gothic UI", 12, "bold")
+        FONT_NORMAL = (UI_FONT, get_ui_font_size(9))
+        FONT_BOLD = (UI_FONT, get_ui_font_size(9), "bold")
+        FONT_TITLE = (UI_FONT, get_ui_font_size(12), "bold")
         
         # ルートウィンドウの背景設定
         self.root.configure(bg=BG_COLOR)
@@ -309,7 +315,7 @@ class SaitenSamuraiGUI:
         tk.Button(
             title_row, text="📂 前回の状態を復元",
             command=self._restore_session_interactive,
-            font=("Yu Gothic UI", 8), bg="#E3F2FD", relief=tk.FLAT, cursor="hand2",
+            font=(UI_FONT, get_ui_font_size(8)), bg="#E3F2FD", relief=tk.FLAT, cursor="hand2",
         ).pack(side=tk.RIGHT, padx=(10, 0))
 
         # ---------------------------------------------------------
@@ -326,7 +332,7 @@ class SaitenSamuraiGUI:
         row1 = tk.Frame(input_group, bg=SECTION_BG)
         row1.pack(fill=tk.X, pady=2)
         tk.Label(row1, text="画像フォルダ", width=10, anchor=tk.W, font=FONT_NORMAL, bg=SECTION_BG).pack(side=tk.LEFT)
-        tk.Entry(row1, textvariable=self.image_folder_path, font=("Yu Gothic UI", 8), bg="#F9F9F9", relief=tk.FLAT, state="readonly").pack(side=tk.LEFT, fill=tk.X, expand=True)
+        tk.Entry(row1, textvariable=self.image_folder_path, font=(UI_FONT, get_ui_font_size(8)), bg="#F9F9F9", relief=tk.FLAT, state="readonly").pack(side=tk.LEFT, fill=tk.X, expand=True)
         self._btn_select_folder = tk.Button(row1, text="フォルダ選択", command=self.select_folder, width=10, bg=BTN_GRAY, relief=tk.FLAT, font=FONT_NORMAL)
         self._btn_select_folder.pack(side=tk.LEFT)
         self._btn_select_pdf = tk.Button(row1, text="PDF選択", command=self.select_pdf, width=8, bg=BTN_GRAY, relief=tk.FLAT, font=FONT_NORMAL)
@@ -338,7 +344,7 @@ class SaitenSamuraiGUI:
         if self.app_mode != MODE_DESCRIPTIVE_ONLY:
             row2.pack(fill=tk.X, pady=2)
         tk.Label(row2, text="座標ファイル", width=10, anchor=tk.W, font=FONT_NORMAL, bg=SECTION_BG).pack(side=tk.LEFT)
-        tk.Entry(row2, textvariable=self.coord_excel_path, font=("Yu Gothic UI", 8), bg="#F9F9F9", relief=tk.FLAT, state="readonly").pack(side=tk.LEFT, fill=tk.X, expand=True)
+        tk.Entry(row2, textvariable=self.coord_excel_path, font=(UI_FONT, get_ui_font_size(8)), bg="#F9F9F9", relief=tk.FLAT, state="readonly").pack(side=tk.LEFT, fill=tk.X, expand=True)
         self._btn_select_excel = tk.Button(row2, text="ファイル選択", command=self.select_excel, width=10, bg=BTN_GRAY, relief=tk.FLAT, font=FONT_NORMAL)
         self._btn_select_excel.pack(side=tk.LEFT)
 
@@ -375,7 +381,7 @@ class SaitenSamuraiGUI:
         self._chk_descriptive = tk.Checkbutton(
             opt_row1, text="記述問題も採点する",
             variable=self.descriptive_enabled, bg=SECTION_BG,
-            font=("Yu Gothic UI", 8), anchor=tk.W, cursor="hand2",
+            font=(UI_FONT, get_ui_font_size(8)), anchor=tk.W, cursor="hand2",
             command=self._on_descriptive_toggle,
         )
         # チェックボックスは pack しない（値は init で設定済み）
@@ -383,7 +389,7 @@ class SaitenSamuraiGUI:
         # 記述のみモードのモード表示ラベル
         if self.app_mode == MODE_DESCRIPTIVE_ONLY:
             tk.Label(opt_row1, text="📝 記述採点モード",
-                     font=("Yu Gothic UI", 9, "bold"), fg="#7B1FA2", bg=SECTION_BG).pack(side=tk.LEFT)
+                     font=(UI_FONT, get_ui_font_size(9), "bold"), fg="#7B1FA2", bg=SECTION_BG).pack(side=tk.LEFT)
         
         # OMR認識モード選択 (v4.5: 記述のみモード以外で表示)
         # 表示ラベル ↔ 内部値のマッピング
@@ -400,7 +406,7 @@ class SaitenSamuraiGUI:
         if self.app_mode != MODE_DESCRIPTIVE_ONLY:
             omr_mode_row.pack(fill=tk.X, pady=(5, 0))
 
-        tk.Label(omr_mode_row, text="認識方式:", font=("Yu Gothic UI", 8), bg=SECTION_BG).pack(side=tk.LEFT)
+        tk.Label(omr_mode_row, text="認識方式:", font=(UI_FONT, get_ui_font_size(8)), bg=SECTION_BG).pack(side=tk.LEFT)
         self._omr_mode_combo = ttk.Combobox(
             omr_mode_row, textvariable=self._omr_display_var, width=22,
             values=list(self._omr_label_to_value.keys()), state="readonly",
@@ -414,14 +420,14 @@ class SaitenSamuraiGUI:
         if self.app_mode != MODE_DESCRIPTIVE_ONLY and self.omr_mode.get() == OMR_MODE_THRESHOLD:
             self._omr_slider_row.pack(side=tk.LEFT, padx=(10, 0))
 
-        tk.Label(self._omr_slider_row, text="色:", font=("Yu Gothic UI", 8), bg=SECTION_BG).pack(side=tk.LEFT)
+        tk.Label(self._omr_slider_row, text="色:", font=(UI_FONT, get_ui_font_size(8)), bg=SECTION_BG).pack(side=tk.LEFT)
         tk.Scale(self._omr_slider_row, variable=self.color_threshold, from_=0.03, to=0.35, resolution=0.005, orient=tk.HORIZONTAL, bg=SECTION_BG, relief=tk.FLAT, length=80).pack(side=tk.LEFT, padx=2)
 
-        tk.Label(self._omr_slider_row, text="面積:", font=("Yu Gothic UI", 8), bg=SECTION_BG).pack(side=tk.LEFT, padx=(5, 0))
+        tk.Label(self._omr_slider_row, text="面積:", font=(UI_FONT, get_ui_font_size(8)), bg=SECTION_BG).pack(side=tk.LEFT, padx=(5, 0))
         tk.Scale(self._omr_slider_row, variable=self.area_threshold, from_=0.1, to=0.8, resolution=0.05, orient=tk.HORIZONTAL, bg=SECTION_BG, relief=tk.FLAT, length=80).pack(side=tk.LEFT, padx=2)
 
         tk.Button(self._omr_slider_row, text="\U0001f527 自動調整", command=self.open_threshold_calibrator,
-                  width=8, bg="#CE93D8", relief=tk.FLAT, font=("Yu Gothic UI", 8),
+                  width=8, bg="#CE93D8", relief=tk.FLAT, font=(UI_FONT, get_ui_font_size(8)),
                   cursor="hand2").pack(side=tk.LEFT, padx=(10, 0))
 
         # ---------------------------------------------------------
@@ -462,7 +468,7 @@ class SaitenSamuraiGUI:
         self._btn_run_box.pack(side=tk.LEFT, fill=tk.X, expand=True)
         # 初期状態: フォルダ/座標ファイル未選択なので無効化
         self._btn_run_box.config(state=tk.DISABLED)
-        self.open_boxed_btn = tk.Button(step1_run_row, text="📁", command=self.open_boxed_folder, bg=BTN_GRAY, relief=tk.FLAT, state=tk.DISABLED, width=3, font=("Yu Gothic UI", 10))
+        self.open_boxed_btn = tk.Button(step1_run_row, text="📁", command=self.open_boxed_folder, bg=BTN_GRAY, relief=tk.FLAT, state=tk.DISABLED, width=3, font=(UI_FONT, get_ui_font_size(10)))
         self.open_boxed_btn.pack(side=tk.LEFT, padx=(3, 0), fill=tk.Y)
 
         # 正答データ（記述のみモードでは非表示）
@@ -470,12 +476,12 @@ class SaitenSamuraiGUI:
         self._answer_key_row = s_row1
         if self.app_mode != MODE_DESCRIPTIVE_ONLY:
             s_row1.pack(fill=tk.X, pady=2)
-        tk.Label(s_row1, text="正答データ", width=10, anchor=tk.W, font=("Yu Gothic UI", 8), bg=SECTION_BG).pack(side=tk.LEFT)
-        tk.Entry(s_row1, textvariable=self.template_path, font=("Yu Gothic UI", 8), bg="#F9F9F9", relief=tk.FLAT, state="readonly").pack(side=tk.LEFT, fill=tk.X, expand=True)
-        tk.Button(s_row1, text="ファイル選択", command=self.select_template, width=10, bg=BTN_GRAY, relief=tk.FLAT, font=("Yu Gothic UI", 8)).pack(side=tk.LEFT)
+        tk.Label(s_row1, text="正答データ", width=10, anchor=tk.W, font=(UI_FONT, get_ui_font_size(8)), bg=SECTION_BG).pack(side=tk.LEFT)
+        tk.Entry(s_row1, textvariable=self.template_path, font=(UI_FONT, get_ui_font_size(8)), bg="#F9F9F9", relief=tk.FLAT, state="readonly").pack(side=tk.LEFT, fill=tk.X, expand=True)
+        tk.Button(s_row1, text="ファイル選択", command=self.select_template, width=10, bg=BTN_GRAY, relief=tk.FLAT, font=(UI_FONT, get_ui_font_size(8))).pack(side=tk.LEFT)
         _btn_key_check = tk.Button(
             s_row1, text="📋", command=self.run_answer_key_check_gui,
-            width=3, bg=BTN_GRAY, relief=tk.FLAT, font=("Yu Gothic UI", 8), cursor="hand2")
+            width=3, bg=BTN_GRAY, relief=tk.FLAT, font=(UI_FONT, get_ui_font_size(8)), cursor="hand2")
         _btn_key_check.pack(side=tk.LEFT, padx=(3, 0))
         _ToolTip(_btn_key_check,
                  "正答チェック — 登録内容を検証し、チェック報告と模範解答の\n"
@@ -486,9 +492,9 @@ class SaitenSamuraiGUI:
         self._omr_result_row = s_row2
         if self.app_mode != MODE_DESCRIPTIVE_ONLY:
             s_row2.pack(fill=tk.X, pady=2)
-        tk.Label(s_row2, text="OMR結果", width=10, anchor=tk.W, font=("Yu Gothic UI", 8), bg=SECTION_BG).pack(side=tk.LEFT)
-        tk.Entry(s_row2, textvariable=self.mark2_result_path, font=("Yu Gothic UI", 8), bg="#F9F9F9", relief=tk.FLAT, state="readonly").pack(side=tk.LEFT, fill=tk.X, expand=True)
-        tk.Button(s_row2, text="ファイル選択", command=self.select_mark2_result, width=10, bg=BTN_GRAY, relief=tk.FLAT, font=("Yu Gothic UI", 8)).pack(side=tk.LEFT)
+        tk.Label(s_row2, text="OMR結果", width=10, anchor=tk.W, font=(UI_FONT, get_ui_font_size(8)), bg=SECTION_BG).pack(side=tk.LEFT)
+        tk.Entry(s_row2, textvariable=self.mark2_result_path, font=(UI_FONT, get_ui_font_size(8)), bg="#F9F9F9", relief=tk.FLAT, state="readonly").pack(side=tk.LEFT, fill=tk.X, expand=True)
+        tk.Button(s_row2, text="ファイル選択", command=self.select_mark2_result, width=10, bg=BTN_GRAY, relief=tk.FLAT, font=(UI_FONT, get_ui_font_size(8))).pack(side=tk.LEFT)
 
         # 記述問題設定（記述ON時のみ表示 — _on_descriptive_toggle で制御）
         self.desc_setup_btn = tk.Button(
@@ -533,7 +539,7 @@ class SaitenSamuraiGUI:
         self._desc_status_label = tk.Label(self._desc_status_frame, text="")
         # 表示用: 固定高さの Text ウィジェット（安定したレイアウト）
         self._desc_status_text = tk.Text(
-            _inner, font=("Yu Gothic UI", 8),
+            _inner, font=(UI_FONT, get_ui_font_size(8)),
             bg="#F3E5F5", fg="#4A148C", wrap=tk.WORD,
             height=4, relief=tk.FLAT, bd=0, state=tk.DISABLED,
             highlightthickness=0, cursor="arrow",
@@ -560,7 +566,7 @@ class SaitenSamuraiGUI:
         # --- 詳細設定リンク ---
         self._link_detailed_settings = tk.Label(
             step2, text="⚙ 詳細設定...",
-            font=("Yu Gothic UI", 8, "underline"), fg="#1976D2",
+            font=(UI_FONT, get_ui_font_size(8), "underline"), fg="#1976D2",
             bg=SECTION_BG, cursor="hand2", anchor=tk.E,
         )
         self._link_detailed_settings.pack(fill=tk.X, pady=(0, 2))
@@ -573,7 +579,7 @@ class SaitenSamuraiGUI:
         step2_run_row.pack(fill=tk.X, pady=(3, 5))
         self._btn_run_scoring = tk.Button(step2_run_row, text="▶ 採点済み答案を生成", command=self.run_scoring, bg=BTN_BLUE, **BTN_STYLE)
         self._btn_run_scoring.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self.open_scored_btn = tk.Button(step2_run_row, text="📁", command=self.open_scored_folder, bg=BTN_GRAY, relief=tk.FLAT, state=tk.DISABLED, width=3, font=("Yu Gothic UI", 10))
+        self.open_scored_btn = tk.Button(step2_run_row, text="📁", command=self.open_scored_folder, bg=BTN_GRAY, relief=tk.FLAT, state=tk.DISABLED, width=3, font=(UI_FONT, get_ui_font_size(10)))
         self.open_scored_btn.pack(side=tk.LEFT, padx=(3, 0), fill=tk.Y)
 
         # Step 3: サマリー
@@ -585,14 +591,14 @@ class SaitenSamuraiGUI:
         tk.Checkbutton(
             step3, text="氏名画像を集計シートに表示する",
             variable=self.name_trim_enabled, bg=SECTION_BG,
-            font=("Yu Gothic UI", 8), anchor=tk.W, cursor="hand2"
+            font=(UI_FONT, get_ui_font_size(8)), anchor=tk.W, cursor="hand2"
         ).pack(fill=tk.X, pady=(0, 3))
 
         # 記述採点を分析に含むチェックボックス（記述ON時のみ表示）
         self._chk_include_desc_analysis = tk.Checkbutton(
             step3, text="記述採点の結果を分析ファイルに含む",
             variable=self.include_descriptive_in_analysis, bg=SECTION_BG,
-            font=("Yu Gothic UI", 8), anchor=tk.W, cursor="hand2"
+            font=(UI_FONT, get_ui_font_size(8)), anchor=tk.W, cursor="hand2"
         )
         # 記述のみモードではON固定で表示、マーク＋記述では表示
         if self.app_mode == MODE_DESCRIPTIVE_ONLY:
@@ -608,7 +614,7 @@ class SaitenSamuraiGUI:
         self._step3_run_row.pack(fill=tk.X, pady=5)
         self._btn_run_summary = tk.Button(self._step3_run_row, text="▶ 集計実行", command=self.run_summary_generation, bg=BTN_AMBER, font=FONT_BOLD, height=2, relief=tk.FLAT, cursor="hand2")
         self._btn_run_summary.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self.open_results_btn = tk.Button(self._step3_run_row, text="📁", command=self.open_results_folder, bg=BTN_GRAY, relief=tk.FLAT, state=tk.DISABLED, width=3, font=("Yu Gothic UI", 10))
+        self.open_results_btn = tk.Button(self._step3_run_row, text="📁", command=self.open_results_folder, bg=BTN_GRAY, relief=tk.FLAT, state=tk.DISABLED, width=3, font=(UI_FONT, get_ui_font_size(10)))
         self.open_results_btn.pack(side=tk.LEFT, padx=(3, 0), fill=tk.Y)
 
         # --- 初期化完了後の処理 ---
@@ -1020,20 +1026,17 @@ class SaitenSamuraiGUI:
     def open_boxed_folder(self):
         """枠描画結果フォルダを開く"""
         if self.last_boxed_folder and Path(self.last_boxed_folder).exists():
-            import subprocess
-            subprocess.Popen(['explorer', str(self.last_boxed_folder)])
-    
+            open_in_file_manager(self.last_boxed_folder)
+
     def open_scored_folder(self):
         """採点結果フォルダを開く"""
         if self.last_scored_folder and Path(self.last_scored_folder).exists():
-            import subprocess
-            subprocess.Popen(['explorer', str(self.last_scored_folder)])
-    
+            open_in_file_manager(self.last_scored_folder)
+
     def open_results_folder(self):
         """集計結果フォルダ(_saiten_grading_results)を開く"""
         if self.last_results_folder and Path(self.last_results_folder).exists():
-            import subprocess
-            subprocess.Popen(['explorer', str(self.last_results_folder)])
+            open_in_file_manager(self.last_results_folder)
     
     def log_message(self, message, replace_last=False):
         """
@@ -1750,7 +1753,7 @@ class SaitenSamuraiGUI:
             text=f"{len(broken_items)} 件のパスが見つかりません。\n"
                  "修復したい項目は「参照...」ボタンでファイルを選択してください。\n"
                  "未修復の項目はスキップされます。",
-            font=("Yu Gothic UI", 9),
+            font=(UI_FONT, get_ui_font_size(9)),
             justify=tk.LEFT, padx=15, pady=10,
         ).pack(fill=tk.X)
 
@@ -1764,13 +1767,13 @@ class SaitenSamuraiGUI:
             row = tk.Frame(list_frame)
             row.pack(fill=tk.X, pady=3)
 
-            tk.Label(row, text=f"・{desc}", font=("Yu Gothic UI", 9, "bold"),
+            tk.Label(row, text=f"・{desc}", font=(UI_FONT, get_ui_font_size(9), "bold"),
                      anchor=tk.W, width=22).pack(side=tk.LEFT)
 
             path_var = tk.StringVar(dialog, value="(未設定)")
             path_vars[key] = (path_var, var, ftypes, desc, expected)
 
-            entry = tk.Entry(row, textvariable=path_var, font=("Yu Gothic UI", 8),
+            entry = tk.Entry(row, textvariable=path_var, font=(UI_FONT, get_ui_font_size(8)),
                              bg="#F9F9F9", relief=tk.FLAT, state="readonly", width=40)
             entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 5))
 
@@ -1785,7 +1788,7 @@ class SaitenSamuraiGUI:
                     pv.set(selected)
 
             tk.Button(row, text="参照...", command=_browse,
-                      font=("Yu Gothic UI", 8), bg="#EEEEEE",
+                      font=(UI_FONT, get_ui_font_size(8)), bg="#EEEEEE",
                       relief=tk.FLAT, width=6, cursor="hand2").pack(side=tk.LEFT)
 
         # ボタン行
@@ -1801,10 +1804,10 @@ class SaitenSamuraiGUI:
             dialog.destroy()
 
         tk.Button(btn_frame, text="復元する", command=_on_accept,
-                  bg="#A5D6A7", font=("Yu Gothic UI", 9, "bold"),
+                  bg="#A5D6A7", font=(UI_FONT, get_ui_font_size(9), "bold"),
                   relief=tk.FLAT, cursor="hand2", width=12).pack(side=tk.LEFT, padx=(0, 10))
         tk.Button(btn_frame, text="中断", command=_on_cancel,
-                  bg="#EEEEEE", font=("Yu Gothic UI", 9),
+                  bg="#EEEEEE", font=(UI_FONT, get_ui_font_size(9)),
                   relief=tk.FLAT, cursor="hand2", width=8).pack(side=tk.LEFT)
 
         # ダイアログを中央に配置
@@ -2265,7 +2268,7 @@ class SaitenSamuraiGUI:
         tk.Label(
             dialog,
             text="既に記述問題の設定が存在します。\nどの操作を行いますか？",
-            font=("Yu Gothic UI", 10),
+            font=(UI_FONT, get_ui_font_size(10)),
             justify=tk.LEFT, padx=20, pady=15,
         ).pack(fill=tk.X)
 
@@ -2279,19 +2282,19 @@ class SaitenSamuraiGUI:
         tk.Button(
             btn_frame, text="設定を続行（問題を追加）",
             command=lambda: choose("continue"),
-            bg="#A5D6A7", font=("Yu Gothic UI", 9, "bold"),
+            bg="#A5D6A7", font=(UI_FONT, get_ui_font_size(9), "bold"),
             relief=tk.FLAT, cursor="hand2", height=2,
         ).pack(fill=tk.X, pady=2)
         tk.Button(
             btn_frame, text="🗑 既存設定を初期化",
             command=lambda: choose("reset"),
-            bg="#FFCDD2", font=("Yu Gothic UI", 9),
+            bg="#FFCDD2", font=(UI_FONT, get_ui_font_size(9)),
             relief=tk.FLAT, cursor="hand2", height=2,
         ).pack(fill=tk.X, pady=2)
         tk.Button(
             btn_frame, text="キャンセル",
             command=lambda: choose("cancel"),
-            bg="#EEEEEE", font=("Yu Gothic UI", 9),
+            bg="#EEEEEE", font=(UI_FONT, get_ui_font_size(9)),
             relief=tk.FLAT, cursor="hand2",
         ).pack(fill=tk.X, pady=2)
 
@@ -2807,7 +2810,7 @@ class SaitenSamuraiGUI:
             done_frame.pack(fill=tk.X)
             tk.Label(
                 done_frame, text="✅ " + completion_summary,
-                font=("Yu Gothic UI", 9), fg="#2E7D32", bg="#E8F5E9",
+                font=(UI_FONT, get_ui_font_size(9)), fg="#2E7D32", bg="#E8F5E9",
                 justify=tk.LEFT, wraplength=480,
             ).pack(anchor=tk.W)
 
@@ -2816,7 +2819,7 @@ class SaitenSamuraiGUI:
         header_frame.pack(fill=tk.X)
         tk.Label(
             header_frame, text="⚠️ 正答・配点の入力が必要です",
-            font=("Yu Gothic UI", 14, "bold"), fg="#F57F17", bg="#FFF9C4",
+            font=(UI_FONT, get_ui_font_size(14), "bold"), fg="#F57F17", bg="#FFF9C4",
         ).pack(anchor=tk.W)
 
         # 本文
@@ -2830,7 +2833,7 @@ class SaitenSamuraiGUI:
         ]
         tk.Label(
             body_frame, text="\n".join(msg_lines),
-            font=("Yu Gothic UI", 10), fg="#333333", bg="#FFFDE7",
+            font=(UI_FONT, get_ui_font_size(10)), fg="#333333", bg="#FFFDE7",
             justify=tk.LEFT, wraplength=420,
         ).pack(anchor=tk.W)
 
@@ -2848,7 +2851,7 @@ class SaitenSamuraiGUI:
         for step in steps:
             tk.Label(
                 steps_frame, text=step,
-                font=("Yu Gothic UI", 10), fg="#333333", bg="#FFF8E1",
+                font=(UI_FONT, get_ui_font_size(10)), fg="#333333", bg="#FFF8E1",
                 anchor=tk.W,
             ).pack(anchor=tk.W, pady=1)
 
@@ -2857,10 +2860,9 @@ class SaitenSamuraiGUI:
         btn_frame.pack(fill=tk.X)
 
         def _open_folder():
-            import subprocess
             try:
                 folder_path = str(Path(results_data_folder).resolve())
-                subprocess.Popen(['explorer', folder_path])
+                open_in_file_manager(folder_path)
             except Exception as e:
                 self.log_message(f"フォルダを開けませんでした: {e}")
             # フォルダを開く → テンプレートパスを自動設定
@@ -2875,7 +2877,7 @@ class SaitenSamuraiGUI:
         tk.Button(
             btn_frame, text="📂 フォルダを開いて編集する",
             command=_open_folder,
-            font=("Yu Gothic UI", 11, "bold"), bg="#FFD54F", fg="#333333",
+            font=(UI_FONT, get_ui_font_size(11), "bold"), bg="#FFD54F", fg="#333333",
             activebackground="#FFC107", relief=tk.FLAT, cursor="hand2",
             padx=20, pady=8,
         ).pack(side=tk.LEFT, padx=(0, 10))
@@ -2883,7 +2885,7 @@ class SaitenSamuraiGUI:
         tk.Button(
             btn_frame, text="後で入力する",
             command=_close,
-            font=("Yu Gothic UI", 10), bg="#EEEEEE", fg="#666666",
+            font=(UI_FONT, get_ui_font_size(10)), bg="#EEEEEE", fg="#666666",
             relief=tk.FLAT, cursor="hand2",
             padx=15, pady=8,
         ).pack(side=tk.LEFT)

@@ -12,10 +12,12 @@ tests/gui_captures/ に出力し、gui_captures_index.html で一覧表示する
 from __future__ import annotations
 
 import ctypes
-import ctypes.wintypes as wintypes
 import json
 import os
 import sys
+
+if sys.platform == "win32":
+    import ctypes.wintypes as wintypes
 import tempfile
 import time
 import tkinter as tk
@@ -78,21 +80,22 @@ pytestmark = [
 # Win32 PrintWindow ベース キャプチャ
 # ============================================================
 
-class BITMAPINFOHEADER(ctypes.Structure):
-    """Win32 BITMAPINFOHEADER 構造体"""
-    _fields_ = [
-        ("biSize", wintypes.DWORD),
-        ("biWidth", ctypes.c_long),
-        ("biHeight", ctypes.c_long),
-        ("biPlanes", wintypes.WORD),
-        ("biBitCount", wintypes.WORD),
-        ("biCompression", wintypes.DWORD),
-        ("biSizeImage", wintypes.DWORD),
-        ("biXPelsPerMeter", ctypes.c_long),
-        ("biYPelsPerMeter", ctypes.c_long),
-        ("biClrUsed", wintypes.DWORD),
-        ("biClrImportant", wintypes.DWORD),
-    ]
+if sys.platform == "win32":
+    class BITMAPINFOHEADER(ctypes.Structure):
+        """Win32 BITMAPINFOHEADER 構造体"""
+        _fields_ = [
+            ("biSize", wintypes.DWORD),
+            ("biWidth", ctypes.c_long),
+            ("biHeight", ctypes.c_long),
+            ("biPlanes", wintypes.WORD),
+            ("biBitCount", wintypes.WORD),
+            ("biCompression", wintypes.DWORD),
+            ("biSizeImage", wintypes.DWORD),
+            ("biXPelsPerMeter", ctypes.c_long),
+            ("biYPelsPerMeter", ctypes.c_long),
+            ("biClrUsed", wintypes.DWORD),
+            ("biClrImportant", wintypes.DWORD),
+        ]
 
 
 def _get_hwnd(widget: tk.Wm) -> Optional[int]:

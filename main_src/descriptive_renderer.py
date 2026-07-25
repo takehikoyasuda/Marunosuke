@@ -16,7 +16,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from scoring_engine import number_to_circled
-from constants import get_rendering_settings, DESCRIPTIVE_OVERLAY_OPACITY
+from constants import get_rendering_settings, DESCRIPTIVE_OVERLAY_OPACITY, get_cjk_font_path
 
 logger = logging.getLogger(__name__)
 
@@ -43,11 +43,12 @@ _font_cache: dict[int, ImageFont.FreeTypeFont] = {}
 
 
 def _get_font(size: int):
-    """MS Gothicフォントを取得（キャッシュ付き）。失敗時はデフォルトフォント。"""
+    """日本語フォントを取得（キャッシュ付き）。失敗時はデフォルトフォント。"""
     font = _font_cache.get(size)
     if font is None:
         try:
-            font = ImageFont.truetype("C:/Windows/Fonts/msgothic.ttc", size)
+            font_path, font_index = get_cjk_font_path()
+            font = ImageFont.truetype(font_path, size, index=font_index)
         except Exception:
             font = ImageFont.load_default()
         _font_cache[size] = font

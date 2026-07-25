@@ -17,6 +17,7 @@ build/
 venv/
 venv_build/
 .venv/
+.venv-mac/
 env/
 
 # --- IDE / Editor ---
@@ -109,3 +110,6 @@ persona_audit_report.md
 .Rhistory
 # 動作確認用スクリーンショット（リポジトリ直下のみ）
 /image.png
+
+# --- Mac移植の参考資料 (外部サイトのミラー保存、ローカル参照用) ---
+/reference/
