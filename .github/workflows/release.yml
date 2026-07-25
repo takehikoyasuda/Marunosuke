@@ -93,11 +93,11 @@ jobs:
 
             ### 免責事項
 
-            本ソフトウェアは「現状有姿（AS IS）」で提供されます。採点結果や成績データの正確性について、開発者はいかなる保証も行いません。**成績処理に使用する場合は、必ずご自身の目で結果を確認してください。** 詳細は[免責事項ページ](https://takehikoyasuda.github.io/SaitenSamurai-mac/disclaimer/)をご確認ください。
+            本ソフトウェアは「現状有姿（AS IS）」で提供されます。採点結果や成績データの正確性について、開発者はいかなる保証も行いません。**成績処理に使用する場合は、必ずご自身の目で結果を確認してください。** 詳細は[免責事項ページ（Windows版）](https://phys-ken.github.io/SaitenSamurai/disclaimer/)をご確認ください。
 
             ---
 
-            :book: [ドキュメント](https://takehikoyasuda.github.io/SaitenSamurai-mac/) | :beetle: [バグ報告](https://github.com/takehikoyasuda/SaitenSamurai-mac/issues)
+            :book: [ドキュメント（Windows版）](https://phys-ken.github.io/SaitenSamurai/) | :beetle: [バグ報告](https://github.com/takehikoyasuda/SaitenSamurai-mac/issues)
           draft: false
           # タグ名にハイフンを含む場合(例: v4.6.0-beta.1)はPre-releaseとして公開する。
           # Pre-releaseは /releases/latest に含まれず、一般ユーザーの導線に影響しない

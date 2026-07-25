@@ -21,8 +21,8 @@
 ## 開発環境のセットアップ
 
 ```bash
-git clone https://github.com/phys-ken/SaitenSamurai.git
-cd SaitenSamurai
+git clone https://github.com/takehikoyasuda/SaitenSamurai-mac.git
+cd SaitenSamurai-mac
 pip install -r requirements.txt
 ```
 
@@ -478,7 +478,9 @@ PyMuPDF, matplotlib, reportlab はオプション扱いです。
 
 ---
 
-## exe ビルド
+## exe ビルド（Windows 向け）
+
+> **macOS 向けパッケージについて**: 以下は Windows 版 exe のビルド手順です。macOS 向けの単体アプリ配布は現状未対応で、`python main_src/saitensamurai.py` でのソース実行のみとなります。
 
 ### ビルド手順
 

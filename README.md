@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://takehikoyasuda.github.io/SaitenSamurai-mac/">
-    <img src="https://img.shields.io/badge/%E3%83%89%E3%82%AD%E3%83%A5%E3%83%A1%E3%83%B3%E3%83%88-takehikoyasuda.github.io-F5921B?style=for-the-badge" alt="ドキュメント">
+  <a href="https://phys-ken.github.io/SaitenSamurai/">
+    <img src="https://img.shields.io/badge/%E3%83%89%E3%82%AD%E3%83%A5%E3%83%A1%E3%83%B3%E3%83%88-Windows%E7%89%88-F5921B?style=for-the-badge" alt="ドキュメント (Windows版)">
   </a>
   <a href="LICENSE">
     <img src="https://img.shields.io/github/license/takehikoyasuda/SaitenSamurai-mac?style=for-the-badge&color=gray" alt="License">
@@ -22,7 +22,7 @@
 > **本フォークは開発初期段階です**
 > 現時点では起動して基本的な操作ができることを確認した段階であり、すべての機能・異常系を隅々まで検証したわけではありません。成績処理など実際の業務にお使いになる場合は、必ずご自身の目で結果を確認してください。
 >
-> また、README・ドキュメントサイト・コード内コメントなどに、移植元（Windows 版）の説明がそのまま残っている箇所がある可能性があります。実際の挙動と記載内容が食い違う場合はお知らせいただけると助かります。
+> また、README・コード内コメントなどに、移植元（Windows 版）の説明がそのまま残っている箇所がある可能性があります。実際の挙動と記載内容が食い違う場合はお知らせいただけると助かります。
 >
 > 本フォークの開発には Anthropic の Claude（Claude Code）を活用しています。
 
@@ -33,17 +33,9 @@
 
 ## :book: ドキュメント
 
-使い方・FAQ・免責事項など、すべての情報は **ドキュメントサイト** にまとまっています（一部ページはオリジナル版 (Windows) の内容のままです）。
+本フォークでは Mac 専用のドキュメントサイトは公開していません（Mac 版の変更を追いかけて逐一更新するのが大変なため）。使い方・機能一覧・FAQ・免責事項などの詳細は、フォーク元（**Windows 版**）のドキュメントサイトをご覧ください。操作方法や画面の考え方はほぼ共通です。
 
-### **:point_right: [https://takehikoyasuda.github.io/SaitenSamurai-mac/](https://takehikoyasuda.github.io/SaitenSamurai-mac/)**
-
-| ページ | 内容 |
-|---|---|
-| [クイックスタート](https://takehikoyasuda.github.io/SaitenSamurai-mac/quickstart/) | 5 分で最初の採点を体験 |
-| [機能一覧](https://takehikoyasuda.github.io/SaitenSamurai-mac/features/) | すべての機能を一覧で確認 |
-| [使い方ガイド](https://takehikoyasuda.github.io/SaitenSamurai-mac/usage/mark/) | 各採点モードの詳細な操作方法 |
-| [よくある質問](https://takehikoyasuda.github.io/SaitenSamurai-mac/faq/) | トラブルシューティング |
-| [免責事項](https://takehikoyasuda.github.io/SaitenSamurai-mac/disclaimer/) | 利用上の注意 |
+### **:point_right: [https://phys-ken.github.io/SaitenSamurai/](https://phys-ken.github.io/SaitenSamurai/)**（Windows 版の説明です）
 
 ---
 
@@ -97,7 +89,7 @@
 
 ## クイックスタート
 
-詳しい使い方は **[ドキュメントサイト](https://takehikoyasuda.github.io/SaitenSamurai-mac/)** をご覧ください。
+詳しい使い方は **[ドキュメントサイト（Windows 版）](https://phys-ken.github.io/SaitenSamurai/)** をご覧ください。
 
 ### ソースから実行
 
@@ -112,7 +104,7 @@ python main_src/saitensamurai.py
 
 ## 開発者向け
 
-開発環境のセットアップ、モジュール構成、テストの実行方法については [開発ガイド](https://takehikoyasuda.github.io/SaitenSamurai-mac/development/) をご覧ください（[DEVELOPMENT.md](DEVELOPMENT.md) と同内容です）。
+開発環境のセットアップ、モジュール構成、テストの実行方法については [DEVELOPMENT.md](DEVELOPMENT.md) をご覧ください。
 
 ---
 
