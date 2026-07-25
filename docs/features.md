@@ -44,7 +44,7 @@ Mark2 座標ファイルに基づき、OMR（光学マーク認識）でマー�
 
 !!! warning "数学マーク採点はβ版です（v4.7.0-beta 系）"
     仕様が変わる可能性があります。成績処理に使用する場合は、必ず採点結果をご自身の目で確認してください。
-    不具合は [Issues](https://github.com/phys-ken/SaitenSamurai/issues) へお知らせください。
+    不具合は [Issues](https://github.com/takehikoyasuda/SaitenSamurai-mac/issues) へお知らせください。
 
 ### 数学マーク採点（β）の概要
 

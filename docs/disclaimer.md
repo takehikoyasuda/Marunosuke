@@ -55,15 +55,15 @@
 
 本ソフトウェアは **GNU General Public License v3.0（GPL-3.0）** に基づいて公開されています。
 
-ライセンスの全文は [LICENSE ファイル](https://github.com/phys-ken/SaitenSamurai/blob/main/LICENSE) をご確認ください。
+ライセンスの全文は [LICENSE ファイル](https://github.com/takehikoyasuda/SaitenSamurai-mac/blob/main/LICENSE) をご確認ください。
 
-利用している外部ライブラリのライセンスについては、[THIRDPARTYLICENSES.md](https://github.com/phys-ken/SaitenSamurai/blob/main/THIRDPARTYLICENSES.md) をご確認ください。
+利用している外部ライブラリのライセンスについては、[THIRDPARTYLICENSES.md](https://github.com/takehikoyasuda/SaitenSamurai-mac/blob/main/THIRDPARTYLICENSES.md) をご確認ください。
 
 ---
 
 ## お問い合わせ
 
-バグ報告や機能要望は、[GitHub Issues](https://github.com/phys-ken/SaitenSamurai/issues) にてお願いします。
+バグ報告や機能要望は、[GitHub Issues](https://github.com/takehikoyasuda/SaitenSamurai-mac/issues) にてお願いします。
 
 ただし、すべての報告に対応できるとは限りません。あらかじめご了承ください。
 

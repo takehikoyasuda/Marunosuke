@@ -1,11 +1,11 @@
-site_name: 採点侍 — SaitenSamurai
-site_description: 普通紙マークシート＆記述式採点を、これ1本で。Windows向けフリーソフト。
-site_author: phys-ken
-site_url: https://phys-ken.github.io/SaitenSamurai/
-repo_url: https://github.com/phys-ken/SaitenSamurai
-repo_name: phys-ken/SaitenSamurai
+site_name: 採点侍 — SaitenSamurai (Mac版)
+site_description: 普通紙マークシート＆記述式採点を、これ1本で。macOS向けフリーソフト（phys-ken/SaitenSamurai のフォーク）。
+site_author: Takehiko Yasuda
+site_url: https://takehikoyasuda.github.io/SaitenSamurai-mac/
+repo_url: https://github.com/takehikoyasuda/SaitenSamurai-mac
+repo_name: takehikoyasuda/SaitenSamurai-mac
 
-copyright: "&copy; 2025-2026 phys-ken &mdash; GPL-3.0 License"
+copyright: "&copy; 2025-2026 phys-ken (original) / Takehiko Yasuda (Mac port) &mdash; GPL-3.0 License"
 
 theme:
   name: material
@@ -71,13 +71,12 @@ extra_css:
   - stylesheets/extra.css
 
 extra:
-  analytics:
-    provider: google
-    property: G-LWBZHSGT4R
+  # Google Analytics はフォーク元 (phys-ken) のプロパティだったため削除。
+  # 自前のプロパティを使う場合は provider/property を設定する。
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/phys-ken
-      name: phys-ken on GitHub
+      link: https://github.com/takehikoyasuda
+      name: takehikoyasuda on GitHub
   generator: false
 
 plugins:

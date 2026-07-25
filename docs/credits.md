@@ -11,10 +11,20 @@
 
 ### phys-ken
 
-採点侍（SaitenSamurai）および採点斬り 2021 の開発者。
+採点侍（SaitenSamurai）および採点斬り 2021 のオリジナル開発者（Windows 向け）。本フォークは氏の [phys-ken/SaitenSamurai](https://github.com/phys-ken/SaitenSamurai)（GPL-3.0）を macOS 向けに移植したものです。
 
 :material-web: [https://phys-ken.github.io/phys-ken/](https://phys-ken.github.io/phys-ken/)  
 :material-github: [https://github.com/phys-ken](https://github.com/phys-ken)
+
+</div>
+
+<div class="feature-card" markdown>
+
+### Takehiko Yasuda
+
+本フォーク（[SaitenSamurai-mac](https://github.com/takehikoyasuda/SaitenSamurai-mac)）の macOS 対応。
+
+:material-github: [https://github.com/takehikoyasuda](https://github.com/takehikoyasuda)
 
 </div>
 
@@ -95,4 +105,4 @@
 | ReportLab | BSD 3-Clause | CTT PDF レポート |
 | PyInstaller | GPL-2.0+（Bootloader Exception 付） | exe ビルド |
 
-詳細は [THIRDPARTYLICENSES.md](https://github.com/phys-ken/SaitenSamurai/blob/main/THIRDPARTYLICENSES.md) をご確認ください。
+詳細は [THIRDPARTYLICENSES.md](https://github.com/takehikoyasuda/SaitenSamurai-mac/blob/main/THIRDPARTYLICENSES.md) をご確認ください。

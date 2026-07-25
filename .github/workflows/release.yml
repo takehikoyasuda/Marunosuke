@@ -1,17 +1,22 @@
 # ==================================================
 # Release — exe ビルド & GitHub Release 作成
 # ==================================================
-# v* タグ (例: v4.1) を push すると自動で:
+# 手動実行 (workflow_dispatch) で:
 #   1. Windows 上で exe をビルド
 #   2. GitHub Release を作成
 #   3. exe をリリースアセットとしてアップロード
+#
+# 本フォーク (Mac版) では現状 macOS 向けパッケージ配布に対応していないため、
+# タグ push による自動リリースは無効化している。Windows 版 exe が必要な場合のみ手動実行する。
 
 name: Build & Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "リリースするタグ名 (例: v4.7.0)"
+        required: true
 
 permissions:
   contents: write
@@ -21,6 +26,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.tag }}
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -61,9 +68,9 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          name: "採点侍 ${{ github.ref_name }}"
+          name: "採点侍 ${{ github.event.inputs.tag }}"
           body: |
-            ## 採点侍 ${{ github.ref_name }}
+            ## 採点侍 ${{ github.event.inputs.tag }}
 
             ### ダウンロード
 
@@ -86,13 +93,13 @@ jobs:
 
             ### 免責事項
 
-            本ソフトウェアは「現状有姿（AS IS）」で提供されます。採点結果や成績データの正確性について、開発者はいかなる保証も行いません。**成績処理に使用する場合は、必ずご自身の目で結果を確認してください。** 詳細は[免責事項ページ](https://phys-ken.github.io/SaitenSamurai/disclaimer/)をご確認ください。
+            本ソフトウェアは「現状有姿（AS IS）」で提供されます。採点結果や成績データの正確性について、開発者はいかなる保証も行いません。**成績処理に使用する場合は、必ずご自身の目で結果を確認してください。** 詳細は[免責事項ページ](https://takehikoyasuda.github.io/SaitenSamurai-mac/disclaimer/)をご確認ください。
 
             ---
 
-            :book: [ドキュメント](https://phys-ken.github.io/SaitenSamurai/) | :beetle: [バグ報告](https://github.com/phys-ken/SaitenSamurai/issues)
+            :book: [ドキュメント](https://takehikoyasuda.github.io/SaitenSamurai-mac/) | :beetle: [バグ報告](https://github.com/takehikoyasuda/SaitenSamurai-mac/issues)
           draft: false
           # タグ名にハイフンを含む場合(例: v4.6.0-beta.1)はPre-releaseとして公開する。
           # Pre-releaseは /releases/latest に含まれず、一般ユーザーの導線に影響しない
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(github.event.inputs.tag, '-') }}
           files: dist/${{ steps.exe-name.outputs.EXE_NAME }}

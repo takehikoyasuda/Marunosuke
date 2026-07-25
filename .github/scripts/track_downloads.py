@@ -16,7 +16,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 # ─── 設定 ───────────────────────────────────────────────
-REPO = os.environ.get("GITHUB_REPOSITORY", "phys-ken/SaitenSamurai")
+REPO = os.environ.get("GITHUB_REPOSITORY", "takehikoyasuda/SaitenSamurai-mac")
 CSV_PATH = Path(__file__).resolve().parent.parent / "download_stats" / "downloads.csv"
 JST = timezone(timedelta(hours=9))
 # ────────────────────────────────────────────────────────

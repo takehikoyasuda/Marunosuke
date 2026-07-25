@@ -7,16 +7,28 @@ hide:
 
 ![採点侍ロゴ](images/samurai.png){ .hero-logo }
 
-# 採点侍 — SaitenSamurai
+# 採点侍 — SaitenSamurai (Mac版)
 
 <p class="tagline">
 普通紙マークシート採点 ＆ 記述式採点を、<strong>これ1本で。</strong><br>
-教員による教員のための、Windows向け無料採点支援ソフトウェアです。
+教員による教員のための、macOS向け無料採点支援ソフトウェアです。
 </p>
 
-[ダウンロード (Windows)](download.md){ .btn-download }
+[はじめる](quickstart.md){ .btn-download }
 
 </div>
+
+---
+
+!!! warning "本フォークは開発初期段階です"
+    現時点では起動して基本的な操作ができることを確認した段階であり、すべての機能・異常系を隅々まで検証したわけではありません。成績処理など実際の業務にお使いになる場合は、必ずご自身の目で結果を確認してください。
+
+    また、本サイトやコード内コメントに、移植元（Windows 版）の説明がそのまま残っている箇所がある可能性があります。実際の挙動と記載内容が食い違う場合はお知らせいただけると助かります。
+
+    本フォークの開発には Anthropic の Claude（Claude Code）を活用しています。
+
+!!! info "本サイトについて"
+    本ソフトウェアは、phys-ken 氏が開発・公開している Windows 向け採点支援ソフト **[採点侍 SaitenSamurai](https://github.com/phys-ken/SaitenSamurai)**（GPL-3.0）を fork し、macOS 上で動作するように移植したものです。採点ロジックや機能そのものはオリジナル版を踏襲しています。Windows でご利用の方はオリジナル版をご利用ください。
 
 ---
 
@@ -71,6 +83,7 @@ Mark2 形式のマークシートを自動で読み取り・採点します。�
 - **CTT 分析** — 古典的テスト理論（α係数・P値・D値・I-T相関）を自動算出し、PDF レポートとして出力します。
 - **Excel 一括出力** — 生徒別の成績サマリー・試験統計・採点済み答案画像（○×マーク付き）を自動生成します。
 - **セッション保存** — 作業途中の状態を保存し、後から再開できます。
+- **クロスプラットフォーム対応** — macOS の日本語フォント・ファイル操作に対応しています。
 
 ---
 
@@ -78,8 +91,8 @@ Mark2 形式のマークシートを自動で読み取り・採点します。�
 
 | 項目 | 要件 |
 |---|---|
-| **OS** | **Windows 11**（動作確認済み） |
-| **必要なもの** | SaitenSamurai.exe のみ（インストール不要） |
+| **OS** | **macOS**（Apple Silicon / Intel、動作確認中） |
+| **実行方法** | Python 3.9 以上のソースから実行（単体アプリの配布は未対応） |
 | **スキャン画像** | JPEG / PNG / PDF に対応 |
 
 !!! info "テスト用サンプル付き"
@@ -89,7 +102,7 @@ Mark2 形式のマークシートを自動で読み取り・採点します。�
 
 ## はじめる
 
-1. **[ダウンロード](download.md)** — GitHub Releases から最新の exe をダウンロード
+1. **[ダウンロード](download.md)** — ソースコードの取得方法
 2. **[解答用紙の準備](preparation.md)** — モード別の解答用紙の作り方
 3. **[クイックスタート](quickstart.md)** — 最初の採点を 5 分で体験
 4. **[使い方ガイド](usage/mark.md)** — 各モードの詳しい操作方法
@@ -100,6 +113,7 @@ Mark2 形式のマークシートを自動で読み取り・採点します。�
 
 採点侍の開発にあたり、以下のソフトウェアを参考にしています。
 
+- **[phys-ken/SaitenSamurai](https://github.com/phys-ken/SaitenSamurai)**（phys-ken 氏） — 本フォークの元になったオリジナル版（Windows 向け）です。
 - **[採点斬り](https://web.archive.org/web/20160625063811/http://www.nurs.or.jp/~lionfan/freesoft_49.html)**（島守睦美 氏） — 「答案をスキャナで読み込み、問題ごとに切り出して採点する」というコンセプトの元祖です。
 - **[MarkScan](https://markscan.sakuraweb.com/)** （神奈川県教育委員会） — マークシート処理ソフト。教員として実際に使用し、操作フローを参考にしました。
 - **[Mark2](https://mark2.sfc.keio.ac.jp/ja/)** （慶應義塾大学 SFC 研究所） — マークシートの座標系と OMR ロジックの技術基盤として利用しています。
@@ -110,5 +124,5 @@ Mark2 形式のマークシートを自動で読み取り・採点します。�
 ---
 
 <div style="text-align: center; margin-top: 2em; color: #999; font-size: 0.85em;">
-採点侍は <a href="https://github.com/phys-ken">phys-ken</a> が開発する GPL-3.0 ライセンスのオープンソースソフトウェアです。
+採点侍は <a href="https://github.com/phys-ken">phys-ken</a> が開発する GPL-3.0 ライセンスのオープンソースソフトウェアです（Mac対応: <a href="https://github.com/takehikoyasuda">Takehiko Yasuda</a>）。
 </div>

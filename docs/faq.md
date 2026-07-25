@@ -4,21 +4,18 @@
 
 ## ダウンロード・起動
 
-??? question "Windows SmartScreen の警告が出ます"
-    個人開発のフリーソフトは、コード署名証明書を持たないため、Windows SmartScreen が警告を表示するのは正常な動作です。
+??? question "`pip install -r requirements.txt` でエラーが出ます"
+    Python のバージョンが古い可能性があります。Python 3.9 以上を使用してください。
 
-    **「詳細情報」→「実行」** をクリックすることで起動できます。
+    それでも解決しない場合は、仮想環境（`venv` など）を作り直してから再度インストールしてみてください。
 
-??? question "exe ファイルをダブルクリックしても起動しません"
-    アンチウイルスソフトに誤検出されている可能性があります。
-    
-    - アンチウイルスの除外設定に `SaitenSamurai.exe` を追加してください
-    - それでも解決しない場合は、Python 環境から直接実行する方法もあります
+??? question "起動時に日本語が文字化けします"
+    macOS に日本語フォント（ヒラギノ角ゴシック等）がインストールされているか確認してください。通常はプリインストールされています。
 
-??? question "Mac や Linux で使えますか？"
-    現在、配布している exe は **Windows 11** 向けです。
-    
-    Python 3.9+ がインストールされている環境であれば、ソースコードから直接実行できる可能性があります。ただし、動作確認は Windows のみで行っています。
+    Excel 出力やグラフの文字化けが起きる場合は、[main_src/constants.py](https://github.com/takehikoyasuda/SaitenSamurai-mac/blob/main/main_src/constants.py) のフォント検出処理をご確認ください。
+
+??? question "Windows で使えますか？"
+    本フォークは macOS 向けの移植版です。Windows でご利用の方は、フォーク元の [phys-ken/SaitenSamurai](https://github.com/phys-ken/SaitenSamurai) をご利用ください。
 
 ---
 
@@ -136,7 +133,7 @@
 
     **方法 1: 起動時に「採点再開」を選ぶ（最も簡単）**
 
-    1. `SaitenSamurai.exe` を起動
+    1. `python main_src/saitensamurai.py` で起動
     2. モード選択画面の下にある **「📂 採点再開（セッション復元）」** ボタンをクリック
     3. 前回のセッションファイル（`session_state.json`）を選択
     4. 前回の続きから自動的に復元されます
