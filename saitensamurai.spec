@@ -35,6 +35,7 @@ a = Analysis(
     datas=[
         ('resources/icon.ico', 'resources'),
         ('resources/samurai.png', 'resources'),
+        ('resources/digit_classifier.joblib', 'resources'),
     ] + _sklearn_datas + _joblib_datas,
     hiddenimports=[
         # エントリポイント (遅延インポートで使われる)
@@ -55,6 +56,14 @@ a = Analysis(
         'descriptive_renderer',
         'name_trimmer',
         'r_export',
+        'roster_loader',
+        'student_id_ocr',
+        'student_id_review_gui',
+        'digit_ocr_preprocessing',
+        'digit_ocr_recognizer',
+        'id_area_config',
+        'id_area_config_gui',
+        'page_number_checker',
         # オプショナル依存 (exe には含める)
         'fitz',
         'matplotlib',
