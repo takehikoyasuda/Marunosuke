@@ -635,6 +635,20 @@ class SaitenSamuraiGUI:
         self.open_results_btn = tk.Button(self._step3_run_row, text="📁", command=self.open_results_folder, bg=BTN_GRAY, relief=tk.FLAT, state=tk.DISABLED, width=3, font=(UI_FONT, get_ui_font_size(10)))
         self.open_results_btn.pack(side=tk.LEFT, padx=(3, 0), fill=tk.Y)
 
+        # --- 複数ページ統合（既存の集計Excel同士を学籍番号で統合する単発ツール） ---
+        self._btn_multi_page_merge = tk.Button(
+            step3, text="🔗 複数ページ統合", command=self.run_multi_page_merge,
+            bg=BTN_GRAY, relief=tk.FLAT, font=FONT_NORMAL,
+        )
+        self._btn_multi_page_merge.pack(fill=tk.X, pady=(5, 0))
+        _ToolTip(
+            self._btn_multi_page_merge,
+            "1人の学生が複数ページ提出する場合、ページ番号ごとに\n"
+            "別々に生成した集計Excel（学籍番号OCR確認済み）を、\n"
+            "学籍番号をキーに1つに統合します。\n"
+            "画像フォルダの選択状態とは無関係に使えます。",
+        )
+
         # --- 初期化完了後の処理 ---
         # Step2/3 のボタンを初期状態で無効化（Step進行ガード）
         self._update_step_availability()
@@ -952,6 +966,15 @@ class SaitenSamuraiGUI:
             return
         from page_number_checker import check_page_numbers
         check_page_numbers(image_folder, parent=self.root)
+
+    def run_multi_page_merge(self):
+        """複数ページ統合ツールを実行する（単発、集計処理とは独立）。
+
+        ページ番号ごとに別々に生成した集計Excel（記述のみモード、学籍番号OCR
+        確認済み）を、教員が順番に指定すると、学籍番号をキーに1つに統合する。
+        """
+        from multi_page_merger import run_multi_page_merge_gui
+        run_multi_page_merge_gui(parent=self.root)
 
     def select_template(self):
         """正答データファイルを選択"""

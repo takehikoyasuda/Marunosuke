@@ -64,6 +64,7 @@ a = Analysis(
         'id_area_config',
         'id_area_config_gui',
         'page_number_checker',
+        'multi_page_merger',
         # オプショナル依存 (exe には含める)
         'fitz',
         'matplotlib',
