@@ -227,7 +227,7 @@ def _select_region_with_zoom(
 
     tk.Button(
         button_frame, text="✔ 決定", command=_confirm, width=15, height=2,
-        bg="#4CAF50", fg="white", font=("", 11, "bold"),
+        bg="#4CAF50", fg="black", font=("", 11, "bold"),
     ).pack(pady=5)
     tk.Button(button_frame, text="✖ キャンセル", command=_cancel, width=15, height=2).pack(pady=5)
 

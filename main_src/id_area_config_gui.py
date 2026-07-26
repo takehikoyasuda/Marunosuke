@@ -101,7 +101,7 @@ class IdAreaConfigDialog:
         btn_frame.pack(pady=20)
         tk.Button(
             btn_frame, text="保存", command=self._on_save,
-            bg="#2E7D32", fg="white", font=(UI_FONT, get_ui_font_size(10), "bold"),
+            bg="#2E7D32", fg="black", font=(UI_FONT, get_ui_font_size(10), "bold"),
         ).pack(side=tk.LEFT, padx=5)
         tk.Button(btn_frame, text="キャンセル", command=self._on_cancel, font=(UI_FONT, get_ui_font_size(9))).pack(
             side=tk.LEFT, padx=5

@@ -98,7 +98,7 @@ class StudentIdReviewGUI:
         ).pack(side=tk.LEFT, padx=10, pady=8)
         tk.Button(
             header, text="完了", command=self._finish,
-            bg="#2E7D32", fg="white", font=(UI_FONT, get_ui_font_size(10), 'bold'),
+            bg="#2E7D32", fg="black", font=(UI_FONT, get_ui_font_size(10), 'bold'),
         ).pack(side=tk.RIGHT, padx=10, pady=6)
 
         canvas = tk.Canvas(self._grid_frame, bg="#ECEFF1", highlightthickness=0)
@@ -190,7 +190,7 @@ class StudentIdReviewGUI:
         ).pack(side=tk.LEFT, padx=10, pady=8)
         tk.Button(
             header, text="一覧に戻る", command=self._back_to_grid,
-            bg="#546E7A", fg="white", font=(UI_FONT, get_ui_font_size(9)),
+            bg="#546E7A", fg="black", font=(UI_FONT, get_ui_font_size(9)),
         ).pack(side=tk.RIGHT, padx=10, pady=6)
 
         photo = self._load_photo(info.get('thumbnail_path'), SINGLE_THUMB_WIDTH)
@@ -218,7 +218,7 @@ class StudentIdReviewGUI:
         tk.Button(nav_frame, text="◀ 前へ", command=self._go_previous,
                   font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT, padx=5)
         tk.Button(nav_frame, text="確定 (Enter)", command=self._confirm_and_next,
-                  bg="#2E7D32", fg="white", font=(UI_FONT, get_ui_font_size(10), 'bold')).pack(side=tk.LEFT, padx=5)
+                  bg="#2E7D32", fg="black", font=(UI_FONT, get_ui_font_size(10), 'bold')).pack(side=tk.LEFT, padx=5)
         tk.Button(nav_frame, text="次へ ▶", command=self._go_next,
                   font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT, padx=5)
 

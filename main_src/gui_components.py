@@ -458,7 +458,7 @@ class MarkCheckerGUI:
         self._btn_apply = tk.Button(
             self._side_panel, text="データの更新(再読み込み)",
             command=self.apply_to_xlsx,
-            bg='#2E7D32', fg='white', font=(UI_FONT, get_ui_font_size(10), 'bold'),
+            bg='#2E7D32', fg='black', font=(UI_FONT, get_ui_font_size(10), 'bold'),
             relief=tk.FLAT, cursor='hand2',
         )
         self._btn_apply.pack(fill=tk.X, pady=(3, 0))
@@ -535,14 +535,14 @@ class MarkCheckerGUI:
         self._btn_save_back = tk.Button(
             nav_frame, text="保存してグリッドに戻る",
             command=self._save_single_and_back,
-            bg='#4CAF50', fg='white', font=('Arial', 10, 'bold'), width=22,
+            bg='#4CAF50', fg='black', font=('Arial', 10, 'bold'), width=22,
         )
         self._btn_save_back.pack(side=tk.LEFT, padx=5)
 
         self._btn_cancel_back = tk.Button(
             nav_frame, text="キャンセル（グリッドに戻る）",
             command=self._switch_to_grid,
-            bg='#78909C', fg='white', font=('Arial', 10), width=22,
+            bg='#78909C', fg='black', font=('Arial', 10), width=22,
         )
         self._btn_cancel_back.pack(side=tk.LEFT, padx=5)
     
@@ -563,7 +563,7 @@ class MarkCheckerGUI:
         self._pager_frame.pack(side=tk.LEFT)
         self._btn_prev_page = tk.Button(
             self._pager_frame, text="◀", width=3, command=self._prev_grid_page,
-            bg='#546E7A', fg='white', relief=tk.FLAT, cursor='hand2',
+            bg='#546E7A', fg='black', relief=tk.FLAT, cursor='hand2',
         )
         self._btn_prev_page.pack(side=tk.LEFT, padx=(8, 2))
         self._page_label = tk.Label(
@@ -572,7 +572,7 @@ class MarkCheckerGUI:
         self._page_label.pack(side=tk.LEFT, padx=2)
         self._btn_next_page = tk.Button(
             self._pager_frame, text="▶", width=3, command=self._next_grid_page,
-            bg='#546E7A', fg='white', relief=tk.FLAT, cursor='hand2',
+            bg='#546E7A', fg='black', relief=tk.FLAT, cursor='hand2',
         )
         self._btn_next_page.pack(side=tk.LEFT, padx=(2, 8))
 
@@ -581,14 +581,14 @@ class MarkCheckerGUI:
         self._btn_tab_light = tk.Button(
             self._tab_frame, text="薄い解答(ノーマーク疑惑)",
             command=lambda: self._switch_choice_tab("薄い"),
-            bg='#42A5F5', fg='white', font=(UI_FONT, get_ui_font_size(9), 'bold'),
+            bg='#42A5F5', fg='black', font=(UI_FONT, get_ui_font_size(9), 'bold'),
             relief=tk.FLAT, cursor='hand2', padx=8,
         )
         self._btn_tab_light.pack(side=tk.LEFT, padx=(8, 2))
         self._btn_tab_dark = tk.Button(
             self._tab_frame, text="濃い解答(複数マーク疑惑)",
             command=lambda: self._switch_choice_tab("濃い"),
-            bg='#546E7A', fg='white', font=(UI_FONT, get_ui_font_size(9)),
+            bg='#546E7A', fg='black', font=(UI_FONT, get_ui_font_size(9)),
             relief=tk.FLAT, cursor='hand2', padx=8,
         )
         self._btn_tab_dark.pack(side=tk.LEFT, padx=(2, 8))

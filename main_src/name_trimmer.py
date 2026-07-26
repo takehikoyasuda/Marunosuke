@@ -290,7 +290,7 @@ def select_region_on_image(
         text="✔ 決定",
         command=_confirm,
         width=15, height=2,
-        bg="#4CAF50", fg="white",
+        bg="#4CAF50", fg="black",
         font=("", 11, "bold"),
     ).pack(pady=5)
 

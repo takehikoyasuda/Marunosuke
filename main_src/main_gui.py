@@ -282,7 +282,7 @@ class SaitenSamuraiGUI:
         self._cancel_frame = tk.Frame(log_frame, bg=SECTION_BG)
         self._btn_cancel = tk.Button(
             self._cancel_frame, text="⏹ 中断", font=FONT_BOLD,
-            bg="#E74C3C", fg="white", activebackground="#C0392B",
+            bg="#E74C3C", fg="black", activebackground="#C0392B",
             command=self._request_cancel, width=10,
         )
         self._btn_cancel.pack(side=tk.RIGHT, padx=4, pady=2)

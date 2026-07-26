@@ -331,7 +331,7 @@ def run_multi_page_merge_gui(parent: Optional[tk.Tk] = None) -> Optional[str]:
 
     tk.Button(
         window, text="統合実行", command=_run_merge,
-        bg="#4CAF50", fg="white", font=(UI_FONT, get_ui_font_size(11), 'bold'), height=2,
+        bg="#4CAF50", fg="black", font=(UI_FONT, get_ui_font_size(11), 'bold'), height=2,
     ).pack(fill=tk.X, padx=10, pady=10)
 
     window.grab_set()

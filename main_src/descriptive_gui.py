@@ -456,7 +456,7 @@ class IntegratedDescriptiveSetup:
                   cursor="hand2").pack(side=tk.RIGHT, padx=(5, 0))
 
         tk.Button(btn_frame, text="✔ 設定を保存", command=self._on_save,
-                  font=(UI_FONT, get_ui_font_size(10), "bold"), bg="#81C784", fg="white",
+                  font=(UI_FONT, get_ui_font_size(10), "bold"), bg="#81C784", fg="black",
                   relief=tk.FLAT, cursor="hand2").pack(side=tk.RIGHT)
 
         # ステータス
@@ -955,7 +955,7 @@ def select_total_position(
         win.destroy()
     
     tk.Button(panel, text="✔ 決定", command=_confirm, width=15, height=2,
-              bg="#4CAF50", fg="white", font=(UI_FONT, get_ui_font_size(11), "bold")).pack(pady=5)
+              bg="#4CAF50", fg="black", font=(UI_FONT, get_ui_font_size(11), "bold")).pack(pady=5)
     tk.Button(panel, text="✖ キャンセル", command=_cancel, width=15, height=2,
               font=(UI_FONT, get_ui_font_size(10))).pack(pady=5)
     
@@ -1068,7 +1068,7 @@ def _ask_question_info(
     btn_frame.pack(pady=(15, 0))
     tk.Button(
         btn_frame, text="OK", command=_ok, width=10,
-        bg="#4CAF50", fg="white", font=(UI_FONT, get_ui_font_size(9), "bold"),
+        bg="#4CAF50", fg="black", font=(UI_FONT, get_ui_font_size(9), "bold"),
     ).pack(side=tk.LEFT, padx=5)
     tk.Button(
         btn_frame, text="キャンセル", command=_cancel, width=10,
@@ -1283,7 +1283,7 @@ class DescriptiveScorerGUI:
         tk.Button(
             btn_frame, text="✔ 採点完了・保存",
             command=lambda: self._finish(win),
-            bg="#4CAF50", fg="white",
+            bg="#4CAF50", fg="black",
             font=(UI_FONT, get_ui_font_size(10), "bold"),
             width=20, height=2, relief=tk.FLAT, cursor="hand2",
         ).pack(side=tk.LEFT, padx=5)
@@ -1459,7 +1459,7 @@ class DescriptiveScorerGUI:
         btn_frame.pack(pady=(10, 0))
         tk.Button(
             btn_frame, text="OK", command=_ok, width=10,
-            bg="#4CAF50", fg="white", font=(UI_FONT, get_ui_font_size(9), "bold"),
+            bg="#4CAF50", fg="black", font=(UI_FONT, get_ui_font_size(9), "bold"),
         ).pack(side=tk.LEFT, padx=5)
         tk.Button(
             btn_frame, text="キャンセル", command=dialog.destroy, width=10,
@@ -1797,7 +1797,7 @@ class _SingleQuestionScorer:
         tk.Button(
             top_bar, text="✔ 採点完了",
             command=self._finish,
-            bg="#4CAF50", fg="white",
+            bg="#4CAF50", fg="black",
             font=(UI_FONT, get_ui_font_size(9), "bold"),
             relief=tk.FLAT, cursor="hand2", padx=8,
         ).pack(side=tk.RIGHT, padx=2)
@@ -2016,7 +2016,7 @@ class _SingleQuestionScorer:
         tk.Label(top_bar, text="", bg=BG).pack(side=tk.LEFT, expand=True)  # spacer
 
         tk.Button(top_bar, text="✔ この問題の採点完了", command=self._finish,
-                  bg="#4CAF50", fg="white", font=(UI_FONT, get_ui_font_size(9), "bold"),
+                  bg="#4CAF50", fg="black", font=(UI_FONT, get_ui_font_size(9), "bold"),
                   relief=tk.FLAT, cursor="hand2").pack(side=tk.RIGHT)
 
         # スクロール領域
@@ -2790,7 +2790,7 @@ class _SingleQuestionScorer:
             btn_frame, text="問題選択に戻る",
             command=_go_back,
             font=(UI_FONT, get_ui_font_size(10), "bold"),
-            bg="#4CAF50", fg="white", relief=tk.FLAT,
+            bg="#4CAF50", fg="black", relief=tk.FLAT,
             cursor="hand2", padx=12, pady=4,
         ).pack(side=tk.LEFT, padx=8)
 
@@ -2977,7 +2977,7 @@ class DescriptiveReviewGUI:
         # 保存ボタン
         tk.Button(
             left, text="💾 変更を保存", command=self._save,
-            bg="#81C784", fg="white", font=("", 11, "bold"),
+            bg="#81C784", fg="black", font=("", 11, "bold"),
             relief=tk.FLAT, cursor="hand2",
         ).pack(fill=tk.X, pady=(8, 0))
 
@@ -3373,7 +3373,7 @@ class DescriptiveReviewGUI:
 
             entry.bind("<Return>", lambda e: _submit_entry())
             tk.Button(entry_frame, text="確定", command=_submit_entry,
-                      bg="#81C784", fg="white", font=("", 10, "bold"),
+                      bg="#81C784", fg="black", font=("", 10, "bold"),
                       relief=tk.FLAT, cursor="hand2").pack(side=tk.LEFT, padx=5)
 
         tk.Button(dialog, text="キャンセル", command=dialog.destroy,
