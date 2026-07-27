@@ -328,8 +328,10 @@ class IntegratedDescriptiveSetup:
     """
 
     # Canvas 表示サイズ制限（ビューポートサイズ。ズームで実際の描画内容はこれより大きくなりスクロールする）
+    # 拡大縮小・移動ボタンを画像下部から右側の専用カラムに移したことで
+    # 空いた縦方向のスペース分、高さの上限を広げている。
     _MAX_CANVAS_W = 620
-    _MAX_CANVAS_H = 700
+    _MAX_CANVAS_H = 820
 
     # ズーム設定
     _MIN_ZOOM = 1.0
@@ -440,30 +442,28 @@ class IntegratedDescriptiveSetup:
         tk.Label(left, text="💡 ドラッグで新しい記述領域を追加できます",
                  font=(UI_FONT, get_ui_font_size(8)), bg=BG, fg="#777").pack(anchor=tk.W, pady=(3, 0))
 
-        # --- 拡大縮小・移動 ---
-        zoom_pan_frame = tk.Frame(left, bg=BG)
-        zoom_pan_frame.pack(anchor=tk.W, pady=(6, 0))
+        # ===== 中央: 拡大縮小・移動（画像を縦に大きく見せるため画像右側の縦カラムに配置） =====
+        controls = tk.Frame(main, bg=BG)
+        controls.pack(side=tk.LEFT, fill=tk.Y, padx=10)
 
-        zoom_box = tk.Frame(zoom_pan_frame, bg=BG)
-        zoom_box.pack(side=tk.LEFT, padx=(0, 14))
+        zoom_box = tk.Frame(controls, bg=BG)
+        zoom_box.pack(side=tk.TOP, pady=(0, 16))
         tk.Label(zoom_box, text="拡大縮小", font=(UI_FONT, get_ui_font_size(8)), bg=BG, fg="#555").pack()
-        zoom_row = tk.Frame(zoom_box, bg=BG)
-        zoom_row.pack()
         tk.Button(
-            zoom_row, text="－", width=3, command=lambda: self._zoom_by(1 / self._ZOOM_STEP),
-        ).pack(side=tk.LEFT, padx=2)
-        self._zoom_label = tk.Label(zoom_row, text="100%", width=6, bg=BG)
-        self._zoom_label.pack(side=tk.LEFT, padx=4)
+            zoom_box, text="＋", width=4, command=lambda: self._zoom_by(self._ZOOM_STEP),
+        ).pack(pady=(4, 2))
+        self._zoom_label = tk.Label(zoom_box, text="100%", width=6, bg=BG)
+        self._zoom_label.pack()
         tk.Button(
-            zoom_row, text="＋", width=3, command=lambda: self._zoom_by(self._ZOOM_STEP),
-        ).pack(side=tk.LEFT, padx=2)
+            zoom_box, text="－", width=4, command=lambda: self._zoom_by(1 / self._ZOOM_STEP),
+        ).pack(pady=(2, 0))
 
-        pan_box = tk.Frame(zoom_pan_frame, bg=BG)
-        pan_box.pack(side=tk.LEFT)
+        pan_box = tk.Frame(controls, bg=BG)
+        pan_box.pack(side=tk.TOP)
         tk.Label(
-            pan_box, text="移動（ホイールでも可／Shiftで左右）",
-            font=(UI_FONT, get_ui_font_size(8)), bg=BG, fg="#555",
-        ).pack()
+            pan_box, text="移動\n（ホイールでも可\n／Shiftで左右）",
+            font=(UI_FONT, get_ui_font_size(8)), bg=BG, fg="#555", justify=tk.CENTER,
+        ).pack(pady=(0, 4))
         pan_grid = tk.Frame(pan_box, bg=BG)
         pan_grid.pack()
         tk.Button(pan_grid, text="▲", width=3, command=lambda: self._pan(dy_units=-2)).grid(row=0, column=1)
@@ -486,10 +486,10 @@ class IntegratedDescriptiveSetup:
         self._tree.heading("name", text="問題名")
         self._tree.heading("score", text="配点")
         self._tree.heading("aspect", text="観点")
-        self._tree.column("id", width=40, anchor="center")
-        self._tree.column("name", width=120)
-        self._tree.column("score", width=50, anchor="center")
-        self._tree.column("aspect", width=50, anchor="center")
+        self._tree.column("id", width=36, anchor="center")
+        self._tree.column("name", width=100)
+        self._tree.column("score", width=46, anchor="center")
+        self._tree.column("aspect", width=46, anchor="center")
 
         tree_scroll = tk.Scrollbar(right, orient=tk.VERTICAL, command=self._tree.yview)
         self._tree.configure(yscrollcommand=tree_scroll.set)
