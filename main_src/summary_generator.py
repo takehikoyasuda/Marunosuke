@@ -61,6 +61,7 @@ def _natural_sort_key(text: str):
 
 
 def generate_student_summary(template_path, mark2_result_path, output_path, skip_questions=0, name_images=None,
+                             student_id_result=None,
                              descriptive_config=None, descriptive_scores=None,
                              template_dict=None, mark2_results=None,
                              mark_format=MARK_FORMAT_STANDARD):
@@ -72,6 +73,9 @@ def generate_student_summary(template_path, mark2_result_path, output_path, skip
         output_path: 出力先パス
         skip_questions: スキップする問題数（学籍番号用）
         name_images: {ファイル名: トリミング画像パス} の辞書。Noneの場合は氏名欄列なし。
+        student_id_result: {ファイル名: {'thumbnail_path','text','name'}} の辞書
+            （学籍番号OCR＋人間確認済みのデータ、student_id_review_gui.py で確定したもの）。
+            Noneの場合は学籍番号OCR列なし。
         descriptive_config: 記述問題設定dict（オプション）
         descriptive_scores: {ファイル名: {問題ID: 得点}} の辞書（オプション）
         template_dict: 事前読込済みのテンプレートdict（Noneなら内部で読込）
@@ -139,7 +143,16 @@ def generate_student_summary(template_path, mark2_result_path, output_path, skip
     has_name_images = name_images is not None and len(name_images) > 0
     if has_name_images:
         logger.info("✓ 氏名欄画像: %d枚", len(name_images))
-    
+
+    # 学籍番号OCR（人間確認済み）の有無を判定
+    has_student_id_result = student_id_result is not None and len(student_id_result) > 0
+    has_roster_names = False
+    if has_student_id_result:
+        has_roster_names = any(v.get('name') for v in student_id_result.values())
+        logger.info("✓ 学籍番号OCR確認済み: %d枚", len(student_id_result))
+    # 学籍番号欄画像列 + 確認済みテキスト列 (+ 名簿照合があれば氏名候補列)
+    student_id_col_count = (2 + (1 if has_roster_names else 0)) if has_student_id_result else 0
+
     question_numbers = sorted(template_dict.keys())
     # 設問列の表示ラベル（複数桁グループは範囲表記「1-3」、標準はint問題番号のまま）
     question_labels = {q: template_dict[q].get('group_label', q) for q in question_numbers}
@@ -195,15 +208,21 @@ def generate_student_summary(template_path, mark2_result_path, output_path, skip
     ws.title = "学生別得点"
     
     # --- ヘッダー行1: 問題番号 ---
-    # 氏名欄がある場合は1列追加
+    # 氏名欄・学籍番号OCR列がある場合はその分だけ追加
     name_col_extra = [''] if has_name_images else []
-    header_row1 = ['', ''] + name_col_extra + [''] * skip_questions + [''] + [''] * len(all_aspects) + [question_labels[q] for q in question_numbers]
+    student_id_col_extra = [''] * student_id_col_count
+    header_row1 = ['', ''] + name_col_extra + student_id_col_extra + [''] * skip_questions + [''] + [''] * len(all_aspects) + [question_labels[q] for q in question_numbers]
     if has_descriptive:
         header_row1 += [q['name'] for q in descriptive_config['questions']]
     ws.append(header_row1)
-    
+
     # --- ヘッダー行2: 列名 ---
-    header_row2 = ['No', 'File'] + (['氏名欄'] if has_name_images else []) + [f'学籍番号{i+1}' for i in range(skip_questions)] + ['合計得点']
+    student_id_headers = []
+    if has_student_id_result:
+        student_id_headers = ['学籍番号欄', '学籍番号(確認済み)']
+        if has_roster_names:
+            student_id_headers.append('氏名候補(名簿照合)')
+    header_row2 = ['No', 'File'] + (['氏名欄'] if has_name_images else []) + student_id_headers + [f'学籍番号{i+1}' for i in range(skip_questions)] + ['合計得点']
     for aspect in all_aspects:
         header_row2.append(f'観点{number_to_circled(aspect)}')
     for q_no in question_numbers:
@@ -212,12 +231,18 @@ def generate_student_summary(template_path, mark2_result_path, output_path, skip
         for q in descriptive_config['questions']:
             header_row2.append(q['id'])
     ws.append(header_row2)
-    
+
     # --- データ行 ---
     for row in rows:
         data_row = [row['No'], escape_excel_formula(row['File'])]
         if has_name_images:
             data_row.append('')  # 氏名欄画像用のプレースホルダ
+        if has_student_id_result:
+            data_row.append('')  # 学籍番号欄画像用のプレースホルダ
+            sid_info = student_id_result.get(row['File'], {})
+            data_row.append(escape_excel_formula(sid_info.get('text') or ''))
+            if has_roster_names:
+                data_row.append(escape_excel_formula(sid_info.get('name') or ''))
         for skip_idx in range(skip_questions):
             data_row.append(escape_excel_formula(row.get(f'学籍番号{skip_idx + 1}', '')))
         data_row.append(row['合計得点'])
@@ -267,7 +292,46 @@ def generate_student_summary(template_path, mark2_result_path, output_path, skip
         # 氏名欄の列幅を画像に合わせる（ピクセル → 文字幅: 1文字幅 ≈ 7.5px）
         ws.column_dimensions[name_col_letter].width = max(max_img_width * 0.13, 10)
         logger.info("✓ 氏名欄画像埋め込み: %d枚", embedded_count)
-    
+
+    # --- 学籍番号欄画像の埋め込み ---
+    if has_student_id_result:
+        sid_img_col_idx = 3 + (1 if has_name_images else 0)  # 氏名欄の直後
+        sid_img_col_letter = get_column_letter(sid_img_col_idx)
+        max_img_width = 0
+        embedded_count = 0
+
+        for idx, result_data in enumerate(mark2_results):
+            image_name = result_data['image']
+            row_num = idx + 3
+
+            info = student_id_result.get(image_name)
+            img_path = info.get('thumbnail_path') if info else None
+            if img_path and Path(img_path).exists():
+                try:
+                    xl_img = XlImage(img_path)
+                    pil_img = Image.open(img_path)
+                    img_w, img_h = pil_img.size
+                    pil_img.close()
+
+                    if img_w > max_img_width:
+                        max_img_width = img_w
+
+                    # 氏名欄画像と行を共有する場合があるため、より大きい高さを優先する
+                    new_height = img_h * 0.75
+                    current_height = ws.row_dimensions[row_num].height or 0
+                    if new_height > current_height:
+                        ws.row_dimensions[row_num].height = new_height
+
+                    cell_address = f'{sid_img_col_letter}{row_num}'
+                    xl_img.anchor = cell_address
+                    ws.add_image(xl_img)
+                    embedded_count += 1
+                except Exception as e:
+                    logger.warning("  学籍番号欄画像埋め込みエラー (%s): %s", image_name, e)
+
+        ws.column_dimensions[sid_img_col_letter].width = max(max_img_width * 0.13, 10)
+        logger.info("✓ 学籍番号欄画像埋め込み: %d枚", embedded_count)
+
     # --- スタイル設定 ---
     header_fill_dark = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
     header_font_white = Font(bold=True, color="FFFFFF", size=10)
@@ -294,8 +358,9 @@ def generate_student_summary(template_path, mark2_result_path, output_path, skip
         cell.border = thin_border
 
     # データ行: 罫線 + 中央揃え
-    # 氏名欄がある場合、数値列の開始は1列ずれる
-    data_start_col = 4 if has_name_images else 3
+    # 氏名欄・学籍番号OCR列がある場合、数値列の開始はその分だけ後ろにずれる
+    extra_leading_cols = (1 if has_name_images else 0) + student_id_col_count
+    data_start_col = 3 + extra_leading_cols
     for row in ws.iter_rows(min_row=3, max_row=ws.max_row, max_col=ws.max_column):
         for cell in row:
             cell.border = thin_border
@@ -304,16 +369,13 @@ def generate_student_summary(template_path, mark2_result_path, output_path, skip
 
     ws.column_dimensions['A'].width = 5
     ws.column_dimensions['B'].width = 28
-    # 氏名欄以外の数値列の幅設定
-    width_start_col = 4 if has_name_images else 3
+    # 氏名欄・学籍番号OCR列以外の数値列の幅設定
+    width_start_col = data_start_col
     for col_idx in range(width_start_col, ws.max_column + 1):
         ws.column_dimensions[get_column_letter(col_idx)].width = 12
 
-    # ウィンドウ枠固定 (ヘッダー2行 + No/File列 [+ 氏名欄列])
-    if has_name_images:
-        ws.freeze_panes = 'D3'
-    else:
-        ws.freeze_panes = 'C3'
+    # ウィンドウ枠固定 (ヘッダー2行 + No/File列 [+ 氏名欄列] [+ 学籍番号OCR列])
+    ws.freeze_panes = f'{get_column_letter(data_start_col)}3'
 
     wb.save(output_path)
     logger.info("✓ 保存: %s", output_path)
@@ -986,6 +1048,7 @@ def process_descriptive_only_summary(
     descriptive_config,
     descriptive_scores,
     name_images=None,
+    student_id_result=None,
     output_base_folder=None,
 ):
     """記述のみモードのサマリー生成。
@@ -998,6 +1061,8 @@ def process_descriptive_only_summary(
         descriptive_config: descriptive_config dict
         descriptive_scores: {filename: {question_id: score}}
         name_images: {filename: trimmed_image_path}
+        student_id_result: {filename: {'thumbnail_path','text','name'}}
+            （学籍番号OCR＋人間確認済みのデータ）
         output_base_folder: 出力先 (None→image_folder)
 
     Returns:
@@ -1027,6 +1092,10 @@ def process_descriptive_only_summary(
     logger.info("✓ 対象画像: %d件", len(descriptive_scores))
     if name_images:
         logger.info("✓ 氏名欄画像: %d枚", len(name_images))
+    has_student_id_result = student_id_result is not None and len(student_id_result) > 0
+    has_roster_names = has_student_id_result and any(v.get('name') for v in student_id_result.values())
+    if has_student_id_result:
+        logger.info("✓ 学籍番号OCR確認済み: %d枚", len(student_id_result))
     logger.info("")
 
     try:
@@ -1049,6 +1118,11 @@ def process_descriptive_only_summary(
         headers = ["No.", "ファイル名"]
         if name_images:
             headers.append("氏名欄")
+        if has_student_id_result:
+            headers.append("学籍番号欄")
+            headers.append("学籍番号(確認済み)")
+            if has_roster_names:
+                headers.append("氏名候補(名簿照合)")
         for q in questions:
             headers.append(f"{q['name']} ({q['max_score']})")
         headers.append("合計")
@@ -1086,6 +1160,29 @@ def process_descriptive_only_summary(
                 ws.cell(row=row_idx, column=col).border = thin_border
                 col += 1
 
+            if has_student_id_result:
+                sid_info = student_id_result.get(fname, {})
+                sid_thumb = sid_info.get('thumbnail_path')
+                if sid_thumb and Path(sid_thumb).exists():
+                    try:
+                        img = XlImage(str(sid_thumb))
+                        img.width = 120
+                        img.height = 30
+                        ws.add_image(img, get_column_letter(col) + str(row_idx))
+                    except Exception:
+                        pass
+                ws.cell(row=row_idx, column=col).border = thin_border
+                col += 1
+
+                ws.cell(row=row_idx, column=col, value=escape_excel_formula(sid_info.get('text') or '')).border = thin_border
+                ws.cell(row=row_idx, column=col).alignment = center
+                col += 1
+
+                if has_roster_names:
+                    ws.cell(row=row_idx, column=col, value=escape_excel_formula(sid_info.get('name') or '')).border = thin_border
+                    ws.cell(row=row_idx, column=col).alignment = center
+                    col += 1
+
             student_total = 0
             for q in questions:
                 sc = scores_for_file.get(q["id"], 0)
@@ -1107,8 +1204,19 @@ def process_descriptive_only_summary(
         # 列幅調整
         ws.column_dimensions["A"].width = 6
         ws.column_dimensions["B"].width = 30
+        img_col_idx = 3
         if name_images:
-            ws.column_dimensions["C"].width = 18
+            ws.column_dimensions[get_column_letter(img_col_idx)].width = 18
+            img_col_idx += 1
+        if has_student_id_result:
+            ws.column_dimensions[get_column_letter(img_col_idx)].width = 18
+            img_col_idx += 1
+            ws.column_dimensions[get_column_letter(img_col_idx)].width = 14
+            img_col_idx += 1
+            if has_roster_names:
+                ws.column_dimensions[get_column_letter(img_col_idx)].width = 16
+                img_col_idx += 1
+        if name_images or has_student_id_result:
             ws.row_dimensions[1].height = 20
             for r in range(2, len(sorted_files) + 2):
                 ws.row_dimensions[r].height = 25
@@ -1252,7 +1360,8 @@ def process_descriptive_only_summary(
 
 def process_summary_generation(image_folder, coord_excel_path, template_path,
                                mark2_result_path, skip_questions=0, output_base_folder=None,
-                               name_images=None, descriptive_config=None, descriptive_scores=None,
+                               name_images=None, student_id_result=None,
+                               descriptive_config=None, descriptive_scores=None,
                                include_descriptive_in_analysis=False, progress_callback=None,
                                cancel_event=None, mark_format=MARK_FORMAT_STANDARD):
     """サマリー生成処理を実行
@@ -1265,6 +1374,8 @@ def process_summary_generation(image_folder, coord_excel_path, template_path,
         skip_questions: スキップする問題数
         output_base_folder: 出力ベースフォルダ（Noneの場合はimage_folder）
         name_images: {ファイル名: トリミング画像パス} の辞書（オプション）
+        student_id_result: {ファイル名: {'thumbnail_path','text','name'}}
+            （学籍番号OCR＋人間確認済みのデータ、オプション）
         descriptive_config: 記述問題設定dict（オプション）
         descriptive_scores: {ファイル名: {問題ID: 得点}} の辞書（オプション）
         include_descriptive_in_analysis: 記述採点結果をCTT/R分析に含めるか（デフォルトFalse）
@@ -1300,6 +1411,8 @@ def process_summary_generation(image_folder, coord_excel_path, template_path,
     logger.info("✓ Mark2結果: %s", Path(mark2_result_path).name)
     if name_images:
         logger.info("✓ 氏名欄画像: %d枚", len(name_images))
+    if student_id_result:
+        logger.info("✓ 学籍番号OCR確認済み: %d枚", len(student_id_result))
     if descriptive_config and descriptive_config.get('questions'):
         logger.info("✓ 記述問題: %d問", len(descriptive_config['questions']))
     if include_descriptive_in_analysis and descriptive_config and descriptive_scores:
@@ -1331,6 +1444,7 @@ def process_summary_generation(image_folder, coord_excel_path, template_path,
             student_summary_path, 
             skip_questions,
             name_images=name_images,
+            student_id_result=student_id_result,
             descriptive_config=descriptive_config,
             descriptive_scores=descriptive_scores,
             template_dict=template_dict,

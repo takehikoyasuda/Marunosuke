@@ -23,7 +23,7 @@ from PIL import Image, ImageTk, ImageDraw, ImageFont
 from name_trimmer import select_region_on_image, get_image_files
 from constants import (
     get_app_temp_dir, atomic_json_save, load_json_safe, open_in_default_viewer,
-    get_ui_font_family, get_ui_font_size,
+    get_ui_font_family, get_ui_font_size, fit_window_to_content,
 )
 
 # 日本語UIフォント（Windows: Yu Gothic UI, Mac: Hiragino Sans）
@@ -327,9 +327,14 @@ class IntegratedDescriptiveSetup:
     kaizen.md Phase 2A に対応。
     """
 
-    # Canvas 表示サイズ制限
+    # Canvas 表示サイズ制限（ビューポートサイズ。ズームで実際の描画内容はこれより大きくなりスクロールする）
     _MAX_CANVAS_W = 620
     _MAX_CANVAS_H = 700
+
+    # ズーム設定
+    _MIN_ZOOM = 1.0
+    _MAX_ZOOM = 8.0
+    _ZOOM_STEP = 1.25
 
     def __init__(self, parent, image_folder: str, config_save_path: str):
         self.parent = parent
@@ -357,33 +362,43 @@ class IntegratedDescriptiveSetup:
         else:
             self._questions = []
 
-        # 画像読み込み・リサイズ比率計算
-        self._orig_img = Image.open(self._base_image_path)
+        # 画像読み込み・表示スケール計算
+        # zoom=1.0の時に画像全体がビューポート(_MAX_CANVAS_W×_MAX_CANVAS_H)に収まる基準スケール。
+        # ズームすると表示内容はビューポートより大きくなり、スクロールバー/ホイールで移動できる。
+        self._orig_img = Image.open(self._base_image_path).convert("RGB")
         self._orig_w, self._orig_h = self._orig_img.size
-        ratio_w = self._orig_w / self._MAX_CANVAS_W if self._orig_w > self._MAX_CANVAS_W else 1.0
-        ratio_h = self._orig_h / self._MAX_CANVAS_H if self._orig_h > self._MAX_CANVAS_H else 1.0
-        self._resize_ratio = max(ratio_w, ratio_h)
-        self._disp_w = int(self._orig_w / self._resize_ratio)
-        self._disp_h = int(self._orig_h / self._resize_ratio)
+        self._base_scale = min(
+            self._MAX_CANVAS_W / self._orig_w, self._MAX_CANVAS_H / self._orig_h, 1.0,
+        )
+        self._zoom = 1.0
+        self._viewport_w = max(1, int(self._orig_w * self._base_scale))
+        self._viewport_h = max(1, int(self._orig_h * self._base_scale))
 
         # ウィンドウ構築
         self.win = tk.Toplevel(parent)
         self.win.title("📝 記述問題の設定")
-        win_w = self._disp_w + 420
-        win_h = max(self._disp_h + 40, 600)
-        self.win.geometry(f"{win_w}x{win_h}")
         self.win.transient(parent)
         self.win.grab_set()
         self.win.focus_set()
         self.win.configure(bg="#F5F7FA")
 
         self._photo_refs = []
+        self._overlay_img = None  # 元画像解像度で合成済みのオーバーレイ画像(ズーム再描画で使い回す)
         self._rect_ids = {}  # question_id -> canvas rect id
         self._drag_state = {"active": False, "start_x": 0, "start_y": 0, "rect_id": None}
 
         self._build_gui()
         self._redraw_overlay()
         self._refresh_table()
+
+        # 実際に必要なサイズをウィジェット構築後に計算して反映する。
+        # 拡大縮小・移動ボタンを追加した分、事前計算の固定値では
+        # ウィンドウが小さすぎてボタンが隠れることがあったため。
+        self.win.update_idletasks()
+        req_w = self.win.winfo_reqwidth()
+        req_h = self.win.winfo_reqheight()
+        self.win.geometry(f"{req_w}x{req_h}")
+        self.win.minsize(req_w, req_h)
 
         self.win.protocol("WM_DELETE_WINDOW", self._on_cancel)
         self.win.wait_window()
@@ -400,17 +415,61 @@ class IntegratedDescriptiveSetup:
         tk.Label(left, text="答案画像（ドラッグで領域を選択）",
                  font=(UI_FONT, get_ui_font_size(10), "bold"), bg=BG, fg="#333").pack(anchor=tk.W, pady=(0, 3))
 
-        self._canvas = tk.Canvas(left, width=self._disp_w, height=self._disp_h,
-                                 bg="white", highlightthickness=1, highlightbackground="#999",
-                                 cursor="crosshair")
-        self._canvas.pack()
+        canvas_frame = tk.Frame(left, bg=BG)
+        canvas_frame.pack()
+        h_scroll = tk.Scrollbar(canvas_frame, orient=tk.HORIZONTAL)
+        v_scroll = tk.Scrollbar(canvas_frame, orient=tk.VERTICAL)
+        self._canvas = tk.Canvas(
+            canvas_frame, width=self._viewport_w, height=self._viewport_h,
+            bg="white", highlightthickness=1, highlightbackground="#999",
+            cursor="crosshair",
+            xscrollcommand=h_scroll.set, yscrollcommand=v_scroll.set,
+        )
+        h_scroll.config(command=self._canvas.xview)
+        v_scroll.config(command=self._canvas.yview)
+        self._canvas.grid(row=0, column=0)
+        v_scroll.grid(row=0, column=1, sticky='ns')
+        h_scroll.grid(row=1, column=0, sticky='ew')
 
         self._canvas.bind("<ButtonPress-1>", self._on_press)
         self._canvas.bind("<B1-Motion>", self._on_drag)
         self._canvas.bind("<ButtonRelease-1>", self._on_release)
+        self._canvas.bind("<MouseWheel>", self._on_mousewheel)
+        self._canvas.bind("<Shift-MouseWheel>", self._on_shift_mousewheel)
 
         tk.Label(left, text="💡 ドラッグで新しい記述領域を追加できます",
                  font=(UI_FONT, get_ui_font_size(8)), bg=BG, fg="#777").pack(anchor=tk.W, pady=(3, 0))
+
+        # --- 拡大縮小・移動 ---
+        zoom_pan_frame = tk.Frame(left, bg=BG)
+        zoom_pan_frame.pack(anchor=tk.W, pady=(6, 0))
+
+        zoom_box = tk.Frame(zoom_pan_frame, bg=BG)
+        zoom_box.pack(side=tk.LEFT, padx=(0, 14))
+        tk.Label(zoom_box, text="拡大縮小", font=(UI_FONT, get_ui_font_size(8)), bg=BG, fg="#555").pack()
+        zoom_row = tk.Frame(zoom_box, bg=BG)
+        zoom_row.pack()
+        tk.Button(
+            zoom_row, text="－", width=3, command=lambda: self._zoom_by(1 / self._ZOOM_STEP),
+        ).pack(side=tk.LEFT, padx=2)
+        self._zoom_label = tk.Label(zoom_row, text="100%", width=6, bg=BG)
+        self._zoom_label.pack(side=tk.LEFT, padx=4)
+        tk.Button(
+            zoom_row, text="＋", width=3, command=lambda: self._zoom_by(self._ZOOM_STEP),
+        ).pack(side=tk.LEFT, padx=2)
+
+        pan_box = tk.Frame(zoom_pan_frame, bg=BG)
+        pan_box.pack(side=tk.LEFT)
+        tk.Label(
+            pan_box, text="移動（ホイールでも可／Shiftで左右）",
+            font=(UI_FONT, get_ui_font_size(8)), bg=BG, fg="#555",
+        ).pack()
+        pan_grid = tk.Frame(pan_box, bg=BG)
+        pan_grid.pack()
+        tk.Button(pan_grid, text="▲", width=3, command=lambda: self._pan(dy_units=-2)).grid(row=0, column=1)
+        tk.Button(pan_grid, text="◀", width=3, command=lambda: self._pan(dx_units=-2)).grid(row=1, column=0)
+        tk.Button(pan_grid, text="▶", width=3, command=lambda: self._pan(dx_units=2)).grid(row=1, column=2)
+        tk.Button(pan_grid, text="▼", width=3, command=lambda: self._pan(dy_units=2)).grid(row=2, column=1)
 
         # ===== 右: テーブル + 操作 =====
         right = tk.Frame(main, bg=BG, padx=(10))
@@ -456,7 +515,7 @@ class IntegratedDescriptiveSetup:
                   cursor="hand2").pack(side=tk.RIGHT, padx=(5, 0))
 
         tk.Button(btn_frame, text="✔ 設定を保存", command=self._on_save,
-                  font=(UI_FONT, get_ui_font_size(10), "bold"), bg="#81C784", fg="white",
+                  font=(UI_FONT, get_ui_font_size(10), "bold"), bg="#81C784", fg="black",
                   relief=tk.FLAT, cursor="hand2").pack(side=tk.RIGHT)
 
         # ステータス
@@ -464,12 +523,42 @@ class IntegratedDescriptiveSetup:
         self._status_label.pack(anchor=tk.W, pady=(5, 0))
         self._update_status()
 
+    # ─── ズーム・移動 ───
+
+    def _total_scale(self) -> float:
+        return self._base_scale * self._zoom
+
+    def _zoom_by(self, factor: float):
+        new_zoom = max(self._MIN_ZOOM, min(self._MAX_ZOOM, self._zoom * factor))
+        if new_zoom == self._zoom:
+            return
+        self._zoom = new_zoom
+        self._render_canvas()
+
+    def _pan(self, dx_units: int = 0, dy_units: int = 0):
+        if dx_units:
+            self._canvas.xview_scroll(dx_units, "units")
+        if dy_units:
+            self._canvas.yview_scroll(dy_units, "units")
+
+    def _wheel_units(self, event) -> int:
+        # Windows/Linuxではevent.deltaが120単位、macOSでは±1程度と環境依存のため、
+        # 120で割った結果が0になる場合は符号だけで1単位動かす。
+        units = int(-1 * (event.delta / 120))
+        return units if units != 0 else (-1 if event.delta > 0 else 1)
+
+    def _on_mousewheel(self, event):
+        self._canvas.yview_scroll(self._wheel_units(event), "units")
+
+    def _on_shift_mousewheel(self, event):
+        self._canvas.xview_scroll(self._wheel_units(event), "units")
+
     # ─── Canvas ドラッグ ───
 
     def _on_press(self, event):
         self._drag_state["active"] = True
-        self._drag_state["start_x"] = event.x
-        self._drag_state["start_y"] = event.y
+        self._drag_state["start_x"] = self._canvas.canvasx(event.x)
+        self._drag_state["start_y"] = self._canvas.canvasy(event.y)
         if self._drag_state.get("rect_id"):
             self._canvas.delete(self._drag_state["rect_id"])
         self._drag_state["rect_id"] = None
@@ -477,8 +566,11 @@ class IntegratedDescriptiveSetup:
     def _on_drag(self, event):
         if not self._drag_state["active"]:
             return
-        ex = max(0, min(self._disp_w, event.x))
-        ey = max(0, min(self._disp_h, event.y))
+        scale = self._total_scale()
+        content_w = self._orig_w * scale
+        content_h = self._orig_h * scale
+        ex = max(0, min(content_w, self._canvas.canvasx(event.x)))
+        ey = max(0, min(content_h, self._canvas.canvasy(event.y)))
         if self._drag_state["rect_id"]:
             self._canvas.coords(self._drag_state["rect_id"],
                                 self._drag_state["start_x"], self._drag_state["start_y"], ex, ey)
@@ -492,8 +584,11 @@ class IntegratedDescriptiveSetup:
             return
         self._drag_state["active"] = False
 
-        ex = max(0, min(self._disp_w, event.x))
-        ey = max(0, min(self._disp_h, event.y))
+        scale = self._total_scale()
+        content_w = self._orig_w * scale
+        content_h = self._orig_h * scale
+        ex = max(0, min(content_w, self._canvas.canvasx(event.x)))
+        ey = max(0, min(content_h, self._canvas.canvasy(event.y)))
         sx, sy = self._drag_state["start_x"], self._drag_state["start_y"]
 
         # 最小サイズ判定
@@ -503,10 +598,10 @@ class IntegratedDescriptiveSetup:
             return
 
         # 表示座標→元画像座標
-        x1 = int(min(sx, ex) * self._resize_ratio)
-        y1 = int(min(sy, ey) * self._resize_ratio)
-        x2 = int(max(sx, ex) * self._resize_ratio)
-        y2 = int(max(sy, ey) * self._resize_ratio)
+        x1 = int(min(sx, ex) / scale)
+        y1 = int(min(sy, ey) / scale)
+        x2 = int(max(sx, ex) / scale)
+        y2 = int(max(sy, ey) / scale)
         region = [x1, y1, x2, y2]
 
         # 問題ID生成（既存最大+1）
@@ -545,11 +640,14 @@ class IntegratedDescriptiveSetup:
     # ─── オーバーレイ描画 ───
 
     def _redraw_overlay(self):
-        """Canvas上にベース画像+色付き領域を再描画"""
-        self._photo_refs.clear()
+        """設問領域を焼き込んだオーバーレイ画像(元解像度)を再構築し、Canvasに描画する。"""
+        self._build_overlay_image()
+        self._render_canvas()
+
+    def _build_overlay_image(self):
+        """ベース画像(元解像度)に色付き領域を合成し、self._overlay_imgに保持する。"""
         self._rect_ids.clear()
 
-        # ベース画像にオーバーレイを描画
         img = self._orig_img.copy().convert("RGBA")
         overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(overlay)
@@ -574,13 +672,23 @@ class IntegratedDescriptiveSetup:
             draw.text((left + 4, top + 3), label, font=font,
                       fill=border_color + (255,))
 
-        result = Image.alpha_composite(img, overlay).convert("RGB")
-        display = result.resize((self._disp_w, self._disp_h), Image.LANCZOS)
+        self._overlay_img = Image.alpha_composite(img, overlay).convert("RGB")
+
+    def _render_canvas(self):
+        """現在のズーム倍率に合わせてself._overlay_imgをリサイズしてCanvasに描画する。"""
+        scale = self._total_scale()
+        disp_w = max(1, round(self._orig_w * scale))
+        disp_h = max(1, round(self._orig_h * scale))
+        display = self._overlay_img.resize((disp_w, disp_h), Image.LANCZOS)
         photo = ImageTk.PhotoImage(display)
+        self._photo_refs.clear()
         self._photo_refs.append(photo)
 
         self._canvas.delete("all")
         self._canvas.create_image(0, 0, anchor="nw", image=photo)
+        self._canvas.configure(scrollregion=(0, 0, disp_w, disp_h))
+        if hasattr(self, "_zoom_label"):
+            self._zoom_label.config(text=f"{self._zoom * 100:.0f}%")
 
     # ─── テーブル操作 ───
 
@@ -756,8 +864,7 @@ def select_total_position(
     
     win = tk.Toplevel(root)
     win.title("合計点表示位置 — ボックスをドラッグで移動、端でリサイズ")
-    win.geometry(f"{display_w + 220}x{display_h + 20}")
-    win.resizable(False, False)
+    win.resizable(True, True)
     
     main_frame = tk.Frame(win)
     main_frame.pack(fill=tk.BOTH, expand=True)
@@ -955,7 +1062,7 @@ def select_total_position(
         win.destroy()
     
     tk.Button(panel, text="✔ 決定", command=_confirm, width=15, height=2,
-              bg="#4CAF50", fg="white", font=(UI_FONT, get_ui_font_size(11), "bold")).pack(pady=5)
+              bg="#4CAF50", fg="black", font=(UI_FONT, get_ui_font_size(11), "bold")).pack(pady=5)
     tk.Button(panel, text="✖ キャンセル", command=_cancel, width=15, height=2,
               font=(UI_FONT, get_ui_font_size(10))).pack(pady=5)
     
@@ -963,7 +1070,8 @@ def select_total_position(
     
     # 初期描画
     _draw_box()
-    
+
+    fit_window_to_content(win, min_width=display_w + 220, min_height=display_h + 20)
     win.grab_set()
     win.wait_window()
     
@@ -995,8 +1103,7 @@ def _ask_question_info(
 
     dialog = tk.Toplevel(root)
     dialog.title(f"記述{question_number} の設定")
-    dialog.geometry("350x280")
-    dialog.resizable(False, False)
+    dialog.resizable(True, True)
     dialog.transient(root)
 
     frame = tk.Frame(dialog, padx=20, pady=15)
@@ -1068,7 +1175,7 @@ def _ask_question_info(
     btn_frame.pack(pady=(15, 0))
     tk.Button(
         btn_frame, text="OK", command=_ok, width=10,
-        bg="#4CAF50", fg="white", font=(UI_FONT, get_ui_font_size(9), "bold"),
+        bg="#4CAF50", fg="black", font=(UI_FONT, get_ui_font_size(9), "bold"),
     ).pack(side=tk.LEFT, padx=5)
     tk.Button(
         btn_frame, text="キャンセル", command=_cancel, width=10,
@@ -1076,6 +1183,7 @@ def _ask_question_info(
     ).pack(side=tk.LEFT, padx=5)
 
     dialog.protocol("WM_DELETE_WINDOW", _cancel)
+    fit_window_to_content(dialog, min_width=350, min_height=280)
     dialog.grab_set()
     dialog.focus_force()
     dialog.wait_window()
@@ -1283,7 +1391,7 @@ class DescriptiveScorerGUI:
         tk.Button(
             btn_frame, text="✔ 採点完了・保存",
             command=lambda: self._finish(win),
-            bg="#4CAF50", fg="white",
+            bg="#4CAF50", fg="black",
             font=(UI_FONT, get_ui_font_size(10), "bold"),
             width=20, height=2, relief=tk.FLAT, cursor="hand2",
         ).pack(side=tk.LEFT, padx=5)
@@ -1351,8 +1459,7 @@ class DescriptiveScorerGUI:
         result = [None]
         dialog = tk.Toplevel(self._list_win)
         dialog.title(f"{q_config['name']} の設定変更")
-        dialog.geometry("380x320")
-        dialog.resizable(False, False)
+        dialog.resizable(True, True)
         dialog.transient(self._list_win)
 
         frame = tk.Frame(dialog, padx=20, pady=15)
@@ -1459,7 +1566,7 @@ class DescriptiveScorerGUI:
         btn_frame.pack(pady=(10, 0))
         tk.Button(
             btn_frame, text="OK", command=_ok, width=10,
-            bg="#4CAF50", fg="white", font=(UI_FONT, get_ui_font_size(9), "bold"),
+            bg="#4CAF50", fg="black", font=(UI_FONT, get_ui_font_size(9), "bold"),
         ).pack(side=tk.LEFT, padx=5)
         tk.Button(
             btn_frame, text="キャンセル", command=dialog.destroy, width=10,
@@ -1467,6 +1574,7 @@ class DescriptiveScorerGUI:
         ).pack(side=tk.LEFT, padx=5)
 
         dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
+        fit_window_to_content(dialog, min_width=380, min_height=320)
         dialog.grab_set()
         dialog.focus_force()
         dialog.wait_window()
@@ -1797,7 +1905,7 @@ class _SingleQuestionScorer:
         tk.Button(
             top_bar, text="✔ 採点完了",
             command=self._finish,
-            bg="#4CAF50", fg="white",
+            bg="#4CAF50", fg="black",
             font=(UI_FONT, get_ui_font_size(9), "bold"),
             relief=tk.FLAT, cursor="hand2", padx=8,
         ).pack(side=tk.RIGHT, padx=2)
@@ -1939,8 +2047,7 @@ class _SingleQuestionScorer:
         """操作方法を小さいウィンドウで表示"""
         hw = tk.Toplevel(self._win)
         hw.title("操作方法")
-        hw.geometry("320x280")
-        hw.resizable(False, False)
+        hw.resizable(True, True)
         hw.transient(self._win)
 
         frame = tk.Frame(hw, padx=15, pady=10)
@@ -1982,6 +2089,8 @@ class _SingleQuestionScorer:
             font=(UI_FONT, get_ui_font_size(9)), padx=10,
         ).pack(pady=(10, 0))
 
+        fit_window_to_content(hw, min_width=320, min_height=280)
+
     def _open_current_original(self):
         """現在表示中の画像の元画像をビューアで開く"""
         if not self.filenames:
@@ -2016,7 +2125,7 @@ class _SingleQuestionScorer:
         tk.Label(top_bar, text="", bg=BG).pack(side=tk.LEFT, expand=True)  # spacer
 
         tk.Button(top_bar, text="✔ この問題の採点完了", command=self._finish,
-                  bg="#4CAF50", fg="white", font=(UI_FONT, get_ui_font_size(9), "bold"),
+                  bg="#4CAF50", fg="black", font=(UI_FONT, get_ui_font_size(9), "bold"),
                   relief=tk.FLAT, cursor="hand2").pack(side=tk.RIGHT)
 
         # スクロール領域
@@ -2049,12 +2158,16 @@ class _SingleQuestionScorer:
         tk.Label(score_bar, text="得点ボタン（クリック後、サムネイルをクリックで得点付与）:",
                  font=(UI_FONT, get_ui_font_size(9)), bg="#ECEFF1", fg="#555").pack(side=tk.LEFT, padx=(0, 8))
 
-        self._grid_score_buttons: Dict[int, tk.Button] = {}
+        # 得点ボタンはtk.Buttonではなくtk.Labelで自作する。macOSのAquaテーマでは
+        # tk.Buttonのbg/relief変更がネイティブ描画に反映されず、選択状態が
+        # 見た目上まったく変化しないため（tk.Frame/tk.Labelは汎用Tk描画のため
+        # bg変更が正しく反映される。_refresh_gridのカード背景色切替と同じ理由）。
+        self._grid_score_buttons: Dict[int, tk.Label] = {}
         for i in range(min(self.max_score + 1, 11)):
-            btn = tk.Button(score_bar, text=str(i), width=3, font=(UI_FONT, get_ui_font_size(10), "bold"),
-                            bg="#E3F2FD", relief=tk.RAISED, cursor="hand2",
-                            command=lambda s=i: self._on_grid_score_btn(s))
+            btn = tk.Label(score_bar, text=str(i), width=3, font=(UI_FONT, get_ui_font_size(10), "bold"),
+                           bg="#E3F2FD", relief=tk.RAISED, bd=1, cursor="hand2")
             btn.pack(side=tk.LEFT, padx=2)
+            btn.bind("<Button-1>", lambda e, s=i: self._on_grid_score_btn(s))
             self._grid_score_buttons[i] = btn
 
         # 配点 > 10 の場合はEntry
@@ -2067,14 +2180,14 @@ class _SingleQuestionScorer:
             tk.Button(score_bar, text="選択", font=(UI_FONT, get_ui_font_size(9)), bg="#90CAF9",
                       relief=tk.FLAT, command=self._on_grid_score_entry_select).pack(side=tk.LEFT, padx=3)
 
-        # 答案プレビューボタン
-        self._grid_preview_btn = tk.Button(
+        # 答案プレビューボタン（同上の理由でtk.Labelを使用）
+        self._grid_preview_btn = tk.Label(
             score_bar, text="📷 答案を表示",
             font=(UI_FONT, get_ui_font_size(9), "bold"),
-            bg="#E3F2FD", relief=tk.RAISED, cursor="hand2",
-            command=self._on_grid_preview_btn,
+            bg="#E3F2FD", relief=tk.RAISED, bd=1, cursor="hand2", padx=4, pady=2,
         )
         self._grid_preview_btn.pack(side=tk.RIGHT, padx=(6, 0))
+        self._grid_preview_btn.bind("<Button-1>", lambda e: self._on_grid_preview_btn())
 
         # クリアボタン
         tk.Button(score_bar, text="選択解除", font=(UI_FONT, get_ui_font_size(8)),
@@ -2760,8 +2873,7 @@ class _SingleQuestionScorer:
         """全答案の採点が完了した際のカスタムダイアログ"""
         dlg = tk.Toplevel(self._win)
         dlg.title("採点完了")
-        dlg.geometry("360x150")
-        dlg.resizable(False, False)
+        dlg.resizable(True, True)
         dlg.transient(self._win)
 
         body = tk.Frame(dlg, padx=20, pady=15)
@@ -2790,7 +2902,7 @@ class _SingleQuestionScorer:
             btn_frame, text="問題選択に戻る",
             command=_go_back,
             font=(UI_FONT, get_ui_font_size(10), "bold"),
-            bg="#4CAF50", fg="white", relief=tk.FLAT,
+            bg="#4CAF50", fg="black", relief=tk.FLAT,
             cursor="hand2", padx=12, pady=4,
         ).pack(side=tk.LEFT, padx=8)
 
@@ -2802,6 +2914,7 @@ class _SingleQuestionScorer:
             cursor="hand2", padx=12, pady=4,
         ).pack(side=tk.LEFT, padx=8)
 
+        fit_window_to_content(dlg, min_width=360, min_height=150)
         dlg.grab_set()
         dlg.focus_force()
         dlg.wait_window()
@@ -2977,7 +3090,7 @@ class DescriptiveReviewGUI:
         # 保存ボタン
         tk.Button(
             left, text="💾 変更を保存", command=self._save,
-            bg="#81C784", fg="white", font=("", 11, "bold"),
+            bg="#81C784", fg="black", font=("", 11, "bold"),
             relief=tk.FLAT, cursor="hand2",
         ).pack(fill=tk.X, pady=(8, 0))
 
@@ -3336,7 +3449,6 @@ class DescriptiveReviewGUI:
 
         if max_score <= 10:
             # 配点が低い場合: ボタン群で選択
-            dialog.geometry("350x200")
             btn_frame = tk.Frame(dialog, bg="#F5F7FA")
             btn_frame.pack(pady=10)
 
@@ -3349,7 +3461,6 @@ class DescriptiveReviewGUI:
                 ).pack(side=tk.LEFT, padx=2)
         else:
             # 配点が11点以上: 数値入力欄で入力
-            dialog.geometry("350x220")
             entry_frame = tk.Frame(dialog, bg="#F5F7FA")
             entry_frame.pack(pady=10)
             tk.Label(entry_frame, text="得点:", bg="#F5F7FA", font=("", 10)).pack(side=tk.LEFT)
@@ -3373,12 +3484,14 @@ class DescriptiveReviewGUI:
 
             entry.bind("<Return>", lambda e: _submit_entry())
             tk.Button(entry_frame, text="確定", command=_submit_entry,
-                      bg="#81C784", fg="white", font=("", 10, "bold"),
+                      bg="#81C784", fg="black", font=("", 10, "bold"),
                       relief=tk.FLAT, cursor="hand2").pack(side=tk.LEFT, padx=5)
 
         tk.Button(dialog, text="キャンセル", command=dialog.destroy,
                   bg="#BDBDBD", relief=tk.FLAT).pack(pady=5)
 
+        min_h = 200 if max_score <= 10 else 220
+        fit_window_to_content(dialog, min_width=350, min_height=min_h)
         dialog.wait_window()
 
     def _save(self):

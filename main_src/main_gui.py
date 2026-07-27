@@ -200,7 +200,8 @@ class SaitenSamuraiGUI:
         self.last_scored_folder = None
         self.last_results_folder = None
         self._name_trimmer = None  # 氏名欄トリミング用（cleanup管理）
-        
+        self._student_id_ocr_trimmer = None  # 学籍番号OCR用（cleanup管理）
+
         # 記述採点オプション（モードによりデフォルト値を決定）
         self.descriptive_enabled = tk.BooleanVar(
             value=(mode in (MODE_MARK_AND_DESCRIPTIVE, MODE_DESCRIPTIVE_ONLY))
@@ -281,7 +282,7 @@ class SaitenSamuraiGUI:
         self._cancel_frame = tk.Frame(log_frame, bg=SECTION_BG)
         self._btn_cancel = tk.Button(
             self._cancel_frame, text="⏹ 中断", font=FONT_BOLD,
-            bg="#E74C3C", fg="white", activebackground="#C0392B",
+            bg="#E74C3C", fg="black", activebackground="#C0392B",
             command=self._request_cancel, width=10,
         )
         self._btn_cancel.pack(side=tk.RIGHT, padx=4, pady=2)
@@ -337,7 +338,16 @@ class SaitenSamuraiGUI:
         self._btn_select_folder.pack(side=tk.LEFT)
         self._btn_select_pdf = tk.Button(row1, text="PDF選択", command=self.select_pdf, width=8, bg=BTN_GRAY, relief=tk.FLAT, font=FONT_NORMAL)
         self._btn_select_pdf.pack(side=tk.LEFT, padx=(2, 0))
-        
+        self._btn_page_number_check = tk.Button(row1, text="🔢 ページ番号確認", command=self.run_page_number_check, bg=BTN_GRAY, relief=tk.FLAT, font=FONT_NORMAL)
+        self._btn_page_number_check.pack(side=tk.LEFT, padx=(2, 0))
+        _ToolTip(
+            self._btn_page_number_check,
+            "同じページ番号の答案だけをまとめたつもりのフォルダに、\n"
+            "取り違えが混ざっていないかを確認する単発ツールです。\n"
+            "印刷されたページ番号の数字を1回だけ矩形選択すると、\n"
+            "全画像の同じ位置をOCRして多数決と異なるものを警告表示します。",
+        )
+
         # 座標ファイル（記述のみモードでは非表示）
         row2 = tk.Frame(input_group, bg=SECTION_BG)
         self._coord_row = row2  # モード制御用に保持
@@ -594,6 +604,14 @@ class SaitenSamuraiGUI:
             font=(UI_FONT, get_ui_font_size(8)), anchor=tk.W, cursor="hand2"
         ).pack(fill=tk.X, pady=(0, 3))
 
+        # 学籍番号OCR（新機能のためデフォルトOFF、実験的機能）
+        self.student_id_ocr_enabled = tk.BooleanVar(value=False)
+        tk.Checkbutton(
+            step3, text="学籍番号をOCRで読み取る（実験的機能・要確認）",
+            variable=self.student_id_ocr_enabled, bg=SECTION_BG,
+            font=(UI_FONT, get_ui_font_size(8)), anchor=tk.W, cursor="hand2"
+        ).pack(fill=tk.X, pady=(0, 3))
+
         # 記述採点を分析に含むチェックボックス（記述ON時のみ表示）
         self._chk_include_desc_analysis = tk.Checkbutton(
             step3, text="記述採点の結果を分析ファイルに含む",
@@ -616,6 +634,20 @@ class SaitenSamuraiGUI:
         self._btn_run_summary.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.open_results_btn = tk.Button(self._step3_run_row, text="📁", command=self.open_results_folder, bg=BTN_GRAY, relief=tk.FLAT, state=tk.DISABLED, width=3, font=(UI_FONT, get_ui_font_size(10)))
         self.open_results_btn.pack(side=tk.LEFT, padx=(3, 0), fill=tk.Y)
+
+        # --- 複数ページ統合（既存の集計Excel同士を学籍番号で統合する単発ツール） ---
+        self._btn_multi_page_merge = tk.Button(
+            step3, text="🔗 複数ページ統合", command=self.run_multi_page_merge,
+            bg=BTN_GRAY, relief=tk.FLAT, font=FONT_NORMAL,
+        )
+        self._btn_multi_page_merge.pack(fill=tk.X, pady=(5, 0))
+        _ToolTip(
+            self._btn_multi_page_merge,
+            "1人の学生が複数ページ提出する場合、ページ番号ごとに\n"
+            "別々に生成した集計Excel（学籍番号OCR確認済み）を、\n"
+            "学籍番号をキーに1つに統合します。\n"
+            "画像フォルダの選択状態とは無関係に使えます。",
+        )
 
         # --- 初期化完了後の処理 ---
         # Step2/3 のボタンを初期状態で無効化（Step進行ガード）
@@ -921,6 +953,29 @@ class SaitenSamuraiGUI:
             self.log_message(f"✓ 座標ファイルを選択: {file}")
             self._update_step1_availability()
     
+    def run_page_number_check(self):
+        """ページ番号確認ツールを実行する（単発、集計処理とは独立）。
+
+        画像フォルダ内の全画像から、教員が最初の1枚で選んだ矩形位置の
+        印刷ページ番号をOCRし、多数決と異なるファイル（取り違えの疑い）を
+        一覧表示する。射影補正前の生スキャン画像に対してもそのまま使える。
+        """
+        image_folder = self.image_folder_path.get()
+        if not image_folder or not Path(image_folder).exists():
+            messagebox.showerror("エラー", "先に画像フォルダを選択してください。")
+            return
+        from page_number_checker import check_page_numbers
+        check_page_numbers(image_folder, parent=self.root)
+
+    def run_multi_page_merge(self):
+        """複数ページ統合ツールを実行する（単発、集計処理とは独立）。
+
+        ページ番号ごとに別々に生成した集計Excel（記述のみモード、学籍番号OCR
+        確認済み）を、教員が順番に指定すると、学籍番号をキーに1つに統合する。
+        """
+        from multi_page_merger import run_multi_page_merge_gui
+        run_multi_page_merge_gui(parent=self.root)
+
     def select_template(self):
         """正答データファイルを選択"""
         file = filedialog.askopenfilename(title="正答データを選択", filetypes=[("Excelファイル", "*.xlsx *.xls"), ("すべてのファイル", "*.*")])
@@ -1549,12 +1604,17 @@ class SaitenSamuraiGUI:
         return (len(unscored_images) == 0, len(unscored_images), total_images, detail)
 
     def _reset_descriptive_data(self):
-        """記述問題の設定と採点結果をすべて削除して初期状態に戻す。
+        """記述問題の設定・採点結果と、学籍番号欄の位置設定をすべて削除して初期状態に戻す。
+
+        同じテスト用データ(PDF/フォルダ)を使い回して設定をやり直す際、
+        学籍番号欄の位置設定だけが残っていて英字マス指定・桁数確認の画面が
+        再度出てこない、という混乱を避けるため、記述設定とあわせてここで削除する。
 
         削除対象:
             - descriptive_config.json（問題設定）
             - descriptive_scores.json（採点結果）
             - total_display_config.json（合計点表示位置設定）
+            - student_id_area_config.json（学籍番号欄の位置設定）
         """
         img_folder = self.image_folder_path.get()
         if not img_folder:
@@ -1568,6 +1628,9 @@ class SaitenSamuraiGUI:
         from descriptive_scorer import TOTAL_DISPLAY_CONFIG_FILE
         total_pos_path = results_data / TOTAL_DISPLAY_CONFIG_FILE
 
+        from id_area_config import ID_AREA_CONFIG_FILE
+        id_area_path = results_data / ID_AREA_CONFIG_FILE
+
         # 削除対象ファイルの存在チェック
         existing = []
         if config_path.exists():
@@ -1576,18 +1639,20 @@ class SaitenSamuraiGUI:
             existing.append(f"・記述採点結果（{scores_path.name}）")
         if total_pos_path.exists():
             existing.append(f"・合計点位置設定（{total_pos_path.name}）")
+        if id_area_path.exists():
+            existing.append(f"・学籍番号欄の位置設定（{id_area_path.name}）")
 
         if not existing:
-            messagebox.showinfo("初期化", "削除対象の記述設定ファイルが見つかりません。\nすでに初期状態です。")
+            messagebox.showinfo("初期化", "削除対象の設定ファイルが見つかりません。\nすでに初期状態です。")
             return
 
         # 確認ダイアログ — 既存の採点データが消えることを明示
         answer = messagebox.askokcancel(
-            "⚠ 記述設定の初期化",
-            "以下のファイルを削除し、記述採点を初期状態に戻します。\n\n"
+            "⚠ 記述設定・学籍番号欄設定の初期化",
+            "以下のファイルを削除し、初期状態に戻します。\n\n"
             + "\n".join(existing) + "\n\n"
             "この操作は取り消せません。\n"
-            "進行中の記述採点データもすべて失われます。\n\n"
+            "進行中の記述採点データ・学籍番号欄の位置設定もすべて失われます。\n\n"
             "本当に初期化しますか？",
             icon="warning",
         )
@@ -1600,7 +1665,7 @@ class SaitenSamuraiGUI:
         backup_suffix = datetime.datetime.now().strftime("_%Y%m%d_%H%M%S.bak")
         backed_up = []
         backup_failed = []
-        for path in [config_path, scores_path, total_pos_path]:
+        for path in [config_path, scores_path, total_pos_path, id_area_path]:
             if path.exists():
                 try:
                     bak_path = path.with_suffix(path.suffix + backup_suffix)
@@ -1624,7 +1689,7 @@ class SaitenSamuraiGUI:
 
         # ファイル削除
         deleted = []
-        for path in [config_path, scores_path, total_pos_path]:
+        for path in [config_path, scores_path, total_pos_path, id_area_path]:
             if path.exists():
                 try:
                     path.unlink()
@@ -1641,7 +1706,7 @@ class SaitenSamuraiGUI:
                 except Exception as e:
                     self.log_message(f"削除エラー: {bak_atomic.name} — {e}")
 
-        self.log_message(f"✓ 記述設定を初期化しました（{', '.join(deleted)}）")
+        self.log_message(f"✓ 記述設定・学籍番号欄設定を初期化しました（{', '.join(deleted)}）")
         self._update_descriptive_status()
 
     # ---------------------------------------------------------
@@ -2758,6 +2823,18 @@ class SaitenSamuraiGUI:
 ・マーク認識結果Excel (Mark2-Result-...)
 ・枠描画済み画像
 ・coordinates.csv"""
+                error_files = result.get('error_files') or []
+                if error_files:
+                    shown = error_files[:20]
+                    file_list = "\n".join(f"・{fn}" for fn in shown)
+                    if len(error_files) > len(shown):
+                        file_list += f"\n…他{len(error_files) - len(shown)}件"
+                    summary += (
+                        "\n\n【排除候補（四隅マーカー等が検出できず処理できなかったページ）】\n"
+                        f"{file_list}\n"
+                        "スキャン向き・折れ・切れなどを確認し、必要であれば元フォルダから\n"
+                        "除外して再スキャン・再実行してください。"
+                    )
             else:
                 summary = "マーク認識・枠描画処理が正常に完了しました！"
 
@@ -3347,7 +3424,15 @@ class SaitenSamuraiGUI:
                 ):
                     return
                 name_images = None
-        
+
+        # --- 学籍番号OCR（チェックボックスで制御・実験的機能） ---
+        aborted, student_id_result, id_ocr_trimmer = self._run_student_id_ocr_flow(
+            self.image_folder_path.get()
+        )
+        if aborted:
+            return
+        self._student_id_ocr_trimmer = id_ocr_trimmer
+
         # --- 記述ON時のデータ存在チェック（スレッド起動前にメインスレッドで確認） ---
         # 記述が有効だがデータがない場合→マーク採点のみで継続するか尋ねる。
         # データがあるが未完了の場合→未採点を 0 点扱いで継続するか尋ねる。
@@ -3397,10 +3482,88 @@ class SaitenSamuraiGUI:
         }
         thread = threading.Thread(
             target=self._run_summary_generation_thread,
-            args=(params, name_images),
+            args=(params, name_images, student_id_result),
             daemon=True
         )
         thread.start()
+
+    def _run_student_id_ocr_flow(self, image_folder):
+        """学籍番号OCR: 矩形選択→OCR→名簿読込(任意)→確認GUI。
+
+        チェックボックスがOFFの場合は何もしない。normal/記述のみモード
+        どちらからも呼べるよう、対象フォルダの存在チェックも含めて自己完結させる。
+
+        Returns:
+            (aborted, student_id_result, trimmer) のタプル。
+            aborted=True の場合、呼び出し元は処理全体を中断する。
+        """
+        if not self.student_id_ocr_enabled.get():
+            return False, None, None
+
+        boxed_folder = Path(image_folder) / RESULTS_FOLDER / BOXED_FOLDER
+        if not boxed_folder.exists():
+            messagebox.showerror(
+                "エラー",
+                f"補正済み画像フォルダが存在しません:\n{boxed_folder}\n\n"
+                "Step 1（OMR認識）を先に実行してください。"
+            )
+            return True, None, None
+
+        try:
+            from student_id_ocr import StudentIdOcrTrimmer
+            from id_area_config import ID_AREA_CONFIG_FILE
+            config_path = Path(image_folder) / RESULTS_FOLDER / RESULTS_DATA_FOLDER / ID_AREA_CONFIG_FILE
+            ocr_trimmer = StudentIdOcrTrimmer()
+            ocr_results = ocr_trimmer.run(
+                str(boxed_folder), parent=self.root,
+                original_image_folder=image_folder,
+                config_path=str(config_path),
+                default_digit_count=int(self.skip_questions.get() or 8),
+            )
+            if ocr_results is None:
+                if not messagebox.askyesno(
+                    "確認",
+                    "学籍番号OCRがキャンセルされました。\n"
+                    "OCRなしでサマリー生成を続行しますか？"
+                ):
+                    return True, None, None
+                return False, None, None
+
+            self.log_message(f"✓ 学籍番号OCR完了: {len(ocr_results)}枚")
+
+            roster = None
+            roster_path = filedialog.askopenfilename(
+                title="名簿Excelを選択（任意・キャンセルでスキップ）",
+                filetypes=[("Excelファイル", "*.xlsx *.xls"), ("すべてのファイル", "*.*")],
+            )
+            if roster_path:
+                try:
+                    from roster_loader import load_roster
+                    roster = load_roster(roster_path)
+                    self.log_message(f"✓ 名簿読込: {len(roster)}件")
+                except Exception as e:
+                    self.log_message(f"名簿読込エラー: {e}")
+                    messagebox.showwarning(
+                        "名簿読込エラー",
+                        f"名簿の読込に失敗しました:\n{e}\n\n名簿照合なしで続行します。"
+                    )
+                    roster = None
+
+            from student_id_review_gui import StudentIdReviewGUI
+            review = StudentIdReviewGUI(self.root, ocr_results, roster)
+            student_id_result = review.run()
+            self.log_message(f"✓ 学籍番号OCR確認完了: {len(student_id_result)}枚")
+            return False, student_id_result, ocr_trimmer
+
+        except Exception as e:
+            self.log_message(f"学籍番号OCRエラー: {e}")
+            if not messagebox.askyesno(
+                "エラー",
+                f"学籍番号OCR中にエラーが発生しました:\n{e}\n\n"
+                "OCRなしでサマリー生成を続行しますか？"
+            ):
+                return True, None, None
+            return False, None, None
 
     # ---------------------------------------------------------
     # 記述のみモード: サマリー生成
@@ -3477,6 +3640,14 @@ class SaitenSamuraiGUI:
                         return
                     name_images = None
 
+        # 学籍番号OCR（チェックボックスで制御・実験的機能）
+        aborted, student_id_result, id_ocr_trimmer = self._run_student_id_ocr_flow(
+            self.image_folder_path.get()
+        )
+        if aborted:
+            return
+        self._student_id_ocr_trimmer = id_ocr_trimmer
+
         self._set_processing_state(True)
         # メインスレッドでStringVar値をキャプチャ（スレッドセーフ）
         params = {
@@ -3484,12 +3655,12 @@ class SaitenSamuraiGUI:
         }
         thread = threading.Thread(
             target=self._run_summary_descriptive_only_thread,
-            args=(params, name_images),
+            args=(params, name_images, student_id_result),
             daemon=True,
         )
         thread.start()
 
-    def _run_summary_descriptive_only_thread(self, params, name_images=None):
+    def _run_summary_descriptive_only_thread(self, params, name_images=None, student_id_result=None):
         """記述のみモード: サマリー生成スレッド"""
         try:
             self.log_message("")
@@ -3516,6 +3687,7 @@ class SaitenSamuraiGUI:
                     descriptive_config=desc_config,
                     descriptive_scores=desc_scores,
                     name_images=name_images,
+                    student_id_result=student_id_result,
                     output_base_folder=None,
                 )
             finally:
@@ -3562,9 +3734,15 @@ class SaitenSamuraiGUI:
                 except Exception:
                     pass
                 self._name_trimmer = None
+            if hasattr(self, '_student_id_ocr_trimmer') and self._student_id_ocr_trimmer:
+                try:
+                    self._student_id_ocr_trimmer.cleanup()
+                except Exception:
+                    pass
+                self._student_id_ocr_trimmer = None
             self.root.after(0, self._set_processing_state, False)
-    
-    def _run_summary_generation_thread(self, params, name_images=None):
+
+    def _run_summary_generation_thread(self, params, name_images=None, student_id_result=None):
         """サマリー生成処理の実際の実行（別スレッド）"""
         try:
             self.log_message("")
@@ -3613,6 +3791,7 @@ class SaitenSamuraiGUI:
                     skip_questions=params['skip_questions'],
                     output_base_folder=None,
                     name_images=name_images,
+                    student_id_result=student_id_result,
                     descriptive_config=desc_config,
                     descriptive_scores=desc_scores,
                     include_descriptive_in_analysis=(
@@ -3700,6 +3879,12 @@ class SaitenSamuraiGUI:
                 except Exception:
                     pass
                 self._name_trimmer = None
+            if hasattr(self, '_student_id_ocr_trimmer') and self._student_id_ocr_trimmer:
+                try:
+                    self._student_id_ocr_trimmer.cleanup()
+                except Exception:
+                    pass
+                self._student_id_ocr_trimmer = None
             self.root.after(0, self._set_processing_state, False)
 
 

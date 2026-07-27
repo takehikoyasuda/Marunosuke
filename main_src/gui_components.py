@@ -44,7 +44,7 @@ from constants import (
     WHITENESS_CACHE_FILE,
     MODE_MARK_ONLY, MODE_MARK_AND_DESCRIPTIVE, MODE_DESCRIPTIVE_ONLY,
     MARK_FORMAT_STANDARD, MARK_FORMAT_MULTI_DIGIT,
-    get_ui_font_family, get_ui_font_size,
+    get_ui_font_family, get_ui_font_size, fit_window_to_content,
 )
 
 # 日本語UIフォント（Windows: Yu Gothic UI, Mac: Hiragino Sans）
@@ -458,7 +458,7 @@ class MarkCheckerGUI:
         self._btn_apply = tk.Button(
             self._side_panel, text="データの更新(再読み込み)",
             command=self.apply_to_xlsx,
-            bg='#2E7D32', fg='white', font=(UI_FONT, get_ui_font_size(10), 'bold'),
+            bg='#2E7D32', fg='black', font=(UI_FONT, get_ui_font_size(10), 'bold'),
             relief=tk.FLAT, cursor='hand2',
         )
         self._btn_apply.pack(fill=tk.X, pady=(3, 0))
@@ -535,14 +535,14 @@ class MarkCheckerGUI:
         self._btn_save_back = tk.Button(
             nav_frame, text="保存してグリッドに戻る",
             command=self._save_single_and_back,
-            bg='#4CAF50', fg='white', font=('Arial', 10, 'bold'), width=22,
+            bg='#4CAF50', fg='black', font=('Arial', 10, 'bold'), width=22,
         )
         self._btn_save_back.pack(side=tk.LEFT, padx=5)
 
         self._btn_cancel_back = tk.Button(
             nav_frame, text="キャンセル（グリッドに戻る）",
             command=self._switch_to_grid,
-            bg='#78909C', fg='white', font=('Arial', 10), width=22,
+            bg='#78909C', fg='black', font=('Arial', 10), width=22,
         )
         self._btn_cancel_back.pack(side=tk.LEFT, padx=5)
     
@@ -563,7 +563,7 @@ class MarkCheckerGUI:
         self._pager_frame.pack(side=tk.LEFT)
         self._btn_prev_page = tk.Button(
             self._pager_frame, text="◀", width=3, command=self._prev_grid_page,
-            bg='#546E7A', fg='white', relief=tk.FLAT, cursor='hand2',
+            bg='#546E7A', fg='black', relief=tk.FLAT, cursor='hand2',
         )
         self._btn_prev_page.pack(side=tk.LEFT, padx=(8, 2))
         self._page_label = tk.Label(
@@ -572,26 +572,29 @@ class MarkCheckerGUI:
         self._page_label.pack(side=tk.LEFT, padx=2)
         self._btn_next_page = tk.Button(
             self._pager_frame, text="▶", width=3, command=self._next_grid_page,
-            bg='#546E7A', fg='white', relief=tk.FLAT, cursor='hand2',
+            bg='#546E7A', fg='black', relief=tk.FLAT, cursor='hand2',
         )
         self._btn_next_page.pack(side=tk.LEFT, padx=(2, 8))
 
-        # 選択肢カテゴリ用タブ（初期状態では非表示）
+        # 選択肢カテゴリ用タブ（初期状態では非表示）。tk.Buttonではなくtk.Labelで
+        # 自作する。macOSのAquaテーマではtk.Buttonのbg変更がネイティブ描画に
+        # 反映されず選択中タブが見分けられなくなるため（tk.Frame/tk.Labelは
+        # bg変更が正しく反映される）。
         self._tab_frame = tk.Frame(toolbar, bg='#37474F')
-        self._btn_tab_light = tk.Button(
+        self._btn_tab_light = tk.Label(
             self._tab_frame, text="薄い解答(ノーマーク疑惑)",
-            command=lambda: self._switch_choice_tab("薄い"),
-            bg='#42A5F5', fg='white', font=(UI_FONT, get_ui_font_size(9), 'bold'),
-            relief=tk.FLAT, cursor='hand2', padx=8,
+            bg='#42A5F5', fg='black', font=(UI_FONT, get_ui_font_size(9), 'bold'),
+            relief=tk.FLAT, bd=1, cursor='hand2', padx=8, pady=3,
         )
         self._btn_tab_light.pack(side=tk.LEFT, padx=(8, 2))
-        self._btn_tab_dark = tk.Button(
+        self._btn_tab_light.bind("<Button-1>", lambda e: self._switch_choice_tab("薄い"))
+        self._btn_tab_dark = tk.Label(
             self._tab_frame, text="濃い解答(複数マーク疑惑)",
-            command=lambda: self._switch_choice_tab("濃い"),
-            bg='#546E7A', fg='white', font=(UI_FONT, get_ui_font_size(9)),
-            relief=tk.FLAT, cursor='hand2', padx=8,
+            bg='#546E7A', fg='black', font=(UI_FONT, get_ui_font_size(9)),
+            relief=tk.FLAT, bd=1, cursor='hand2', padx=8, pady=3,
         )
         self._btn_tab_dark.pack(side=tk.LEFT, padx=(2, 8))
+        self._btn_tab_dark.bind("<Button-1>", lambda e: self._switch_choice_tab("濃い"))
 
         # カードサイズスライダー
         self._grid_size_var = tk.IntVar(value=self._grid_thumb_size)
@@ -2797,12 +2800,7 @@ class RenderingSettingsGUI:
         # ウィンドウ作成
         self.window = tk.Toplevel(parent_window)
         self.window.title("⚙ 採点結果描画 詳細設定")
-        # モードに応じたウィンドウサイズ
-        if self._show_mark_section and self._show_desc_section:
-            self.window.geometry("480x520")
-        else:
-            self.window.geometry("480x320")
-        self.window.resizable(False, False)
+        self.window.resizable(True, True)
         self.window.transient(parent_window)
         self.window.grab_set()
         self.window.focus_set()
@@ -2816,6 +2814,12 @@ class RenderingSettingsGUI:
 
         # ウィンドウ閉じ処理
         self.window.protocol("WM_DELETE_WINDOW", self._on_cancel)
+
+        # モードに応じた最小ウィンドウサイズ（実際のコンテンツがこれより大きければ広げる）
+        if self._show_mark_section and self._show_desc_section:
+            fit_window_to_content(self.window, min_width=480, min_height=520)
+        else:
+            fit_window_to_content(self.window, min_width=480, min_height=320)
 
     # ─────────────────────────────────────────────
     # 変数初期化
