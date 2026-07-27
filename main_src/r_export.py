@@ -25,7 +25,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from constants import escape_excel_formula, MARK_FORMAT_STANDARD
+from constants import escape_excel_formula
 
 logger = logging.getLogger(__name__)
 
@@ -52,33 +52,23 @@ DEFAULT_N_FIELDS = 3
 # ========================================
 
 def export_r_analysis_kit(
-    template_path,
-    mark2_result_path,
     output_folder,
-    skip_questions=0,
     n_ranks=DEFAULT_N_RANKS,
     n_fields=DEFAULT_N_FIELDS,
     title="定期試験分析レポート",
     author="Mark2 Analysis System",
     descriptive_config=None,
     descriptive_scores=None,
-    mark_format=MARK_FORMAT_STANDARD,
 ):
     """
     R言語 exametrika 分析キットを出力する。
 
-    CTT分析と同じデータソース（マーク部分の0/1正誤データ）を使用する。
+    CTT分析と同じデータソース（記述問題の0/1正誤データ）を使用する。
     descriptive_config / descriptive_scores が指定されている場合、
     記述問題をバイナリ(0/1)項目として追加する。
 
-    template_path / mark2_result_path が None の場合（記述のみモード）、
-    記述問題データのみでデータセットを構築する。
-
     Args:
-        template_path: 正答データExcelのパス（記述のみモードではNone可）
-        mark2_result_path: OMR読取結果Excelのパス（記述のみモードではNone可）
         output_folder: 出力ベースフォルダ（03_Final_Report）
-        skip_questions: スキップする列数（学籍番号等）
         n_ranks: 潜在ランク数（デフォルト 5）
         n_fields: バイクラスタリングのフィールド数（デフォルト 3）
         title: レポートのタイトル
@@ -98,10 +88,8 @@ def export_r_analysis_kit(
         from ctt_analyzer import convert_mark2_to_ctt_data, CTTAnalyzer
 
         ans_df, key_df = convert_mark2_to_ctt_data(
-            template_path, mark2_result_path, skip_questions,
             descriptive_config=descriptive_config,
             descriptive_scores=descriptive_scores,
-            mark_format=mark_format,
         )
         analyzer = CTTAnalyzer(ans_df, key_df)
         score_matrix = analyzer.score_matrix  # 0/1バイナリ DataFrame

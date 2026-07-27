@@ -63,7 +63,6 @@ CLEAN_FOLDER = "00_Processing_Clean"    # 補正済み画像（枠描画なし�
 RESULTS_DATA_FOLDER = "01_Results"      # OMRデータ、Answer Key、coordinates.csv
 SCORED_FOLDER = "02_Graded_Detail"      # 個別採点済み画像
 FINAL_REPORT_FOLDER = "03_Final_Report" # サマリーExcel、統合PDF
-MARK_AREAS_FILE = "mark_areas.xlsx"
 ANSWER_KEY_FILE = "answer_key.xlsx"
 STUDENT_SUMMARY_FILE = "001_student_summary.xlsx"
 EXAM_SUMMARY_FILE = "002_exam_summary.xlsx"
@@ -73,20 +72,6 @@ SCORED_PDF_FILE = "005_scored_all.pdf"   # 統合PDF（採点済み画像まと�
 R_EXPORT_FOLDER = "006_R_analysis_kit"   # R連携エクスポート（exametrika分析キット）
 READING_RESULTS_FOLDER_NAME = "reading_results"  # 01_Results内のOMR結果サブフォルダ
 SESSION_STATE_FILE = "session_state.json"         # セッション状態保存ファイル
-MARKER_CACHE_FILE = "marker_cache.json"           # マーカー座標キャッシュ（Step2高速化用）
-WHITENESS_CACHE_FILE = "whiteness_cache.json"     # 白さキャッシュ（MarkChecker高速化用）
-
-# エラーチェック用定数
-ERROR_TYPE_NO_MARK = 'NoMark'
-ERROR_TYPE_DOUBLE_MARK = 'DoubleMark'
-ERROR_TYPE_INVALID = 'Invalid'
-DEFAULT_CORRECTION = '-1'
-DEFAULT_SCALE_FACTOR = 1.25
-DEFAULT_EXPAND_FACTOR = 1.3
-DEFAULT_EXPAND_FACTOR_Y = 1.2   # 高さ方向の追加拡張倍率（上下にマージンを確保）
-DEFAULT_BACKUP_FOLDER = 'backup'
-MAX_DISPLAY_WIDTH = 1100   # マークチェッカー画像の最大表示幅 (px)
-MAX_DISPLAY_HEIGHT = 400   # マークチェッカー画像の最大表示高さ (px)
 
 # 記述採点 得点描画の透過率 (0.0=完全透明 ～ 1.0=不透明)
 # ※ 「詳細設定」ウィンドウから変更可能
@@ -137,57 +122,14 @@ def get_rendering_settings(overrides=None):
                 settings[key] = overrides[key]
     return settings
 
-# マークチェッカー用エイリアス (セクション7で使用)
-MARK2_BASE_WIDTH = MARK2_WIDTH
-MARK2_BASE_HEIGHT = MARK2_HEIGHT
-
 # ========================================
-# v4.1 アプリケーション動作モード
+# アプリケーション動作モード
 # ========================================
-MODE_MARK_ONLY = "mark_only"                   # マーク採点のみ
-MODE_MARK_AND_DESCRIPTIVE = "mark_and_descriptive"  # マーク採点 ＋ 記述採点
+# 現在は記述式のみモードだが、gui_components.RenderingSettingsGUI が
+# マーク/記述セクションの表示切替に参照するため定数自体は残している。
+MODE_MARK_ONLY = "mark_only"                   # マーク採点のみ（廃止済み）
+MODE_MARK_AND_DESCRIPTIVE = "mark_and_descriptive"  # マーク採点 ＋ 記述採点（廃止済み）
 MODE_DESCRIPTIVE_ONLY = "descriptive_only"      # 記述採点のみ
-
-# ========================================
-# v4.7 マーク形式 (app_mode に直交するフラグ)
-# ========================================
-# standard: 従来の1問=1マーク列(10択、並びは 1..9,0)
-# multi_digit: 複数桁設問モード(共通テスト数学式)。連続する複数のマーク行で
-#   1つの値("-24" 等)を構成し、完答のみ得点。紙面の各行は
-#   -, 0〜9, a, b, c, d の15マーク(M2-03-008 座標ファイルの値ヘッダは -1, 0〜13)
-MARK_FORMAT_STANDARD = "standard"
-MARK_FORMAT_MULTI_DIGIT = "multi_digit"
-
-# 複数桁モードの「座標ファイルヘッダ値 ⇔ 紙面上の記号」対応表。
-# mark2結果Excel・answer_keyの正答・描画はすべて記号側で表記する。
-MULTI_DIGIT_VALUE_TO_SYMBOL = {
-    -1: '-',
-    0: '0', 1: '1', 2: '2', 3: '3', 4: '4',
-    5: '5', 6: '6', 7: '7', 8: '8', 9: '9',
-    10: 'a', 11: 'b', 12: 'c', 13: 'd',
-}
-MULTI_DIGIT_SYMBOL_TO_VALUE = {v: k for k, v in MULTI_DIGIT_VALUE_TO_SYMBOL.items()}
-# answer_key の正答に使用できる文字集合
-MULTI_DIGIT_VALID_SYMBOLS = set(MULTI_DIGIT_SYMBOL_TO_VALUE.keys())
-
-# ========================================
-# v4.5 OMR 認識モード
-# ========================================
-OMR_MODE_THRESHOLD = "threshold"   # 従来の閾値方式
-OMR_MODE_KMEANS = "kmeans"         # K-means クラスタリング方式（v4.5 追加）
-
-# K-means パラメータ
-KMEANS_N_CLUSTERS = 2              # クラスタ数 (マーク済み / 空白)
-KMEANS_MIN_SAMPLES = 50            # 最小サンプル数（未満は閾値方式にフォールバック）
-KMEANS_FEATURES = [                # 特徴量名リスト (v4.5.0: 7次元)
-    'filled_ratio',
-    'mean_inv_brightness',
-    'dark_pixel_ratio',
-    'std_inv_brightness',
-    'center_edge_ratio',               # v4.5 追加: 中心/辺縁の濃度比
-    'normalized_filled',               # v4.5 追加: シート内正規化塗りつぶし比
-    'question_contrast',               # v4.5 追加: 設問内コントラスト
-]
 
 
 # ========================================
@@ -496,6 +438,53 @@ def safe_print(*args, **kwargs):
 
 
 _FORMULA_TRIGGER_CHARS = ('=', '+', '-', '@', '\t', '\r')
+
+
+def number_to_circled(num):
+    """数字を丸数字に変換（1→①, 2→②, ...）"""
+    if 1 <= num <= 50:
+        return chr(0x2460 + num - 1)  # ①-㊿
+    return str(num)
+
+
+def normalize_value(value):
+    """
+    値を正規化して文字列に変換
+
+    Args:
+        value: 入力値（数値、文字列、NaNなど）
+
+    Returns:
+        正規化された文字列
+    """
+    import pandas as pd
+    if pd.isna(value):
+        return ''
+
+    # 浮動小数点数の場合
+    if isinstance(value, float):
+        # 整数値と等しい場合は整数に変換（例: 1.0 -> 1）
+        if value == int(value):
+            value = int(value)
+
+    # 文字列化して空白除去
+    return str(value).strip()
+
+
+def normalize_zero_ten(value):
+    """マークシート選択肢の "10" を "0" に正規化する（0⇔10の後方互換ヘルパー）。
+
+    CTT分析(ctt_analyzer)で使用する。詳細な経緯は ctt_analyzer.py 参照。
+    """
+    s = str(value).strip()
+    return '0' if s == '10' else s
+
+
+def normalize_answer_set(answer_str):
+    """複数正答文字列("3;10" / "3|10")を0⇔10正規化済みの集合に変換する。"""
+    if not answer_str:
+        return set()
+    return {normalize_zero_ten(p) for p in str(answer_str).replace('|', ';').split(';')}
 
 
 def escape_excel_formula(value):

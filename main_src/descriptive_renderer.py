@@ -15,8 +15,10 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from scoring_engine import number_to_circled
-from constants import get_rendering_settings, DESCRIPTIVE_OVERLAY_OPACITY, get_cjk_font_path
+from constants import (
+    get_rendering_settings, DESCRIPTIVE_OVERLAY_OPACITY, get_cjk_font_path,
+    number_to_circled,
+)
 
 logger = logging.getLogger(__name__)
 

@@ -40,10 +40,10 @@ from openpyxl.drawing.text import Font as ChartFont
 from constants import (
     safe_print,
     escape_excel_formula,
-    MARK_FORMAT_STANDARD,
-    MARK_FORMAT_MULTI_DIGIT,
     setup_japanese_matplotlib_font,
     get_excel_font_family,
+    normalize_zero_ten,
+    normalize_answer_set,
 )
 
 # Optional: matplotlib for CTT plots
@@ -76,132 +76,32 @@ try:
 except ImportError:
     HAS_REPORTLAB = False
 
-from scoring_engine import (
-    number_to_circled,
-    normalize_value,
-    normalize_zero_ten,
-    normalize_answer_set,
-    load_template,
-    load_mark2_results,
-    score_answers,
-)
 
-
-def convert_mark2_to_ctt_data(template_path, mark2_result_path, skip_questions=0,
-                              descriptive_config=None, descriptive_scores=None,
-                              template_dict=None, mark2_results=None,
-                              mark_format=MARK_FORMAT_STANDARD):
+def convert_mark2_to_ctt_data(descriptive_config=None, descriptive_scores=None):
     """
-    Mark2のデータをCTT分析用のDataFrameに変換する。
-    
-    Mark2: 配点ベース・選択肢文字列
-    CTT:   0/1バイナリ・設問ID文字列
-    
-    注意: マークシートは最大10択択肢(1,2,...,9,0)。
-    10番目のマーク位置 = 選択肢"0"。"選択肢10"は存在しない。
-    テンプレートの正答に"10"が記載されている場合は"0"に正規化する。
-    
-    記述問題の統合:
-        descriptive_config と descriptive_scores が指定されている場合、
-        記述問題をバイナリ(0/1)項目として追加する。
+    記述式採点結果をCTT分析用のDataFrameに変換する。
+
+    記述問題をバイナリ(0/1)項目として扱う:
         - 満点 → 正答(1), 解答="1"
         - 満点未満 → 誤答(0), 解答="0"
         CTTの選択肢分析では正答="1" の2値問題として扱われる。
-    
+
     Args:
-        template_path: テンプレートExcelのパス（記述のみモードではNone可）
-        mark2_result_path: Mark2読取結果Excelのパス（記述のみモードではNone可）
-        skip_questions: スキップする列数（学籍番号等）
         descriptive_config: 記述問題設定dict（オプション）
         descriptive_scores: {ファイル名: {問題ID: 得点}} の辞書（オプション）
-        template_dict: 事前読込済みテンプレート（省略時は内部でExcelパース）
-        mark2_results: 事前読込済みOMR結果（省略時は内部でExcelパース）
-        mark_format: MARK_FORMAT_MULTI_DIGIT なら複数桁グループ=1項目として変換する。
-            QuestionID は範囲表記ラベル("1-3")、Key は正答文字列そのまま
-            (0⇔10正規化なし)、解答はグループ行の連結（無マーク・ダブルマークを
-            含むグループは「無効回答」に集約）。key_df に ExactMatch=True を立てる。
 
     Returns:
         tuple: (ans_df, key_df)
             ans_df: DataFrame (行=学生, 列=設問ID文字列, 値=選択肢文字列)
             key_df: DataFrame (QuestionID, Key, Summary, AllCorrect, ExactMatch)
     """
-    # --- 記述のみモード: マーク問題なし ---
-    has_mark = (template_path is not None or template_dict is not None)
-    multi_digit = (mark_format == MARK_FORMAT_MULTI_DIGIT)
-
-    if has_mark:
-        if template_dict is None:
-            template_dict = load_template(template_path, mark_format=mark_format)
-        if mark2_results is None:
-            mark2_results = load_mark2_results(mark2_result_path, skip_questions)
-
-        question_numbers = sorted(template_dict.keys())
-        if multi_digit:
-            # 複数桁グループ: QuestionID は範囲表記ラベル("1-3")
-            questions = [str(template_dict[q].get('group_label', q)) for q in question_numbers]
-        else:
-            questions = [str(q) for q in question_numbers]
-
-        keys = []
-        for q in question_numbers:
-            raw_key = normalize_value(template_dict[q]['正答'])
-            if multi_digit:
-                # 複数桁モード: 正答文字列("-24"等)をそのまま使用(0⇔10正規化なし)
-                keys.append(raw_key)
-                continue
-            # 正答キーの正規化: "10" → "0" (マークシートの10番目の位置 = 選択肢"0")
-            if ';' in raw_key or '|' in raw_key:
-                # 複数正答の各要素を正規化(表示順は元の記載順を維持)
-                parts = raw_key.replace('|', ';').split(';')
-                raw_key = ';'.join(normalize_zero_ten(p) for p in parts)
-            else:
-                raw_key = normalize_zero_ten(raw_key)
-            keys.append(raw_key)
-
-        # key_df: 設問IDと正答のペア(+任意の問題概要・特例フラグ)
-        summaries = [str(template_dict[q].get('問題概要', '') or '') for q in question_numbers]
-        # 特例(全員正解): score_answers と同様に全員正答として扱う。
-        # 正誤マトリクス上は分散ゼロの列になるため、項目分析統計からは除外される
-        all_correct = [template_dict[q].get('特例', '') == '全員正解' for q in question_numbers]
-        # ExactMatch: 複数桁グループは正答文字列との完全一致で0/1化する
-        # (0⇔10等価・複数正答の集合判定を適用しない)
-        exact_match = [multi_digit] * len(question_numbers)
-        key_df = pd.DataFrame({'QuestionID': questions, 'Key': keys, 'Summary': summaries,
-                               'AllCorrect': all_correct, 'ExactMatch': exact_match})
-
-        # ans_df: 各学生の解答マトリクス
-        rows = []
-        for result_data in mark2_results:
-            student_answers = result_data['answers']
-            row = {}
-            row['StudentID'] = result_data['image']  # ファイル名をIDに
-            for q_no, q_id in zip(question_numbers, questions):
-                if multi_digit:
-                    # グループ各行を連結。無マーク(空)・ダブルマーク(;)を含む
-                    # グループは「無効回答」に集約(既存の無効回答カテゴリを流用)
-                    span = template_dict[q_no].get('span', 1)
-                    parts = [str(student_answers.get(q_no + i, '')).strip().lower()
-                             for i in range(span)]
-                    if any(p == '' or p == 'nan' or ';' in p for p in parts):
-                        row[q_id] = '無効回答'
-                    else:
-                        row[q_id] = ''.join(parts)
-                else:
-                    ans = student_answers.get(q_no, '')
-                    row[q_id] = normalize_value(ans)
-            rows.append(row)
-
-        ans_df = pd.DataFrame(rows)
+    key_df = pd.DataFrame(columns=['QuestionID', 'Key', 'Summary', 'AllCorrect', 'ExactMatch'])
+    if descriptive_scores:
+        student_ids = sorted(descriptive_scores.keys())
+        ans_df = pd.DataFrame({'StudentID': student_ids})
     else:
-        # 記述のみモード: マーク解答なし、空の DataFrame から開始
-        key_df = pd.DataFrame(columns=['QuestionID', 'Key', 'Summary', 'AllCorrect', 'ExactMatch'])
-        if descriptive_scores:
-            student_ids = sorted(descriptive_scores.keys())
-            ans_df = pd.DataFrame({'StudentID': student_ids})
-        else:
-            ans_df = pd.DataFrame(columns=['StudentID'])
-    
+        ans_df = pd.DataFrame(columns=['StudentID'])
+
     # --- 記述問題の統合 ---
     if descriptive_config and descriptive_scores and descriptive_config.get('questions'):
         desc_questions = descriptive_config['questions']
@@ -1963,42 +1863,30 @@ class CTTPDFReporter:
         self.elements.append(Spacer(1, 0.05*inch))
 
 
-def generate_ctt_analysis(template_path, mark2_result_path, excel_output_path,
-                          pdf_output_path, skip_questions=0,
-                          descriptive_config=None, descriptive_scores=None,
-                          template_dict=None, mark2_results=None,
-                          mark_format=MARK_FORMAT_STANDARD):
+def generate_ctt_analysis(excel_output_path, pdf_output_path,
+                          descriptive_config=None, descriptive_scores=None):
     """
     古典テスト理論(CTT)分析のExcel+PDFレポートを生成する統括関数。
-    
+
     Args:
-        template_path: テンプレートExcelのパス
-        mark2_result_path: Mark2読取結果Excelのパス
         excel_output_path: CTT分析Excel出力パス
         pdf_output_path: CTT分析PDF出力パス
-        skip_questions: スキップする列数
         descriptive_config: 記述問題設定dict（オプション）
         descriptive_scores: {ファイル名: {問題ID: 得点}} の辞書（オプション）
-        template_dict: 事前読込済みのテンプレートdict（Noneなら内部で読込）
-        mark2_results: 事前読込済みのMark2結果list（Noneなら内部で読込）
-    
+
     Returns:
         dict: 成功フラグと統計情報
     """
     logger.info("=" * 60)
     logger.info("古典テスト理論(CTT)分析レポート生成")
     logger.info("=" * 60)
-    
+
     try:
-        # 1. データ変換（記述問題を含む場合は統合）
+        # 1. データ変換（記述問題を二値項目として変換）
         logger.info("  データ変換中...")
         ans_df, key_df = convert_mark2_to_ctt_data(
-            template_path, mark2_result_path, skip_questions,
             descriptive_config=descriptive_config,
             descriptive_scores=descriptive_scores,
-            template_dict=template_dict,
-            mark2_results=mark2_results,
-            mark_format=mark_format,
         )
         logger.info("  ✓ 受験者数: %d, 設問数: %d", len(ans_df), len(key_df))
         

@@ -1,25 +1,23 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-採点侍 (SaitenSamurai) — マークシート解析・採点・チェック統合アプリケーション
-
-バージョン: 4.7.0-beta.1
+採点侍 (SaitenSamurai) — 記述式答案の採点支援アプリケーション
 
 モジュール構成:
   constants.py          : 共通定数・ユーティリティ
-  omr_engine.py         : OMR認識エンジン
-  threshold_calibrator.py : 閾値推定ロジック
-  scoring_engine.py     : 採点コアロジック
-  image_renderer.py     : 画像描画
+  image_alignment.py    : 画像読み込み・コーナーマーカー検出・射影補正
+  descriptive_scorer.py : 記述式採点
+  descriptive_renderer.py : 記述式採点結果の描画
   summary_generator.py  : サマリーExcel生成
   ctt_analyzer.py       : CTT分析
-  mark_checker.py       : エラー検出・修正
+  student_id_ocr.py     : 学籍番号OCR
+  name_trimmer.py       : 氏名トリミング
+  page_number_checker.py : 印刷ページ番号確認
+  multi_page_merger.py  : 複数ページ答案の統合
   gui_components.py     : サブウィンドウGUI
   main_gui.py           : メインGUI
-  descriptive_scorer.py : 記述式採点
-  name_trimmer.py       : 氏名トリミング
 
-このファイルはエントリポイントと後方互換の re-export を提供する。
+このファイルはエントリポイントを提供する。
 """
 
 # ========================================
@@ -86,20 +84,12 @@ from constants import (
     setup_logging,
     safe_print, extract_pdf_to_images, combine_images_to_pdf,
     HAS_PYMUPDF, fitz,
-    MARK2_WIDTH, MARK2_HEIGHT, OUTPUT_SCALE_MAX,
     RESULTS_FOLDER, BOXED_FOLDER, RESULTS_DATA_FOLDER,
     SCORED_FOLDER, FINAL_REPORT_FOLDER,
-    MARK_AREAS_FILE, ANSWER_KEY_FILE,
+    ANSWER_KEY_FILE,
     STUDENT_SUMMARY_FILE, EXAM_SUMMARY_FILE,
-    CTT_ANALYSIS_EXCEL_FILE, CTT_ANALYSIS_PDF_FILE, SCORED_PDF_FILE,
+    CTT_ANALYSIS_EXCEL_FILE, CTT_ANALYSIS_PDF_FILE,
     READING_RESULTS_FOLDER_NAME, SESSION_STATE_FILE,
-    ERROR_TYPE_NO_MARK, ERROR_TYPE_DOUBLE_MARK, ERROR_TYPE_INVALID,
-    DEFAULT_CORRECTION, DEFAULT_SCALE_FACTOR,
-    DEFAULT_EXPAND_FACTOR, DEFAULT_EXPAND_FACTOR_Y,
-    DEFAULT_BACKUP_FOLDER,
-    MAX_DISPLAY_WIDTH, MAX_DISPLAY_HEIGHT,
-    MARK2_BASE_WIDTH, MARK2_BASE_HEIGHT,
-    MODE_MARK_ONLY, MODE_MARK_AND_DESCRIPTIVE, MODE_DESCRIPTIVE_ONLY,
 )
 
 # CTT分析ライブラリ可否フラグ（テストで参照される）
@@ -115,59 +105,14 @@ try:
 except ImportError:
     HAS_REPORTLAB = False
 
-# 採点コアロジック
-from scoring_engine import (
-    number_to_circled, normalize_value,
-    normalize_zero_ten, normalize_answer_set,
-    choice_to_position_index,
-    load_template, load_mark2_results, score_answers,
-)
-
 # 画像アライメント（採点モード非依存）
 from image_alignment import (
     imread_unicode, detect_corner_markers,
     apply_perspective_transform, compute_output_scale,
 )
 
-# OMR認識エンジン（マーク採点専用）
-from omr_engine import (
-    parse_excel_coordinates,
-    save_template_coordinates_debug, load_coordinates_from_csv,
-    draw_all_areas,
-    generate_template, save_coordinates_to_csv,
-    _save_coordinates_to_csv_impl,
-    recognize_marks, save_recognition_results,
-    process_box_drawer, process_folder,
-)
-
-# 閾値キャリブレーション
-from threshold_calibrator import (
-    collect_mark_fill_ratios,
-    estimate_color_threshold_from_pixels,
-    kmeans_2class,
-    analyze_fill_ratio_distribution,
-    run_threshold_calibration,
-    reclassify_with_threshold,
-    recollect_and_reclassify,
-)
-
-# 画像描画・採点結果レンダリング
-from image_renderer import (
-    draw_text_on_image,
-    draw_mixed_text_on_image,
-    draw_scoring_results,
-    draw_total_score,
-    _draw_total_score_in_box,
-    _draw_total_score_fallback,
-    process_scoring,
-)
-
 # サマリー生成
-from summary_generator import (
-    generate_student_summary,
-    generate_exam_summary,
-    process_summary_generation,
-)
+from summary_generator import process_descriptive_only_summary
 
 # CTT分析
 from ctt_analyzer import (
@@ -192,33 +137,6 @@ from r_export import (
     R_RMD_TEMPLATE_FILE,
 )
 
-# Checker機能
-from mark_checker import (
-    create_backup_checker,
-    update_xlsx_from_csv_checker,
-    apply_corrections_checker,
-    detect_errors_checker,
-    load_errors_checker,
-    save_errors_checker,
-    load_coordinates_csv_checker,
-    get_bbox_for_question_checker,
-    crop_and_scale_image_checker,
-    get_display_image_checker,
-    fit_image_to_display,
-    pil_to_imagetk_checker,
-    CorrectedImageCache,
-    _load_and_correct_image,
-    crop_from_corrected_image,
-)
-
-# GUIサブウィンドウ
-from gui_components import (
-    MarkCheckerGUI,
-    StudentAnswerSheetViewer,
-    ThresholdCalibratorGUI,
-    StartupModeDialog,
-)
-
 # メインGUI
 from main_gui import SaitenSamuraiGUI
 
@@ -238,7 +156,7 @@ import datetime
 
 def _get_crash_log_path():
     """クラッシュログの保存先パスを返す。
-    
+
     exe 環境では exe と同じディレクトリに保存。
     通常の Python 実行ではカレントディレクトリに保存。
     """
@@ -250,28 +168,10 @@ def _get_crash_log_path():
 
 
 def main():
-    """メイン関数 — 起動モード選択 → メインGUI"""
+    """メイン関数 — メインGUIを直接起動"""
     setup_logging()
     root = tk.Tk()
-    root.withdraw()  # モード選択中はメインウィンドウを非表示
-
-    # 起動モード選択ダイアログ
-    dialog = StartupModeDialog(root)
-    mode = dialog.result
-    mark_format = getattr(dialog, 'mark_format', None)
-    session_path = getattr(dialog, '_session_path', None)
-
-    if mode is None:
-        # ダイアログを閉じた → アプリ終了
-        root.destroy()
-        return
-
-    root.deiconify()  # メインウィンドウを表示
-    if mark_format is None:
-        from constants import MARK_FORMAT_STANDARD
-        mark_format = MARK_FORMAT_STANDARD
-    app = SaitenSamuraiGUI(root, mode=mode, mark_format=mark_format,
-                           restore_session_path=session_path)
+    app = SaitenSamuraiGUI(root)
     root.mainloop()
 
 
@@ -284,7 +184,7 @@ if __name__ == '__main__':
         log_path = _get_crash_log_path()
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         error_detail = traceback.format_exc()
-        
+
         try:
             with open(log_path, "a", encoding="utf-8") as f:
                 f.write(f"\n{'='*60}\n")
@@ -296,7 +196,7 @@ if __name__ == '__main__':
                 f.write(f"\n{error_detail}\n")
         except Exception:
             pass
-        
+
         # GUI でエラーメッセージを表示
         try:
             from tkinter import messagebox
@@ -309,7 +209,7 @@ if __name__ == '__main__':
             except Exception:
                 root = tk.Tk()
                 root.withdraw()
-            
+
             messagebox.showerror(
                 "採点侍 - エラー",
                 f"アプリケーションの起動中にエラーが発生しました。\n\n"
@@ -319,6 +219,5 @@ if __name__ == '__main__':
             )
         except Exception:
             pass
-        
-        sys.exit(1)
 
+        sys.exit(1)
