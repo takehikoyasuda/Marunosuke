@@ -390,9 +390,21 @@ class IdAreaConfigDialog:
             if is_alpha:
                 rect_kwargs["dash"] = (5, 3)
             self.canvas.create_rectangle(dx0, dy0, dx1, dy1, **rect_kwargs)
-            label_text = f"{i + 1}:英" if is_alpha else f"{i + 1}:数"
+            label_text = f"{i + 1}:A" if is_alpha else f"{i + 1}:数"
+
+            # ラベルは枠の内側左上に描くと記入済みの数字を隠してしまうため、
+            # 枠の上に描く。枠がキャンバス上端に近すぎて収まらない場合のみ
+            # 従来通り枠内側にフォールバックする。
+            label_gap = 4
+            label_y = dy0 - label_gap
+            font_size_px = get_ui_font_size(8) + 4  # ラベル高さの概算
+            if label_y - font_size_px < 0:
+                label_anchor, label_y = "n", dy0 + 2
+            else:
+                label_anchor = "s"
+
             self.canvas.create_text(
-                dx0 + 3, dy0 + 2, text=label_text, fill=color, anchor=tk.NW,
+                dx0, label_y, text=label_text, fill=color, anchor=label_anchor,
                 font=(UI_FONT, get_ui_font_size(8), "bold"), tag="id_box_preview",
             )
         if self._alpha_positions:

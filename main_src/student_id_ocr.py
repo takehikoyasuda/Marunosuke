@@ -163,6 +163,50 @@ def recognize_student_ids(
     return results
 
 
+def ensure_id_area_config(
+    image_folder: str,
+    parent: Optional[tk.Tk] = None,
+    config_path: Optional[str] = None,
+    default_digit_count: int = 8,
+    force_reconfigure: bool = False,
+) -> Optional[Dict]:
+    """学籍番号欄の位置設定を確保する(既存ならロード、なければダイアログ表示して保存)。
+
+    OCR認識(recognize_student_ids)は行わない。StudentIdOcrTrimmer.run() が
+    内包していた「エリア設定の確保」部分だけをStep1のウィザードから単独で
+    呼べるように切り出したもの。
+
+    Returns:
+        id_area_config の辞書。キャンセルされた場合は None。
+    """
+    image_files = get_image_files(image_folder)
+    if not image_files:
+        logger.error("画像フォルダに画像がありません: %s", image_folder)
+        if parent:
+            messagebox.showerror(
+                "エラー",
+                f"指定フォルダに画像がありません:\n{image_folder}",
+                parent=parent,
+            )
+        return None
+
+    config = None if force_reconfigure else (load_id_area_config(config_path) if config_path else None)
+    if config is None:
+        from id_area_config_gui import IdAreaConfigDialog
+        dialog = IdAreaConfigDialog(parent, image_files[0], default_digit_count=default_digit_count)
+        config = dialog.run()
+        if config is None:
+            logger.info("学籍番号欄の位置設定がキャンセルされました。")
+            return None
+        if config_path:
+            save_id_area_config(config_path, config)
+            logger.info("✓ 学籍番号欄の位置設定を保存しました: %s", config_path)
+    else:
+        logger.info("✓ 学籍番号欄の位置設定を読み込みました: %s", config_path)
+
+    return config
+
+
 class StudentIdOcrTrimmer:
     """学籍番号欄の位置設定(初回のみ)→一括OCRを一気通貫で提供するクラス。
 
@@ -192,19 +236,12 @@ class StudentIdOcrTrimmer:
                 )
             return None
 
-        config = load_id_area_config(config_path) if config_path else None
+        config = ensure_id_area_config(
+            image_folder, parent=parent, config_path=config_path,
+            default_digit_count=default_digit_count,
+        )
         if config is None:
-            from id_area_config_gui import IdAreaConfigDialog
-            dialog = IdAreaConfigDialog(parent, image_files[0], default_digit_count=default_digit_count)
-            config = dialog.run()
-            if config is None:
-                logger.info("学籍番号欄の位置設定がキャンセルされました。")
-                return None
-            if config_path:
-                save_id_area_config(config_path, config)
-                logger.info("✓ 学籍番号欄の位置設定を保存しました: %s", config_path)
-        else:
-            logger.info("✓ 学籍番号欄の位置設定を読み込みました: %s", config_path)
+            return None
 
         _app_temp = get_app_temp_dir(str(Path(image_folder).parent.parent))
         temp_dir = tempfile.mkdtemp(prefix="student_id_ocr_", dir=_app_temp)

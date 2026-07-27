@@ -520,6 +520,7 @@ class NameTrimmer:
         parent: Optional[tk.Tk] = None,
         max_height: int = DEFAULT_MAX_HEIGHT,
         original_image_folder: Optional[str] = None,
+        preset_rect: Optional[Tuple[int, int, int, int]] = None,
     ) -> Optional[Dict[str, str]]:
         """
         GUI選択 → 一括トリミング を実行し、ファイル名→画像パス辞書を返す。
@@ -530,6 +531,8 @@ class NameTrimmer:
             parent:       親となるtkinterウィンドウ（省略可）
             max_height:   名前画像の最大高さ（px）
             original_image_folder: 元画像フォルダ (指定時は高解像度で切り出し)
+            preset_rect: 指定時、GUIでの矩形選択をスキップしてこの座標を使う
+                （Step1で選択済みの氏名欄をStep3で再利用する用途）
 
         Returns:
             {元ファイル名: トリミング画像パス} の辞書。
@@ -547,12 +550,15 @@ class NameTrimmer:
                 )
             return None
 
-        # --- Step 2: GUI で名前エリアを選択 ---
-        logger.info("名前エリアを選択してください（1枚目の画像: %s）", Path(image_files[0]).name)
-        trim_rect = select_region_on_image(image_files[0], parent=parent)
-        if trim_rect is None:
-            logger.info("キャンセルされました。")
-            return None
+        # --- Step 2: 名前エリアの矩形を決定（保存済みならGUI選択をスキップ） ---
+        if preset_rect is not None:
+            trim_rect = preset_rect
+        else:
+            logger.info("名前エリアを選択してください（1枚目の画像: %s）", Path(image_files[0]).name)
+            trim_rect = select_region_on_image(image_files[0], parent=parent)
+            if trim_rect is None:
+                logger.info("キャンセルされました。")
+                return None
         self._last_trim_rect = trim_rect
         logger.info("選択された座標: %s", trim_rect)
 

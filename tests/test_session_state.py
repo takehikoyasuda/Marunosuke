@@ -558,6 +558,21 @@ class TestResetDescriptiveData(unittest.TestCase):
 
         self.assertFalse(scores_path.exists())
 
+    def test_reset_deletes_roster_and_name_area_config(self):
+        """初期化で roster_config.json / name_area_config.json も削除される
+        (Step1ウィザードで名簿・氏名欄設定を保存するようになったため)"""
+        roster_path = self.results_data / "roster_config.json"
+        name_area_path = self.results_data / "name_area_config.json"
+        roster_path.write_text('{"roster":{}}', encoding='utf-8')
+        name_area_path.write_text('{"rect_frac":[0,0,1,1]}', encoding='utf-8')
+
+        app = _make_stub_app(str(self.img_folder))
+        with patch('tkinter.messagebox.askokcancel', return_value=True):
+            app._reset_descriptive_data()
+
+        self.assertFalse(roster_path.exists())
+        self.assertFalse(name_area_path.exists())
+
 
 if __name__ == '__main__':
     unittest.main()

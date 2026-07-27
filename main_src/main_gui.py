@@ -330,8 +330,8 @@ class SaitenSamuraiGUI:
 
         # 記述問題設定
         self.desc_setup_btn = tk.Button(
-            step1, text="⚙ 記述問題設定",
-            command=self.setup_descriptive,
+            step1, text="⚙ 記述問題設定（まとめて実行）",
+            command=self._run_step1_setup_wizard,
             bg="#CE93D8", font=FONT_BOLD, height=2, relief=tk.FLAT, cursor="hand2",
         )
         self.desc_setup_btn.pack(fill=tk.X, pady=(5, 0))
@@ -1201,6 +1201,8 @@ class SaitenSamuraiGUI:
             - descriptive_scores.json（採点結果）
             - total_display_config.json（合計点表示位置設定）
             - student_id_area_config.json（学籍番号欄の位置設定）
+            - roster_config.json（名簿）
+            - name_area_config.json（氏名欄の位置設定）
         """
         img_folder = self.image_folder_path.get()
         if not img_folder:
@@ -1217,6 +1219,12 @@ class SaitenSamuraiGUI:
         from id_area_config import ID_AREA_CONFIG_FILE
         id_area_path = results_data / ID_AREA_CONFIG_FILE
 
+        from roster_config import ROSTER_CONFIG_FILE
+        roster_path = results_data / ROSTER_CONFIG_FILE
+
+        from name_area_config import NAME_AREA_CONFIG_FILE
+        name_area_path = results_data / NAME_AREA_CONFIG_FILE
+
         # 削除対象ファイルの存在チェック
         existing = []
         if config_path.exists():
@@ -1227,6 +1235,10 @@ class SaitenSamuraiGUI:
             existing.append(f"・合計点位置設定（{total_pos_path.name}）")
         if id_area_path.exists():
             existing.append(f"・学籍番号欄の位置設定（{id_area_path.name}）")
+        if roster_path.exists():
+            existing.append(f"・名簿（{roster_path.name}）")
+        if name_area_path.exists():
+            existing.append(f"・氏名欄の位置設定（{name_area_path.name}）")
 
         if not existing:
             messagebox.showinfo("初期化", "削除対象の設定ファイルが見つかりません。\nすでに初期状態です。")
@@ -1251,7 +1263,7 @@ class SaitenSamuraiGUI:
         backup_suffix = datetime.datetime.now().strftime("_%Y%m%d_%H%M%S.bak")
         backed_up = []
         backup_failed = []
-        for path in [config_path, scores_path, total_pos_path, id_area_path]:
+        for path in [config_path, scores_path, total_pos_path, id_area_path, roster_path, name_area_path]:
             if path.exists():
                 try:
                     bak_path = path.with_suffix(path.suffix + backup_suffix)
@@ -1275,7 +1287,7 @@ class SaitenSamuraiGUI:
 
         # ファイル削除
         deleted = []
-        for path in [config_path, scores_path, total_pos_path, id_area_path]:
+        for path in [config_path, scores_path, total_pos_path, id_area_path, roster_path, name_area_path]:
             if path.exists():
                 try:
                     path.unlink()
@@ -1534,6 +1546,107 @@ class SaitenSamuraiGUI:
             import traceback
             self.log_message(traceback.format_exc())
             messagebox.showerror("エラー", f"合計点位置設定中にエラーが発生しました:\n{e}")
+
+    def _run_step1_setup_wizard(self):
+        """Step1「採点準備」の統合セットアップウィザード。
+
+        名簿・ページ設定・氏名欄・学籍番号欄の4項目を順番にまとめて
+        設定してから、最後に既存の記述問題設定(setup_descriptive)を呼ぶ。
+        各項目は「既存ファイルがあれば自動スキップ」「キャンセル/スキップは
+        次のステップへ進むだけ(全体を中断しない)」というルールで動く
+        (解答欄指定=setup_descriptiveだけは実質必須のためスキップ不可)。
+        """
+        if not self.image_folder_path.get():
+            messagebox.showerror("エラー", "画像フォルダを選択してください")
+            return
+
+        boxed_folder = Path(self.image_folder_path.get()) / RESULTS_FOLDER / BOXED_FOLDER
+        if not boxed_folder.exists():
+            messagebox.showerror(
+                "エラー",
+                "補正済み画像フォルダが存在しません。\nStep 1（画像準備）を先に実行してください。"
+            )
+            return
+
+        results_data_folder = Path(self.image_folder_path.get()) / RESULTS_FOLDER / RESULTS_DATA_FOLDER
+        results_data_folder.mkdir(parents=True, exist_ok=True)
+
+        self._wizard_step_roster(results_data_folder)
+        self._wizard_step_page_check()
+        self._wizard_step_name_area(boxed_folder, results_data_folder)
+        self._wizard_step_id_area(boxed_folder, results_data_folder)
+        self.setup_descriptive()
+
+    def _wizard_step_roster(self, results_data_folder):
+        """ウィザードStep: 名簿の読込(保存済みなら自動スキップ)"""
+        from roster_config import ROSTER_CONFIG_FILE, load_roster_config, save_roster_config
+        config_path = str(results_data_folder / ROSTER_CONFIG_FILE)
+        if load_roster_config(config_path) is not None:
+            self.log_message("✓ 名簿は設定済みです — スキップします")
+            return
+        from roster_loader import select_roster_gui
+        roster = select_roster_gui(parent=self.root)
+        if roster:
+            save_roster_config(config_path, roster)
+            self.log_message(f"✓ 名簿を保存しました: {len(roster)}件")
+        else:
+            self.log_message("名簿入力: 該当なし（スキップ）")
+
+    def _wizard_step_page_check(self):
+        """ウィザードStep: ページ番号確認(値の保存は行わない、ツールを流用するだけ)"""
+        if not messagebox.askyesno(
+            "ページ設定",
+            "複数ページに分かれた答案ですか？\n（ページ番号の取り違えを確認する場合は「はい」）",
+        ):
+            self.log_message("ページ設定: 該当なし（スキップ）")
+            return
+        self.run_page_number_check()
+
+    def _wizard_step_name_area(self, boxed_folder, results_data_folder):
+        """ウィザードStep: 氏名欄の選択(保存済みなら自動スキップ)"""
+        from name_area_config import NAME_AREA_CONFIG_FILE, load_name_area_config, save_name_area_config
+        config_path = str(results_data_folder / NAME_AREA_CONFIG_FILE)
+        if load_name_area_config(config_path) is not None:
+            self.log_message("✓ 氏名欄は設定済みです — スキップします")
+            return
+        from name_trimmer import NameTrimmer, get_image_files
+        image_files = get_image_files(str(boxed_folder))
+        if not image_files:
+            return
+        trimmer = NameTrimmer()
+        result = trimmer.run(str(boxed_folder), parent=self.root)
+        trimmer.cleanup()
+        if result is None:
+            self.log_message("氏名欄選択: 該当なし（スキップ）")
+            return
+        with Image.open(image_files[0]) as img:
+            img_w, img_h = img.size
+        l, t, r, b = trimmer.last_trim_rect
+        save_name_area_config(config_path, (l / img_w, t / img_h, r / img_w, b / img_h))
+        self.log_message("✓ 氏名欄の位置を保存しました")
+
+    def _wizard_step_id_area(self, boxed_folder, results_data_folder):
+        """ウィザードStep: 学籍番号欄の位置指定(保存済みなら自動スキップ、任意)"""
+        from id_area_config import ID_AREA_CONFIG_FILE, load_id_area_config
+        config_path = str(results_data_folder / ID_AREA_CONFIG_FILE)
+        if load_id_area_config(config_path) is not None:
+            self.log_message("✓ 学籍番号欄は設定済みです — スキップします")
+            return
+        if not messagebox.askyesno(
+            "学籍番号欄指定", "学籍番号欄の位置を設定しますか？\n（後からでも設定できます）",
+        ):
+            self.log_message("学籍番号欄指定: 該当なし（スキップ）")
+            return
+        from student_id_ocr import ensure_id_area_config
+        config = ensure_id_area_config(
+            str(boxed_folder), parent=self.root, config_path=config_path,
+            default_digit_count=int(self.skip_questions.get() or 8),
+        )
+        if config:
+            self.log_message("✓ 学籍番号欄の位置を保存しました")
+            self.student_id_ocr_enabled.set(True)
+        else:
+            self.log_message("学籍番号欄指定: 該当なし（スキップ）")
 
     def setup_descriptive(self):
         """記述問題の領域設定
@@ -1854,10 +1967,16 @@ class SaitenSamuraiGUI:
 
             self.log_message(f"✓ 学籍番号OCR完了: {len(ocr_results)}枚")
 
-            from roster_loader import select_roster_gui
-            roster = select_roster_gui(parent=self.root)
-            if roster:
-                self.log_message(f"✓ 名簿読込: {len(roster)}件")
+            from roster_config import ROSTER_CONFIG_FILE, load_roster_config
+            roster_config_path = Path(image_folder) / RESULTS_FOLDER / RESULTS_DATA_FOLDER / ROSTER_CONFIG_FILE
+            roster = load_roster_config(str(roster_config_path))
+            if roster is not None:
+                self.log_message(f"✓ 名簿読込（Step1で設定済み）: {len(roster)}件")
+            else:
+                from roster_loader import select_roster_gui
+                roster = select_roster_gui(parent=self.root)
+                if roster:
+                    self.log_message(f"✓ 名簿読込: {len(roster)}件")
 
             from student_id_review_gui import StudentIdReviewGUI
             review = StudentIdReviewGUI(self.root, ocr_results, roster)
@@ -1927,9 +2046,19 @@ class SaitenSamuraiGUI:
             boxed_folder = Path(self.image_folder_path.get()) / RESULTS_FOLDER / BOXED_FOLDER
             if boxed_folder.exists():
                 try:
-                    from name_trimmer import NameTrimmer
+                    from name_trimmer import NameTrimmer, get_image_files
+                    from name_area_config import NAME_AREA_CONFIG_FILE, load_name_area_config, resolve_rect_for_image
+                    name_area_config_path = results_data / NAME_AREA_CONFIG_FILE
+                    preset_rect = None
+                    rect_frac = load_name_area_config(str(name_area_config_path))
+                    if rect_frac is not None:
+                        image_files = get_image_files(str(boxed_folder))
+                        if image_files:
+                            with Image.open(image_files[0]) as img:
+                                img_w, img_h = img.size
+                            preset_rect = resolve_rect_for_image(rect_frac, img_w, img_h)
                     trimmer = NameTrimmer()
-                    name_images = trimmer.run(str(boxed_folder), parent=self.root)
+                    name_images = trimmer.run(str(boxed_folder), parent=self.root, preset_rect=preset_rect)
                     if name_images is None:
                         if not messagebox.askyesno(
                             "確認",
