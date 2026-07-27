@@ -187,21 +187,6 @@ class TestGUIStateMachine:
         app = Mark2GUI(top)
         return top, app
 
-    def test_processing_state_disables_checkbox(self):
-        """処理中は記述チェックボックスも無効化される"""
-        import tkinter as tk
-        try:
-            top, app = self._make_app()
-        except tk.TclError:
-            pytest.skip("Tkinter not available")
-        try:
-            app._set_processing_state(True)
-            assert str(app._chk_descriptive["state"]) == "disabled"
-            app._set_processing_state(False)
-            assert str(app._chk_descriptive["state"]) == "normal"
-        finally:
-            top.destroy()
-
     def test_all_action_buttons_disabled_during_processing(self):
         """すべてのアクションボタンが処理中に無効化される"""
         import tkinter as tk
@@ -213,25 +198,27 @@ class TestGUIStateMachine:
             app._set_processing_state(True)
             buttons = [
                 app._btn_run_box,
-                app._btn_mark_check,
                 app._btn_total_pos,
                 app._btn_run_scoring,
                 app._btn_run_summary,
                 app.desc_setup_btn,
                 app.desc_scoring_btn,
+                app._btn_desc_review,
+                app._btn_select_folder,
+                app._btn_select_pdf,
             ]
             for btn in buttons:
                 assert str(btn["state"]) == "disabled", f"{btn['text']} should be disabled"
             app._set_processing_state(False)
             # フォルダ未設定状態では Step ガードにより Step1/2/3 ボタンは disabled のまま
-            # ガード対象外のボタン (desc_setup_btn) のみ normal であることを確認
+            # ガード対象外のボタン (desc_setup_btn, フォルダ/PDF選択) のみ normal
             step_guarded_buttons = {
-                app._btn_run_box,      # Step 1
-                app._btn_mark_check,   # Step 2
-                app._btn_total_pos,    # Step 2
-                app._btn_run_scoring,  # Step 2
-                app._btn_run_summary,  # Step 3
-                app.desc_scoring_btn,  # Step 2
+                app._btn_run_box,       # Step 1
+                app._btn_total_pos,     # Step 2
+                app._btn_run_scoring,   # Step 2
+                app._btn_run_summary,   # Step 3
+                app.desc_scoring_btn,   # Step 2
+                app._btn_desc_review,   # Step 2
             }
             for btn in buttons:
                 if btn in step_guarded_buttons:
@@ -255,34 +242,17 @@ class TestGUIStateMachine:
         finally:
             top.destroy()
 
-    def test_descriptive_toggle_creates_correct_order(self):
-        """記述ON/OFFでボタン順序が正しく維持される"""
+    def test_descriptive_buttons_always_shown(self):
+        """記述式のみモードでは記述関連ボタンが常に表示される"""
         import tkinter as tk
         try:
             top, app = self._make_app()
         except tk.TclError:
             pytest.skip("Tkinter not available")
         try:
-            # OFF → ON
-            app.descriptive_enabled.set(True)
-            app._on_descriptive_toggle()
-            # 記述ON → desc_setup_btn (Step1), desc_scoring_btn (Step2) が表示
             assert app.desc_setup_btn.winfo_manager() == "pack"
             assert app.desc_scoring_btn.winfo_manager() == "pack"
             assert app._desc_status_frame.winfo_manager() == "pack"
-
-            # ON → OFF
-            app.descriptive_enabled.set(False)
-            app._on_descriptive_toggle()
-            assert app.desc_setup_btn.winfo_manager() == ""
-            assert app.desc_scoring_btn.winfo_manager() == ""
-            assert app._desc_status_frame.winfo_manager() == ""
-
-            # 再度 ON
-            app.descriptive_enabled.set(True)
-            app._on_descriptive_toggle()
-            assert app.desc_setup_btn.winfo_manager() == "pack"
-            assert app.desc_scoring_btn.winfo_manager() == "pack"
         finally:
             top.destroy()
 
@@ -295,66 +265,6 @@ class TestGUIStateMachine:
             pytest.skip("Tkinter not available")
         try:
             assert not hasattr(app, "return_sheet_btn")
-        finally:
-            top.destroy()
-
-
-# ============================================================
-# 4. run_scoring の記述モード分岐テスト
-# ============================================================
-
-class TestRunScoringDescriptiveIntegration:
-    """run_scoring が記述ON時に正しく分岐するかのテスト"""
-
-    @staticmethod
-    def _make_app():
-        import tkinter as tk
-        from conftest import get_shared_tk_root
-        from saitensamurai import Mark2GUI
-        root = get_shared_tk_root()
-        top = tk.Toplevel(root)
-        app = Mark2GUI(top)
-        return top, app
-
-    def test_descriptive_on_requires_config_file(self):
-        """記述ON＋設定ファイルなし → エラーダイアログ"""
-        import tkinter as tk
-        try:
-            top, app = self._make_app()
-        except tk.TclError:
-            pytest.skip("Tkinter not available")
-        try:
-            app.descriptive_enabled.set(True)
-            # 必要パス設定
-            with tempfile.TemporaryDirectory() as td:
-                app.image_folder_path.set(td)
-                app.coord_excel_path.set("dummy.xlsx")
-                app.template_path.set("dummy.xlsx")
-                app.mark2_result_path.set("dummy.xlsx")
-                # ファイルが存在しないのでエラーダイアログが出るべき
-                with patch("tkinter.messagebox.showerror") as mock_err:
-                    app.run_scoring()
-                    # 何らかのエラーが呼ばれるはず（ファイル不存在）
-                    assert mock_err.called or app._processing is False
-        finally:
-            top.destroy()
-
-    def test_descriptive_off_uses_process_scoring(self):
-        """記述OFF時は process_scoring フローに行く"""
-        import tkinter as tk
-        try:
-            top, app = self._make_app()
-        except tk.TclError:
-            pytest.skip("Tkinter not available")
-        try:
-            app.descriptive_enabled.set(False)
-            with tempfile.TemporaryDirectory() as td:
-                app.image_folder_path.set(td)
-                # 必要ファイルなし → 早期エラー（process_scoring 分岐前の入力チェック）
-                with patch("tkinter.messagebox.showerror") as mock_err:
-                    app.run_scoring()
-                    # coord_excel_path が空 → エラー
-                    assert mock_err.called
         finally:
             top.destroy()
 
@@ -499,59 +409,3 @@ class TestDescriptiveScoringFullPipeline:
         assert result_img is not None
         # 描画が発生すればOK（結合テスト）
         assert not np.array_equal(result_img, img)
-
-
-# ============================================================
-# 7. load_template キー名整合性テスト
-# ============================================================
-
-class TestLoadTemplateKeyNames:
-    """load_template が返す辞書のキー名が一貫しているかテスト"""
-
-    def test_template_dict_uses_japanese_keys(self, tmp_path):
-        """load_template は '配点' '観点' キーを返す"""
-        import pandas as pd
-        from saitensamurai import load_template
-
-        template_file = tmp_path / "template.xlsx"
-        df = pd.DataFrame({
-            "問題番号": [1, 2, 3],
-            "正答": ["ア", "イ", "ウ"],
-            "配点": [10, 20, 30],
-            "観点": [1, 2, 3],
-        })
-        df.to_excel(str(template_file), index=False)
-
-        result = load_template(str(template_file))
-        for q_no, q_info in result.items():
-            assert "配点" in q_info, f"q{q_no} missing '配点'"
-            assert "観点" in q_info, f"q{q_no} missing '観点'"
-            # 英語キーは使わない
-            assert "score" not in q_info
-            assert "aspect" not in q_info
-
-    def test_setup_total_position_preview_uses_correct_keys(self, tmp_path):
-        """setup_total_position のプレビューテキスト生成が正しいキーを使う"""
-        import pandas as pd
-        from saitensamurai import load_template
-
-        template_file = tmp_path / "template.xlsx"
-        df = pd.DataFrame({
-            "問題番号": [1, 2, 3],
-            "正答": ["ア", "イ", "ウ"],
-            "配点": [30, 30, 30],
-            "観点": [1, 2, 3],
-        })
-        df.to_excel(str(template_file), index=False)
-
-        template_dict = load_template(str(template_file))
-        # setup_total_position と同じロジック
-        aspect_max = {}
-        for q_no, q_info in template_dict.items():
-            asp = q_info.get('観点', 1)
-            score = q_info.get('配点', 0)
-            aspect_max[asp] = aspect_max.get(asp, 0) + score
-        total_max = sum(aspect_max.values())
-
-        assert total_max == 90
-        assert aspect_max == {1: 30, 2: 30, 3: 30}

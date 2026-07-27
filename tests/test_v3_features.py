@@ -12,81 +12,10 @@ import shutil
 from pathlib import Path
 
 from saitensamurai import (
-    generate_template,
     extract_pdf_to_images,
     combine_images_to_pdf,
     HAS_PYMUPDF,
-    ANSWER_KEY_FILE,
-    RESULTS_FOLDER,
 )
-
-
-class TestTemplateOverwriteProtection(unittest.TestCase):
-    """v3-1: テンプレート上書き防止のテスト"""
-    
-    def setUp(self):
-        """テスト用の一時ディレクトリとダミー座標Excelを作成"""
-        self.test_dir = tempfile.mkdtemp()
-        self.output_dir = Path(self.test_dir) / "output"
-        self.output_dir.mkdir()
-        
-        # ダミー座標Excelを作成
-        import openpyxl
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        # ヘッダー行（3行目以降が設問データ）
-        ws.append(['', '', '', ''])  # row 1
-        ws.append(['', '', '', ''])  # row 2
-        ws.append(['', '', '', ''])  # row 3
-        # 設問データ: question_no, name, skip, skip, x, y, w, h
-        ws.append([1, 'Q1', '', '', 100, 100, 20, 20])
-        ws.append([2, 'Q2', '', '', 100, 200, 20, 20])
-        ws.append([3, 'Q3', '', '', 100, 300, 20, 20])
-        self.coord_path = Path(self.test_dir) / "coord.xlsx"
-        wb.save(str(self.coord_path))
-    
-    def tearDown(self):
-        shutil.rmtree(self.test_dir, ignore_errors=True)
-    
-    def test_01_creates_new_template(self):
-        """新規テンプレートが作成されること"""
-        result = generate_template(self.coord_path, self.output_dir, skip_questions=0)
-        self.assertTrue(result.exists())
-        self.assertEqual(result.name, ANSWER_KEY_FILE)
-    
-    def test_02_does_not_overwrite_existing(self):
-        """既存テンプレートが上書きされないこと"""
-        template_path = self.output_dir / ANSWER_KEY_FILE
-        
-        # 最初に作成
-        generate_template(self.coord_path, self.output_dir, skip_questions=0)
-        self.assertTrue(template_path.exists())
-        
-        # ユーザーがデータを入力した状態をシミュレート
-        import openpyxl
-        wb = openpyxl.load_workbook(str(template_path))
-        ws = wb.active
-        ws.cell(row=2, column=2, value="3")  # 正答を入力
-        ws.cell(row=2, column=3, value="5")  # 配点を入力
-        wb.save(str(template_path))
-        
-        # ファイルの更新時刻を記録
-        mtime_before = template_path.stat().st_mtime
-        
-        # 再度generate_template を呼び出し
-        import time
-        time.sleep(0.1)  # mtimeが変わることを保証するための待機
-        generate_template(self.coord_path, self.output_dir, skip_questions=0)
-        
-        # ファイルが上書きされていないことを確認
-        mtime_after = template_path.stat().st_mtime
-        self.assertEqual(mtime_before, mtime_after, "既存テンプレートが上書きされました")
-        
-        # ユーザーが入力したデータが保持されていることを確認
-        wb2 = openpyxl.load_workbook(str(template_path))
-        ws2 = wb2.active
-        self.assertEqual(ws2.cell(row=2, column=2).value, "3")
-        self.assertEqual(ws2.cell(row=2, column=3).value, "5")
 
 
 @unittest.skipUnless(HAS_PYMUPDF, "PyMuPDFがインストールされていません")

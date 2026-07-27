@@ -355,43 +355,45 @@ class TestGenerateRmdTemplate:
         assert "nrank = 7" in content
 
 
+def make_dummy_descriptive_data(n_students=20, n_questions=5, seed=42):
+    """記述式のみモード用のダミー descriptive_config / descriptive_scores を生成"""
+    rng = np.random.default_rng(seed)
+    questions = [
+        {"id": f"D{i+1}", "name": f"設問{i+1}", "max_score": 5, "aspect": 1}
+        for i in range(n_questions)
+    ]
+    config = {"questions": questions}
+    scores = {}
+    for s in range(n_students):
+        fname = f"student_{s+1:03d}.jpg"
+        scores[fname] = {q["id"]: int(rng.integers(0, 6)) for q in questions}
+    return config, scores
+
+
 class TestExportRAnalysisKit:
-    """統合エクスポート関数のテスト"""
+    """統合エクスポート関数のテスト（記述式のみモード）"""
 
     def test_full_export_success(self, tmp_path):
-        """Mark2データからR分析キットがエクスポートできる"""
-        template_path, result_path = make_dummy_mark2_files(str(tmp_path))
+        """記述式データからR分析キットがエクスポートできる"""
+        config, scores = make_dummy_descriptive_data()
         output_folder = tmp_path / "output"
         output_folder.mkdir()
 
         result = export_r_analysis_kit(
-            template_path, result_path, str(output_folder), skip_questions=4
+            str(output_folder), descriptive_config=config, descriptive_scores=scores,
         )
 
         assert result["success"] is True
         assert result["error"] is None
 
-    def test_full_export_creates_folder(self, tmp_path):
-        """出力フォルダが正しく作成される"""
-        template_path, result_path = make_dummy_mark2_files(str(tmp_path))
-        output_folder = tmp_path / "output"
-        output_folder.mkdir()
-
-        export_r_analysis_kit(
-            template_path, result_path, str(output_folder), skip_questions=4
-        )
-
-        kit_folder = output_folder / R_EXPORT_FOLDER
-        assert kit_folder.exists()
-
     def test_full_export_creates_all_files(self, tmp_path):
         """必要な全ファイルが生成される"""
-        template_path, result_path = make_dummy_mark2_files(str(tmp_path))
+        config, scores = make_dummy_descriptive_data()
         output_folder = tmp_path / "output"
         output_folder.mkdir()
 
         export_r_analysis_kit(
-            template_path, result_path, str(output_folder), skip_questions=4
+            str(output_folder), descriptive_config=config, descriptive_scores=scores,
         )
 
         kit_folder = output_folder / R_EXPORT_FOLDER
@@ -400,93 +402,20 @@ class TestExportRAnalysisKit:
         assert (kit_folder / R_SCRIPT_FILE).exists()
         assert (kit_folder / R_RMD_TEMPLATE_FILE).exists()
 
-    def test_exported_data_matches_ctt(self, tmp_path):
-        """エクスポートされたデータがCTT分析と同一の0/1データであること
-        
-        列名はQ001形式に変換され、全員同点の列は除外されている。
-        値自体はCTT分析と一致すること。
-        """
-        template_path, result_path = make_dummy_mark2_files(str(tmp_path))
-        output_folder = tmp_path / "output"
-        output_folder.mkdir()
-
-        export_r_analysis_kit(
-            template_path, result_path, str(output_folder), skip_questions=4
-        )
-
-        # R分析キットのCSVを読み込み
-        kit_folder = output_folder / R_EXPORT_FOLDER
-        exported_df = pd.read_csv(kit_folder / R_DATA_CSV, index_col=0)
-
-        # CTTと同じ変換で0/1データを取得
-        from ctt_analyzer import convert_mark2_to_ctt_data
-        ans_df, key_df = convert_mark2_to_ctt_data(template_path, result_path, 4)
-        analyzer = CTTAnalyzer(ans_df, key_df)
-        expected = analyzer.score_matrix
-
-        # 列名はQ001形式に変換されている
-        for col in exported_df.columns:
-            assert col.startswith("Q"), f"列名がQ形式でない: {col}"
-
-        # 全員同点の列が除外された後の列数は元以下
-        assert exported_df.shape[1] <= expected.shape[1]
-        # 受験者数は一致
-        assert exported_df.shape[0] == expected.shape[0]
-
-        # 値は0/1のみ
-        unique_vals = set(exported_df.values.flatten())
-        assert unique_vals <= {0, 1}
-
-        # 行名は拡張子なしのファイル名
-        for idx in exported_df.index:
-            assert "." not in str(idx), f"行名に拡張子が残っている: {idx}"
-
-    def test_constant_columns_removed(self, tmp_path):
-        """全員が同じ得点の列が除外されること"""
-        template_path, result_path = make_dummy_mark2_files(
-            str(tmp_path), n_students=30, n_questions=15, seed=42
-        )
-        output_folder = tmp_path / "output"
-        output_folder.mkdir()
-
-        export_r_analysis_kit(
-            template_path, result_path, str(output_folder), skip_questions=4
-        )
-
-        kit_folder = output_folder / R_EXPORT_FOLDER
-        exported_df = pd.read_csv(kit_folder / R_DATA_CSV, index_col=0)
-
-        # 残っている列は全て分散 > 0 であること
-        for col in exported_df.columns:
-            assert exported_df[col].nunique() > 1, (
-                f"全員同点の列が残っている: {col}"
-            )
-
     def test_export_with_custom_ranks(self, tmp_path):
         """カスタムランク数がRmdテンプレートに反映される"""
-        template_path, result_path = make_dummy_mark2_files(str(tmp_path))
+        config, scores = make_dummy_descriptive_data()
         output_folder = tmp_path / "output"
         output_folder.mkdir()
 
         export_r_analysis_kit(
-            template_path, result_path, str(output_folder),
-            skip_questions=4, n_ranks=3
+            str(output_folder), n_ranks=3,
+            descriptive_config=config, descriptive_scores=scores,
         )
 
         kit_folder = output_folder / R_EXPORT_FOLDER
         rmd_content = (kit_folder / R_RMD_TEMPLATE_FILE).read_text(encoding="utf-8")
         assert "nrank = 3" in rmd_content
-
-    def test_export_with_invalid_path_returns_error(self, tmp_path):
-        """存在しないファイルを指定するとエラーが返る"""
-        result = export_r_analysis_kit(
-            str(tmp_path / "nonexistent.xlsx"),
-            str(tmp_path / "nonexistent2.xlsx"),
-            str(tmp_path / "output"),
-            skip_questions=4,
-        )
-        assert result["success"] is False
-        assert result["error"] is not None
 
 
 class TestConstantsIntegration:

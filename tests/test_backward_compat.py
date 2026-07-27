@@ -3,9 +3,13 @@
 """
 後方互換テスト: saitensamurai.py から全シンボルがインポート可能か検証
 ============================================================================
-リファクタリングで各モジュールに分割した後も、
+記述式のみアーキテクチャへの移行後も、
 既存コード（テスト含む）が ``from saitensamurai import X`` で
-全機能にアクセスできることを保証する。
+現行の全機能にアクセスできることを保証する。
+
+マーク採点専用のシンボル（omr_engine, scoring_engine, mark_checker,
+threshold_calibrator, image_renderer 等）はマークシート採点機能の
+廃止に伴い削除済みのため、このリストには含めない。
 """
 import sys
 from pathlib import Path
@@ -21,103 +25,50 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "main_src"))
 
 EXPECTED_SYMBOLS = [
     # --- constants.py ---
+    "setup_logging",
     "safe_print",
     "extract_pdf_to_images",
     "combine_images_to_pdf",
     "HAS_PYMUPDF",
-    "MARK2_WIDTH",
-    "MARK2_HEIGHT",
+    "fitz",
     "RESULTS_FOLDER",
     "BOXED_FOLDER",
     "RESULTS_DATA_FOLDER",
     "SCORED_FOLDER",
     "FINAL_REPORT_FOLDER",
-    "MARK_AREAS_FILE",
     "ANSWER_KEY_FILE",
+    "STUDENT_SUMMARY_FILE",
+    "EXAM_SUMMARY_FILE",
+    "CTT_ANALYSIS_EXCEL_FILE",
+    "CTT_ANALYSIS_PDF_FILE",
+    "READING_RESULTS_FOLDER_NAME",
     "SESSION_STATE_FILE",
-    "ERROR_TYPE_NO_MARK",
-    "ERROR_TYPE_DOUBLE_MARK",
-    "ERROR_TYPE_INVALID",
-    "DEFAULT_CORRECTION",
-    "DEFAULT_SCALE_FACTOR",
-    "DEFAULT_EXPAND_FACTOR",
-    "DEFAULT_EXPAND_FACTOR_Y",
-    "DEFAULT_BACKUP_FOLDER",
-    "MAX_DISPLAY_WIDTH",
-    "MAX_DISPLAY_HEIGHT",
-    "MARK2_BASE_WIDTH",
-    "MARK2_BASE_HEIGHT",
-    # --- scoring_engine.py ---
-    "number_to_circled",
-    "normalize_value",
-    "load_template",
-    "load_mark2_results",
-    "score_answers",
-    # --- omr_engine.py ---
+    # --- image_alignment.py ---
     "imread_unicode",
-    "parse_excel_coordinates",
-    "save_template_coordinates_debug",
-    "load_coordinates_from_csv",
     "detect_corner_markers",
     "apply_perspective_transform",
     "compute_output_scale",
-    "draw_all_areas",
-    "generate_template",
-    "save_coordinates_to_csv",
-    "_save_coordinates_to_csv_impl",
-    "recognize_marks",
-    "save_recognition_results",
-    "process_box_drawer",
-    "process_folder",
-    # --- threshold_calibrator.py ---
-    "collect_mark_fill_ratios",
-    "estimate_color_threshold_from_pixels",
-    "kmeans_2class",
-    "analyze_fill_ratio_distribution",
-    "run_threshold_calibration",
-    "reclassify_with_threshold",
-    "recollect_and_reclassify",
-    # --- image_renderer.py ---
-    "draw_text_on_image",
-    "draw_mixed_text_on_image",
-    "draw_scoring_results",
-    "draw_total_score",
-    "_draw_total_score_in_box",
-    "_draw_total_score_fallback",
-    "process_scoring",
     # --- summary_generator.py ---
-    "generate_student_summary",
-    "generate_exam_summary",
-    "process_summary_generation",
+    "process_descriptive_only_summary",
     # --- ctt_analyzer.py ---
     "convert_mark2_to_ctt_data",
     "_sort_choices",
+    "_is_invalid_response",
+    "_is_no_answer",
     "CTTAnalyzer",
     "CTTPlotGenerator",
     "CTTExcelExporter",
     "CTTPDFReporter",
     "generate_ctt_analysis",
-    # --- mark_checker.py ---
-    "create_backup_checker",
-    "update_xlsx_from_csv_checker",
-    "apply_corrections_checker",
-    "detect_errors_checker",
-    "load_errors_checker",
-    "save_errors_checker",
-    "load_coordinates_csv_checker",
-    "get_bbox_for_question_checker",
-    "crop_and_scale_image_checker",
-    "get_display_image_checker",
-    "fit_image_to_display",
-    "pil_to_imagetk_checker",
-    "CorrectedImageCache",
-    "_load_and_correct_image",
-    "crop_from_corrected_image",
-    # --- gui_components.py ---
-    "MarkCheckerGUI",
-    "StudentAnswerSheetViewer",
-    "ThresholdCalibratorGUI",
+    # --- r_export.py ---
+    "export_r_analysis_kit",
+    "R_EXPORT_FOLDER",
+    "R_DATA_CSV",
+    "R_ITEM_INFO_CSV",
+    "R_SCRIPT_FILE",
+    "R_RMD_TEMPLATE_FILE",
     # --- main_gui.py ---
+    "SaitenSamuraiGUI",
     "Mark2GUI",
     # --- フラグ ---
     "HAS_MATPLOTLIB",
@@ -151,3 +102,9 @@ def test_mark2gui_is_class():
     """Mark2GUI がクラスとしてインポートされる"""
     from saitensamurai import Mark2GUI
     assert isinstance(Mark2GUI, type)
+
+
+def test_mark2gui_is_saitensamuraigui_alias():
+    """Mark2GUI は SaitenSamuraiGUI の後方互換エイリアス"""
+    from saitensamurai import Mark2GUI, SaitenSamuraiGUI
+    assert Mark2GUI is SaitenSamuraiGUI

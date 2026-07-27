@@ -7,12 +7,11 @@ Phase 1+2 テスト: セッション状態保存/復元 + 記述ステータス
 テスト対象:
 - SESSION_STATE_FILE 定数
 - _save_session_state / _load_session_state のラウンドトリップ
-- _resolve_path ロジック
 - _check_descriptive_completeness 各状態
 - _update_descriptive_status ラベル内容
 - _get_session_state_path パス構成
-- _apply_session_state パス修復フロー
-- _try_auto_restore / _ask_repair_path
+- _apply_session_state
+- _try_auto_restore
 """
 
 import sys
@@ -67,16 +66,9 @@ def _make_stub_app(img_folder=""):
 
     # tkinter 変数
     app.root = root
-    from constants import MODE_MARK_AND_DESCRIPTIVE
-    app.app_mode = MODE_MARK_AND_DESCRIPTIVE
     app.image_folder_path = tk.StringVar(root, value=img_folder)
-    app.coord_excel_path = tk.StringVar(root, value="")
-    app.template_path = tk.StringVar(root, value="")
-    app.mark2_result_path = tk.StringVar(root, value="")
     app.skip_questions = tk.StringVar(root, value="4")
-    app.color_threshold = tk.DoubleVar(root, value=0.1)
-    app.area_threshold = tk.DoubleVar(root, value=0.4)
-    app.descriptive_enabled = tk.BooleanVar(root, value=False)
+    app.descriptive_enabled = tk.BooleanVar(root, value=True)
 
     # 描画詳細設定
     from constants import get_rendering_settings
@@ -93,9 +85,6 @@ def _make_stub_app(img_folder=""):
     # 記述ステータスラベル
     app._desc_status_label = tk.Label(root)
     app._desc_status_frame = tk.Frame(root)
-
-    # _on_descriptive_toggle スタブ (GUI操作を省略)
-    app._on_descriptive_toggle = lambda: None
 
     return app
 
@@ -141,20 +130,7 @@ class TestSessionStateSaveLoad(unittest.TestCase):
         """保存→読込でデータが保持される"""
         app = _make_stub_app(str(self.img_folder))
 
-        # テスト用パスを設定（画像フォルダ内の相対パスにする）
-        coord_path = self.results_data / "coordinates.csv"
-        coord_path.touch()
-        app.coord_excel_path.set(str(coord_path))
-
-        template_path = self.results_data / ANSWER_KEY_FILE
-        template_path.touch()
-        app.template_path.set(str(template_path))
-
         app.skip_questions.set("3")
-        app.color_threshold.set(0.2)
-        app.area_threshold.set(0.5)
-        app.descriptive_enabled.set(True)
-
         app._save_session_state()
 
         # 別のスタブで読み込み
@@ -165,9 +141,6 @@ class TestSessionStateSaveLoad(unittest.TestCase):
         self.assertIsNotNone(data)
         self.assertEqual(data["version"], 1)
         self.assertEqual(data["skip_questions"], "3")
-        self.assertAlmostEqual(data["color_threshold"], 0.2)
-        self.assertAlmostEqual(data["area_threshold"], 0.5)
-        self.assertTrue(data["descriptive_enabled"])
 
     def test_load_invalid_json(self):
         """不正なJSONファイルの場合 None を返す"""
@@ -200,25 +173,6 @@ class TestSessionStateSaveLoad(unittest.TestCase):
         # エラーが出ないこと
         self.assertTrue(True)
 
-    def test_relative_path_in_saved_state(self):
-        """保存される座標パスが相対パスに変換される"""
-        app = _make_stub_app(str(self.img_folder))
-
-        coord_file = self.results_data / "coordinates.csv"
-        coord_file.touch()
-        app.coord_excel_path.set(str(coord_file))
-
-        app._save_session_state()
-
-        session_path = self.results_data / SESSION_STATE_FILE
-        with open(session_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-
-        coord_rel = data["coord_excel"]
-        self.assertFalse(Path(coord_rel).is_absolute(),
-                         f"座標パスが絶対パスのまま: {coord_rel}")
-
-
 class TestGetSessionStatePath(unittest.TestCase):
     """_get_session_state_path のテスト"""
 
@@ -236,50 +190,6 @@ class TestGetSessionStatePath(unittest.TestCase):
         self.assertIsNone(p)
 
 
-class TestResolvePath(unittest.TestCase):
-    """_resolve_path ロジックのテスト"""
-
-    def setUp(self):
-        self.tmpdir = tempfile.mkdtemp()
-        self.base = Path(self.tmpdir)
-
-    def tearDown(self):
-        shutil.rmtree(self.tmpdir, ignore_errors=True)
-
-    def test_relative_path(self):
-        """相対パスで既存ファイルを解決"""
-        app = _make_stub_app()
-        sub = self.base / "sub"
-        sub.mkdir()
-        target = sub / "file.txt"
-        target.touch()
-
-        result = app._resolve_path(self.base, "sub/file.txt")
-        self.assertIsNotNone(result)
-        self.assertTrue(result.exists())
-
-    def test_absolute_path(self):
-        """絶対パスで既存ファイルを解決"""
-        app = _make_stub_app()
-        target = self.base / "abs_file.txt"
-        target.touch()
-
-        result = app._resolve_path(Path("/dummy"), str(target))
-        self.assertIsNotNone(result)
-
-    def test_missing_file(self):
-        """存在しないファイルは None"""
-        app = _make_stub_app()
-        result = app._resolve_path(self.base, "nonexistent.txt")
-        self.assertIsNone(result)
-
-    def test_empty_string(self):
-        """空文字は None"""
-        app = _make_stub_app()
-        result = app._resolve_path(self.base, "")
-        self.assertIsNone(result)
-
-
 class TestApplySessionState(unittest.TestCase):
     """_apply_session_state のテスト"""
 
@@ -294,22 +204,11 @@ class TestApplySessionState(unittest.TestCase):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_apply_with_valid_paths(self):
-        """全パスが有効な場合、正常に復元される"""
-        coord = self.results_data / "coordinates.csv"
-        coord.touch()
-        template = self.results_data / ANSWER_KEY_FILE
-        template.touch()
-
+        """画像フォルダが有効な場合、正常に復元される"""
         state = {
             "version": 1,
             "image_folder": str(self.img_folder),
-            "coord_excel": str(coord.relative_to(self.img_folder)),
-            "template": str(template.relative_to(self.img_folder)),
-            "omr_result": "",
             "skip_questions": "5",
-            "color_threshold": 0.15,
-            "area_threshold": 0.35,
-            "descriptive_enabled": False,
         }
 
         app = _make_stub_app(str(self.img_folder))
@@ -317,9 +216,6 @@ class TestApplySessionState(unittest.TestCase):
 
         self.assertTrue(result)
         self.assertEqual(app.skip_questions.get(), "5")
-        self.assertAlmostEqual(app.color_threshold.get(), 0.15)
-        self.assertAlmostEqual(app.area_threshold.get(), 0.35)
-        self.assertEqual(app.coord_excel_path.get(), str(coord))
 
     @patch("main_gui.messagebox")
     def test_apply_with_missing_image_folder(self, mock_msgbox):
@@ -334,78 +230,6 @@ class TestApplySessionState(unittest.TestCase):
 
         self.assertFalse(result)
         mock_msgbox.showerror.assert_called_once()
-
-    def test_apply_with_broken_path_user_declines_repair(self):
-        """壊れたパスの修復ダイアログで「中断」→ 復元中断 (False)"""
-        state = {
-            "version": 1,
-            "image_folder": str(self.img_folder),
-            "coord_excel": "nonexistent/file.csv",
-            "template": "",
-            "omr_result": "",
-            "skip_questions": "4",
-            "color_threshold": 0.1,
-            "area_threshold": 0.4,
-            "descriptive_enabled": False,
-        }
-
-        app = _make_stub_app(str(self.img_folder))
-        # _show_repair_dialog を False を返すモックに置き換え
-        app._show_repair_dialog = MagicMock(return_value=False)
-        result = app._apply_session_state(state)
-
-        self.assertFalse(result)  # 復元中断
-        app._show_repair_dialog.assert_called_once()
-
-    def test_apply_with_broken_path_repair_accept(self):
-        """修復ダイアログで「復元する」→ 修復済みパスが適用される"""
-        repaired_path = str(self.results_data / "repaired.csv")
-
-        def mock_show_repair(broken_items):
-            # パス修復をシミュレート: var にパスをセット
-            for _, key, desc, expected, ftypes, var in broken_items:
-                if key == "coord_excel":
-                    var.set(repaired_path)
-            return True
-
-        state = {
-            "version": 1,
-            "image_folder": str(self.img_folder),
-            "coord_excel": "nonexistent/file.csv",
-            "template": "",
-            "omr_result": "",
-            "skip_questions": "4",
-            "color_threshold": 0.1,
-            "area_threshold": 0.4,
-            "descriptive_enabled": False,
-        }
-
-        app = _make_stub_app(str(self.img_folder))
-        app._show_repair_dialog = mock_show_repair
-        result = app._apply_session_state(state)
-
-        self.assertTrue(result)
-        self.assertEqual(app.coord_excel_path.get(), repaired_path)
-
-    def test_apply_repair_dialog_cancel_aborts_restore(self):
-        """修復ダイアログで「中断」→ 復元全体中断"""
-        state = {
-            "version": 1,
-            "image_folder": str(self.img_folder),
-            "coord_excel": "nonexistent/file.csv",
-            "template": "",
-            "omr_result": "",
-            "skip_questions": "4",
-            "color_threshold": 0.1,
-            "area_threshold": 0.4,
-            "descriptive_enabled": False,
-        }
-
-        app = _make_stub_app(str(self.img_folder))
-        app._show_repair_dialog = MagicMock(return_value=False)
-        result = app._apply_session_state(state)
-
-        self.assertFalse(result)  # 復元中断
 
 
 class TestDescriptiveCompletenessCheck(unittest.TestCase):
@@ -603,31 +427,6 @@ class TestUpdateDescriptiveStatus(unittest.TestCase):
         self.assertIn("完了", text)
 
 
-class TestAskRepairPath(unittest.TestCase):
-    """_ask_repair_path ダイアログのロジック（ファイル選択のみ）"""
-
-    @patch("main_gui.filedialog")
-    def test_user_selects_file(self, mock_filedialog):
-        """ファイル選択 → パスが返る"""
-        mock_filedialog.askopenfilename.return_value = "C:/test/selected.csv"
-
-        app = _make_stub_app()
-        result = app._ask_repair_path("座標ファイル", "coordinates.csv", [("All", "*.*")])
-        self.assertEqual(result, "C:/test/selected.csv")
-        # タイトルに説明が含まれる
-        call_kwargs = mock_filedialog.askopenfilename.call_args
-        self.assertIn("座標ファイル", call_kwargs.kwargs.get("title", ""))
-
-    @patch("main_gui.filedialog")
-    def test_user_cancels_dialog(self, mock_filedialog):
-        """ダイアログキャンセル → None"""
-        mock_filedialog.askopenfilename.return_value = ""
-
-        app = _make_stub_app()
-        result = app._ask_repair_path("座標ファイル", "coordinates.csv", [("All", "*.*")])
-        self.assertIsNone(result)
-
-
 class TestTryAutoRestore(unittest.TestCase):
     """_try_auto_restore の自動復元提案"""
 
@@ -656,13 +455,7 @@ class TestTryAutoRestore(unittest.TestCase):
         state = {
             "version": 1,
             "image_folder": str(self.img_folder),
-            "coord_excel": "",
-            "template": "",
-            "omr_result": "",
             "skip_questions": "4",
-            "color_threshold": 0.1,
-            "area_threshold": 0.4,
-            "descriptive_enabled": False,
             "saved_at": "2026-01-01T00:00:00",
         }
         session_path = self.results_data / SESSION_STATE_FILE
@@ -682,13 +475,7 @@ class TestTryAutoRestore(unittest.TestCase):
         state = {
             "version": 1,
             "image_folder": str(self.img_folder),
-            "coord_excel": "",
-            "template": "",
-            "omr_result": "",
             "skip_questions": "7",
-            "color_threshold": 0.25,
-            "area_threshold": 0.55,
-            "descriptive_enabled": False,
             "saved_at": "2026-01-01T00:00:00",
         }
         session_path = self.results_data / SESSION_STATE_FILE
@@ -699,7 +486,6 @@ class TestTryAutoRestore(unittest.TestCase):
         app._try_auto_restore()
 
         self.assertEqual(app.skip_questions.get(), "7")
-        self.assertAlmostEqual(app.color_threshold.get(), 0.25)
 
 
 # ============================================================

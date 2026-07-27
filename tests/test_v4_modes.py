@@ -1,7 +1,6 @@
 """
-test_v4_modes.py - v4.0 モード機能のテスト
+test_v4_modes.py - 記述式のみモード機能のテスト
 
-β: 起動モード選択（マークのみ / マーク＋記述 / 記述のみ）
 α: 記述採点のリッチ化（DescriptiveReviewGUI, generate_descriptive_only_sheets）
 """
 
@@ -22,9 +21,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "main_src"))
 from conftest import get_shared_tk_root
 
 from constants import (
-    MODE_MARK_ONLY,
-    MODE_MARK_AND_DESCRIPTIVE,
-    MODE_DESCRIPTIVE_ONLY,
     RESULTS_FOLDER,
     RESULTS_DATA_FOLDER,
     BOXED_FOLDER,
@@ -38,196 +34,25 @@ from constants import (
 # ヘルパー
 # ============================================================
 
-def _make_stub_app(img_folder="", mode=MODE_MARK_AND_DESCRIPTIVE):
+def _make_stub_app(img_folder=""):
     """Mark2GUI の軽量スタブ（__init__ をスキップ）"""
     from main_gui import Mark2GUI
 
     root = get_shared_tk_root()
     app = object.__new__(Mark2GUI)
     app.root = root
-    app.app_mode = mode
     app.image_folder_path = tk.StringVar(root, value=img_folder)
-    app.coord_excel_path = tk.StringVar(root, value="")
-    app.template_path = tk.StringVar(root, value="")
-    app.mark2_result_path = tk.StringVar(root, value="")
     app.skip_questions = tk.StringVar(root, value="4")
-    app.color_threshold = tk.DoubleVar(root, value=0.1)
-    app.area_threshold = tk.DoubleVar(root, value=0.4)
-    app.descriptive_enabled = tk.BooleanVar(
-        root, value=(mode in (MODE_MARK_AND_DESCRIPTIVE, MODE_DESCRIPTIVE_ONLY))
-    )
+    app.descriptive_enabled = tk.BooleanVar(root, value=True)
     app.include_descriptive_in_analysis = tk.BooleanVar(root, value=True)
     app.rendering_settings = get_rendering_settings()
     app._log_messages = []
     app.log_message = lambda msg: app._log_messages.append(msg)
     app._desc_status_label = tk.Label(root)
     app._desc_status_frame = tk.Frame(root)
-    app._on_descriptive_toggle = lambda: None
     app.name_trim_enabled = tk.BooleanVar(root, value=False)
     app._processing = False
     return app
-
-
-def _create_gui(mode):
-    """SaitenSamuraiGUI を Toplevel 上に生成"""
-    from main_gui import SaitenSamuraiGUI
-    root = get_shared_tk_root()
-    top = tk.Toplevel(root)
-    top.withdraw()
-    app = SaitenSamuraiGUI(top, mode=mode)
-    return top, app
-
-
-def _destroy_top(top):
-    """Toplevel の安全な破棄"""
-    try:
-        top.update_idletasks()
-        top.destroy()
-    except tk.TclError:
-        pass
-
-
-# ============================================================
-# モード定数のテスト
-# ============================================================
-
-class TestModeConstants(unittest.TestCase):
-    """モード定数が正しく定義されている"""
-
-    def test_mode_values(self):
-        self.assertEqual(MODE_MARK_ONLY, "mark_only")
-        self.assertEqual(MODE_MARK_AND_DESCRIPTIVE, "mark_and_descriptive")
-        self.assertEqual(MODE_DESCRIPTIVE_ONLY, "descriptive_only")
-
-    def test_modes_are_distinct(self):
-        modes = {MODE_MARK_ONLY, MODE_MARK_AND_DESCRIPTIVE, MODE_DESCRIPTIVE_ONLY}
-        self.assertEqual(len(modes), 3)
-
-
-# ============================================================
-# GUI 初期化モード別テスト
-# ============================================================
-
-class TestGUIInitModes:
-    """各モードでの GUI 初期化動作を検証"""
-
-    def test_mark_only_mode(self):
-        """マークのみモード: 記述チェック OFF、タイトルに「マーク採点」"""
-        top, app = _create_gui(MODE_MARK_ONLY)
-        try:
-            assert app.descriptive_enabled.get() is False
-            assert "マーク採点" in top.title()
-            assert app.app_mode == MODE_MARK_ONLY
-        finally:
-            _destroy_top(top)
-
-    def test_mark_and_descriptive_mode(self):
-        """マーク＋記述モード: 記述チェック ON、タイトルに「マーク＋記述」"""
-        top, app = _create_gui(MODE_MARK_AND_DESCRIPTIVE)
-        try:
-            assert app.descriptive_enabled.get() is True
-            assert "マーク＋記述" in top.title()
-            assert app.app_mode == MODE_MARK_AND_DESCRIPTIVE
-        finally:
-            _destroy_top(top)
-
-    def test_descriptive_only_mode(self):
-        """記述のみモード: 記述チェック ON、タイトルに「記述採点」"""
-        top, app = _create_gui(MODE_DESCRIPTIVE_ONLY)
-        try:
-            assert app.descriptive_enabled.get() is True
-            assert "記述採点" in top.title()
-            assert app.app_mode == MODE_DESCRIPTIVE_ONLY
-        finally:
-            _destroy_top(top)
-
-    def test_descriptive_only_hides_mark_controls(self):
-        """記述のみモード: 認識ボタンが「画像準備」に変更"""
-        top, app = _create_gui(MODE_DESCRIPTIVE_ONLY)
-        try:
-            assert "画像準備" in app._btn_run_box.cget("text")
-        finally:
-            _destroy_top(top)
-
-    def test_mark_only_hides_descriptive_controls(self):
-        """マークのみモード: 記述ボタンが非表示"""
-        top, app = _create_gui(MODE_MARK_ONLY)
-        try:
-            assert app.desc_setup_btn.winfo_manager() == ""
-            assert app.desc_scoring_btn.winfo_manager() == ""
-        finally:
-            _destroy_top(top)
-
-    def test_descriptive_only_has_review_button(self):
-        """記述のみモード: 採点確認ボタンが存在する"""
-        top, app = _create_gui(MODE_DESCRIPTIVE_ONLY)
-        try:
-            assert hasattr(app, '_btn_desc_review')
-            assert app._btn_desc_review.winfo_manager() == "pack"
-        finally:
-            _destroy_top(top)
-
-
-# ============================================================
-# StartupModeDialog テスト
-# ============================================================
-
-class TestStartupModeDialogStructure:
-    """StartupModeDialog の構造テスト"""
-
-    def test_dialog_class_exists(self):
-        """StartupModeDialog クラスが存在する"""
-        from gui_components import StartupModeDialog
-        assert StartupModeDialog is not None
-
-    def test_dialog_has_result_attribute(self):
-        """StartupModeDialog は result と _session_path を持つ"""
-        from gui_components import StartupModeDialog
-        # クラスの属性を確認（インスタンス化はモーダルなのでスキップ）
-        assert hasattr(StartupModeDialog, '__init__')
-
-
-# ============================================================
-# セッション保存にモード情報が含まれる
-# ============================================================
-
-class TestSessionModeInfo(unittest.TestCase):
-    """セッション状態にモード情報が保存される"""
-
-    def setUp(self):
-        self.tmpdir = Path(tempfile.mkdtemp())
-        self.img_folder = self.tmpdir / "images"
-        self.img_folder.mkdir()
-        results_data = self.img_folder / RESULTS_FOLDER / RESULTS_DATA_FOLDER
-        results_data.mkdir(parents=True)
-
-    def tearDown(self):
-        shutil.rmtree(self.tmpdir, ignore_errors=True)
-
-    def test_mode_saved_in_session(self):
-        """app_mode がセッションJSONに含まれる"""
-        app = _make_stub_app(str(self.img_folder), mode=MODE_DESCRIPTIVE_ONLY)
-        app._save_session_state()
-
-        session_path = (self.img_folder / RESULTS_FOLDER /
-                        RESULTS_DATA_FOLDER / SESSION_STATE_FILE)
-        with open(session_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-
-        self.assertIn("app_mode", data)
-        self.assertEqual(data["app_mode"], MODE_DESCRIPTIVE_ONLY)
-
-    def test_mode_defaults_when_missing(self):
-        """セッションに app_mode がない場合のフォールバック"""
-        app = _make_stub_app(str(self.img_folder))
-        # 旧バージョンのセッション（app_mode なし）
-        session = {
-            "version": 1,
-            "image_folder": str(self.img_folder),
-        }
-        app._apply_session_state(session)
-        # エラーなく完了することを確認
-        self.assertTrue(True)
 
 
 # ============================================================
@@ -455,7 +280,7 @@ class TestDescriptiveOnlyRunScoring(unittest.TestCase):
     @patch("tkinter.messagebox.showerror")
     def test_no_config_shows_error(self, mock_error):
         """記述設定がない場合はエラー"""
-        app = _make_stub_app(str(self.img_folder), mode=MODE_DESCRIPTIVE_ONLY)
+        app = _make_stub_app(str(self.img_folder))
         app._check_descriptive_completeness = lambda: (True, 0, 0, [])
         app._set_processing_state = lambda s: None
         app.log_text = MagicMock()
@@ -473,7 +298,7 @@ class TestDescriptiveOnlyRunScoring(unittest.TestCase):
             json.dumps(config), encoding='utf-8'
         )
 
-        app = _make_stub_app(str(self.img_folder), mode=MODE_DESCRIPTIVE_ONLY)
+        app = _make_stub_app(str(self.img_folder))
         app._check_descriptive_completeness = lambda: (True, 0, 0, [])
         app._set_processing_state = lambda s: None
         app.log_text = MagicMock()
@@ -499,48 +324,13 @@ class TestDescriptiveOnlySummaryGeneration(unittest.TestCase):
         results_data.mkdir(parents=True)
 
         try:
-            app = _make_stub_app(str(img_folder), mode=MODE_DESCRIPTIVE_ONLY)
+            app = _make_stub_app(str(img_folder))
             app._check_descriptive_completeness = lambda: (True, 0, 0, [])
 
             app._run_summary_generation_descriptive_only()
             mock_error.assert_called_once()
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
-
-
-# ============================================================
-# モード別マークチェック制御テスト
-# ============================================================
-
-class TestModeMarkCheckerGuard:
-    """run_mark_checker の記述のみモードガード"""
-
-    @patch("tkinter.messagebox.showinfo")
-    def test_mark_checker_blocked_in_descriptive_only(self, mock_info):
-        app = _make_stub_app(mode=MODE_DESCRIPTIVE_ONLY)
-        app.run_mark_checker()
-        mock_info.assert_called_once()
-        assert "使用できません" in mock_info.call_args[0][1]
-
-
-# ============================================================
-# re-export テスト (saitensamurai.py)
-# ============================================================
-
-class TestSaitensamuraiExports(unittest.TestCase):
-    """saitensamurai.py からのモード定数 re-export"""
-
-    def test_mode_constants_exported(self):
-        from saitensamurai import (
-            MODE_MARK_ONLY, MODE_MARK_AND_DESCRIPTIVE, MODE_DESCRIPTIVE_ONLY
-        )
-        self.assertEqual(MODE_MARK_ONLY, "mark_only")
-        self.assertEqual(MODE_MARK_AND_DESCRIPTIVE, "mark_and_descriptive")
-        self.assertEqual(MODE_DESCRIPTIVE_ONLY, "descriptive_only")
-
-    def test_startup_dialog_exported(self):
-        from saitensamurai import StartupModeDialog
-        self.assertIsNotNone(StartupModeDialog)
 
 
 # ============================================================
@@ -572,8 +362,6 @@ class TestCTTDescriptiveOnly(unittest.TestCase):
         config, scores = self._make_desc_data()
 
         ans_df, key_df = convert_mark2_to_ctt_data(
-            template_path=None,
-            mark2_result_path=None,
             descriptive_config=config,
             descriptive_scores=scores,
         )
@@ -596,8 +384,6 @@ class TestCTTDescriptiveOnly(unittest.TestCase):
         config, scores = self._make_desc_data()
 
         ans_df, _ = convert_mark2_to_ctt_data(
-            template_path=None,
-            mark2_result_path=None,
             descriptive_config=config,
             descriptive_scores=scores,
         )
@@ -618,8 +404,6 @@ class TestCTTDescriptiveOnly(unittest.TestCase):
 
         config, scores = self._make_desc_data()
         ans_df, key_df = convert_mark2_to_ctt_data(
-            template_path=None,
-            mark2_result_path=None,
             descriptive_config=config,
             descriptive_scores=scores,
         )
@@ -642,8 +426,6 @@ class TestCTTDescriptiveOnly(unittest.TestCase):
             excel_path = tmpdir / "ctt.xlsx"
             pdf_path = tmpdir / "ctt.pdf"
             result = generate_ctt_analysis(
-                template_path=None,
-                mark2_result_path=None,
                 excel_output_path=excel_path,
                 pdf_output_path=pdf_path,
                 descriptive_config=config,
@@ -681,8 +463,6 @@ class TestRExportDescriptiveOnly(unittest.TestCase):
         tmpdir = Path(tempfile.mkdtemp())
         try:
             result = export_r_analysis_kit(
-                template_path=None,
-                mark2_result_path=None,
                 output_folder=str(tmpdir),
                 descriptive_config=config,
                 descriptive_scores=scores,

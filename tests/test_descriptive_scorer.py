@@ -31,7 +31,7 @@ from descriptive_scorer import (
     DEFAULT_TOTAL_BOX_WIDTH,
     DEFAULT_TOTAL_BOX_HEIGHT,
 )
-from scoring_engine import number_to_circled
+from constants import number_to_circled
 
 
 # ============================================================
@@ -589,117 +589,6 @@ class TestConstants:
 # ============================================================
 
 
-class TestSummaryDescriptiveIntegration:
-    """generate_student_summary / generate_exam_summary の記述対応テスト"""
-
-    @pytest.fixture
-    def template_path(self, tmp_path):
-        """テスト用テンプレートExcel"""
-        from openpyxl import Workbook
-        wb = Workbook()
-        ws = wb.active
-        ws.append(["問題番号", "正答", "配点", "観点"])
-        ws.append([1, "1", 2, 1])
-        ws.append([2, "3", 3, 2])
-        path = tmp_path / "template.xlsx"
-        wb.save(path)
-        return str(path)
-
-    @pytest.fixture
-    def mark2_result_path(self, tmp_path):
-        """テスト用Mark2結果Excel
-        
-        load_mark2_results のフォーマットに合わせる:
-        Row 0: ヘッダー行 (No, File, 元インデックス...)
-        Row 1: 設問名行 (NaN, NaN, 設問番号...)
-        Row 2+: データ行
-        """
-        from openpyxl import Workbook
-        wb = Workbook()
-        ws = wb.active
-        # Row 0: ヘッダー行
-        ws.append(["No", "File", 1, 2])
-        # Row 1: 設問名行（設問番号をそのまま）
-        ws.append([None, None, 1, 2])
-        # Row 2: データ行1
-        ws.append([1, "img001.jpg", 1, 3])    # 全問正解
-        # Row 3: データ行2
-        ws.append([2, "img002.jpg", 2, 3])    # 問1不正解
-        path = tmp_path / "mark2_result.xlsx"
-        wb.save(path)
-        return str(path)
-
-    def test_student_summary_without_descriptive(
-        self, template_path, mark2_result_path, tmp_path
-    ):
-        """記述なしの場合、従来通り動作する"""
-        from saitensamurai import generate_student_summary
-        output_path = str(tmp_path / "student_summary.xlsx")
-        df = generate_student_summary(
-            template_path, mark2_result_path, output_path, skip_questions=0
-        )
-        assert df is not None
-        assert len(df) == 2
-        assert Path(output_path).exists()
-
-    def test_student_summary_with_descriptive(
-        self, template_path, mark2_result_path, tmp_path, sample_config
-    ):
-        """記述問題データ付きでサマリーが生成されるか"""
-        from saitensamurai import generate_student_summary
-        output_path = str(tmp_path / "student_summary_desc.xlsx")
-        desc_scores = {
-            "img001.jpg": {"D1": 5, "D2": 7},
-            "img002.jpg": {"D1": 2, "D2": 5},
-        }
-        df = generate_student_summary(
-            template_path, mark2_result_path, output_path,
-            skip_questions=0,
-            descriptive_config=sample_config,
-            descriptive_scores=desc_scores,
-        )
-        assert df is not None
-        assert len(df) == 2
-        assert Path(output_path).exists()
-
-        # 合計得点にはマーク + 記述が含まれるはず
-        # img001: マーク=2+3=5, 記述=5+7=12 → 合計17
-        assert df.iloc[0]["合計得点"] == 17
-
-    def test_exam_summary_without_descriptive(
-        self, template_path, mark2_result_path, tmp_path
-    ):
-        """記述なしの試験サマリーが正常に生成される"""
-        from saitensamurai import generate_exam_summary
-        output_path = str(tmp_path / "exam_summary.xlsx")
-        stats = generate_exam_summary(
-            template_path, mark2_result_path, output_path, skip_questions=0
-        )
-        assert stats is not None
-        assert "受験者数" in stats
-        assert stats["受験者数"] == 2
-        assert stats["満点"] == 5  # 2+3
-
-    def test_exam_summary_with_descriptive(
-        self, template_path, mark2_result_path, tmp_path, sample_config
-    ):
-        """記述問題付きの試験サマリーで満点が増える"""
-        from saitensamurai import generate_exam_summary
-        output_path = str(tmp_path / "exam_summary_desc.xlsx")
-        desc_scores = {
-            "img001.jpg": {"D1": 5, "D2": 7},
-            "img002.jpg": {"D1": 2, "D2": 5},
-        }
-        stats = generate_exam_summary(
-            template_path, mark2_result_path, output_path,
-            skip_questions=0,
-            descriptive_config=sample_config,
-            descriptive_scores=desc_scores,
-        )
-        assert stats is not None
-        assert stats["満点"] == 20  # マーク5 + 記述15
-
-
 # ============================================================
 # GUI起動テスト（非GUIモード）
 # ============================================================
@@ -709,47 +598,16 @@ class TestGUIStartup:
     """GUIが正常に起動するか（2秒で自動終了）"""
 
     def test_mark2gui_initializes(self):
-        """Mark2GUIが初期化できる"""
+        """Mark2GUIが初期化できる（記述式のみモード固定）"""
         import tkinter as tk
         from saitensamurai import Mark2GUI
-        from constants import MODE_MARK_ONLY, MODE_MARK_AND_DESCRIPTIVE
         root = tk.Tk()
         try:
-            # v4.0: デフォルトモード（マーク＋記述）では記述が有効
             app = Mark2GUI(root)
             assert hasattr(app, "desc_setup_btn")
             assert hasattr(app, "desc_scoring_btn")
             assert hasattr(app, "descriptive_enabled")
-            assert app.descriptive_enabled.get() is True  # v4.0: デフォルトON
-
-            # マークのみモードでは記述が無効
-            root2 = tk.Tk()
-            app2 = Mark2GUI(root2, mode=MODE_MARK_ONLY)
-            assert app2.descriptive_enabled.get() is False
-            root2.destroy()
-        finally:
-            root.destroy()
-
-    def test_descriptive_toggle(self):
-        """チェックボックスで記述ボタンの表示/非表示が切り替わる"""
-        import tkinter as tk
-        from saitensamurai import Mark2GUI
-        try:
-            root = tk.Tk()
-        except tk.TclError:
-            pytest.skip("Tkinter not available in this test session")
-        try:
-            app = Mark2GUI(root)
-            # 有効化 → 記述ボタンが表示される
-            app.descriptive_enabled.set(True)
-            app._on_descriptive_toggle()
-            assert app.desc_setup_btn.winfo_manager() == "pack"
-            assert app.desc_scoring_btn.winfo_manager() == "pack"
-            # 無効化 → 記述ボタンが非表示になる
-            app.descriptive_enabled.set(False)
-            app._on_descriptive_toggle()
-            assert app.desc_setup_btn.winfo_manager() == ""
-            assert app.desc_scoring_btn.winfo_manager() == ""
+            assert app.descriptive_enabled.get() is True
         finally:
             root.destroy()
 
@@ -790,7 +648,7 @@ class TestProcessingStateAndButtons:
         except tk.TclError:
             pytest.skip("Tkinter not available")
         try:
-            for attr in ("_btn_run_box", "_btn_mark_check", "_btn_total_pos",
+            for attr in ("_btn_run_box", "_btn_total_pos",
                          "_btn_run_scoring", "_btn_run_summary"):
                 assert hasattr(app, attr), f"Missing attribute: {attr}"
         finally:
@@ -852,14 +710,13 @@ class TestProcessingStateAndButtons:
             root.destroy()
 
     def test_button_order_step2(self):
-        """Step 2 のボタン順序: マークチェック → 合計点位置設定 → 採点済み答案を生成（記述有効時は記述ボタンが間に入る）"""
+        """Step 2 のボタン順序: 合計点位置設定 → 採点済み答案を生成"""
         import tkinter as tk
         try:
             root, app = self._make_app()
         except tk.TclError:
             pytest.skip("Tkinter not available")
         try:
-            assert "マークチェック" in app._btn_mark_check["text"]
             assert "合計点位置設定" in app._btn_total_pos["text"]
             assert "採点済み答案を生成" in app._btn_run_scoring["text"]
             # return_sheet_btn は廃止されたことを確認
@@ -867,8 +724,8 @@ class TestProcessingStateAndButtons:
         finally:
             root.destroy()
 
-    def test_run_box_drawer_blocked_during_processing(self):
-        """処理中は run_box_drawer が即座にリターンする"""
+    def test_prepare_images_blocked_during_processing(self):
+        """処理中は _prepare_images_for_descriptive が即座にリターンする"""
         import tkinter as tk
         try:
             root, app = self._make_app()
@@ -876,9 +733,7 @@ class TestProcessingStateAndButtons:
             pytest.skip("Tkinter not available")
         try:
             app._processing = True
-            # validate_inputs で弾かれるはずだが、
-            # _processing チェックでそれ以前に return される
-            app.run_box_drawer()  # エラーが出なければOK
+            app._prepare_images_for_descriptive()  # エラーが出なければOK
         finally:
             root.destroy()
 

@@ -238,7 +238,7 @@ class TestSessionStateAtomicSave:
         from constants import MODE_MARK_AND_DESCRIPTIVE
 
         root = get_shared_tk_root()
-        app = SaitenSamuraiGUI(root, mode=MODE_MARK_AND_DESCRIPTIVE)
+        app = SaitenSamuraiGUI(root)
 
         # ダミーフォルダ構造を作成
         results_dir = tmp_path / "_saiten_grading_results" / "01_Results"
@@ -271,7 +271,7 @@ class TestLogMessageThreadSafety:
         from constants import MODE_MARK_ONLY
 
         root = get_shared_tk_root()
-        app = SaitenSamuraiGUI(root, mode=MODE_MARK_ONLY)
+        app = SaitenSamuraiGUI(root)
 
         app.log_message("テストメッセージ")
         content = app.log_text.get("1.0", "end-1c")
@@ -284,7 +284,7 @@ class TestLogMessageThreadSafety:
         from constants import MODE_MARK_ONLY
 
         root = get_shared_tk_root()
-        app = SaitenSamuraiGUI(root, mode=MODE_MARK_ONLY)
+        app = SaitenSamuraiGUI(root)
 
         # root.after がバックグラウンドスレッドから呼ばれることを確認
         after_called = threading.Event()
@@ -325,7 +325,7 @@ class TestWindowCloseHandler:
         from constants import MODE_MARK_ONLY
 
         root = get_shared_tk_root()
-        app = SaitenSamuraiGUI(root, mode=MODE_MARK_ONLY)
+        app = SaitenSamuraiGUI(root)
 
         # protocol handler が設定されていることを確認
         assert hasattr(app, '_on_window_close')
@@ -337,7 +337,7 @@ class TestWindowCloseHandler:
         from constants import MODE_MARK_ONLY
 
         root = get_shared_tk_root()
-        app = SaitenSamuraiGUI(root, mode=MODE_MARK_ONLY)
+        app = SaitenSamuraiGUI(root)
         app._processing = True
 
         with patch('main_gui.messagebox.askyesno', return_value=False) as mock_ask:
@@ -361,19 +361,17 @@ class TestProcessingStateButtons:
         from constants import MODE_MARK_AND_DESCRIPTIVE
 
         root = get_shared_tk_root()
-        app = SaitenSamuraiGUI(root, mode=MODE_MARK_AND_DESCRIPTIVE)
+        app = SaitenSamuraiGUI(root)
 
         # 処理開始
         app._set_processing_state(True)
         assert str(app._btn_select_folder['state']) == 'disabled'
         assert str(app._btn_select_pdf['state']) == 'disabled'
-        assert str(app._btn_select_excel['state']) == 'disabled'
 
         # 処理終了
         app._set_processing_state(False)
         assert str(app._btn_select_folder['state']) == 'normal'
         assert str(app._btn_select_pdf['state']) == 'normal'
-        assert str(app._btn_select_excel['state']) == 'normal'
 
 
 # ================================================================
@@ -390,7 +388,7 @@ class TestPrepareImagesGuard:
         from constants import MODE_DESCRIPTIVE_ONLY
 
         root = get_shared_tk_root()
-        app = SaitenSamuraiGUI(root, mode=MODE_DESCRIPTIVE_ONLY)
+        app = SaitenSamuraiGUI(root)
         app._processing = True
 
         # messagebox も threading も呼ばれないことを確認
@@ -523,18 +521,19 @@ class TestDescriptiveReviewClose:
 # ================================================================
 
 class TestThreadSafeParams:
-    """_run_scoring_thread / _run_box_drawer_thread がパラメータ dict を受け取るか検証"""
+    """_run_descriptive_only_thread / _run_prepare_images_thread がパラメータ dict を受け取るか検証"""
 
-    def test_scoring_thread_accepts_params(self):
-        """_run_scoring_thread が scoring_params 引数を受け取る"""
+    def test_descriptive_only_thread_accepts_params(self):
+        """_run_descriptive_only_thread が params 引数を受け取る"""
         from main_gui import SaitenSamuraiGUI
         import inspect
-        sig = inspect.signature(SaitenSamuraiGUI._run_scoring_thread)
-        assert 'scoring_params' in sig.parameters
-
-    def test_box_drawer_thread_accepts_params(self):
-        """_run_box_drawer_thread が params 引数を受け取る"""
-        from main_gui import SaitenSamuraiGUI
-        import inspect
-        sig = inspect.signature(SaitenSamuraiGUI._run_box_drawer_thread)
+        sig = inspect.signature(SaitenSamuraiGUI._run_descriptive_only_thread)
         assert 'params' in sig.parameters
+
+    def test_prepare_images_thread_accepts_params(self):
+        """_run_prepare_images_thread が img_folder / image_files 引数を受け取る"""
+        from main_gui import SaitenSamuraiGUI
+        import inspect
+        sig = inspect.signature(SaitenSamuraiGUI._run_prepare_images_thread)
+        assert 'img_folder' in sig.parameters
+        assert 'image_files' in sig.parameters
