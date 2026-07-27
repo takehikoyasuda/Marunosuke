@@ -23,7 +23,7 @@ from PIL import Image, ImageTk, ImageDraw, ImageFont
 from name_trimmer import select_region_on_image, get_image_files
 from constants import (
     get_app_temp_dir, atomic_json_save, load_json_safe, open_in_default_viewer,
-    get_ui_font_family, get_ui_font_size,
+    get_ui_font_family, get_ui_font_size, fit_window_to_content,
 )
 
 # 日本語UIフォント（Windows: Yu Gothic UI, Mac: Hiragino Sans）
@@ -756,8 +756,7 @@ def select_total_position(
     
     win = tk.Toplevel(root)
     win.title("合計点表示位置 — ボックスをドラッグで移動、端でリサイズ")
-    win.geometry(f"{display_w + 220}x{display_h + 20}")
-    win.resizable(False, False)
+    win.resizable(True, True)
     
     main_frame = tk.Frame(win)
     main_frame.pack(fill=tk.BOTH, expand=True)
@@ -963,7 +962,8 @@ def select_total_position(
     
     # 初期描画
     _draw_box()
-    
+
+    fit_window_to_content(win, min_width=display_w + 220, min_height=display_h + 20)
     win.grab_set()
     win.wait_window()
     
@@ -995,8 +995,7 @@ def _ask_question_info(
 
     dialog = tk.Toplevel(root)
     dialog.title(f"記述{question_number} の設定")
-    dialog.geometry("350x280")
-    dialog.resizable(False, False)
+    dialog.resizable(True, True)
     dialog.transient(root)
 
     frame = tk.Frame(dialog, padx=20, pady=15)
@@ -1076,6 +1075,7 @@ def _ask_question_info(
     ).pack(side=tk.LEFT, padx=5)
 
     dialog.protocol("WM_DELETE_WINDOW", _cancel)
+    fit_window_to_content(dialog, min_width=350, min_height=280)
     dialog.grab_set()
     dialog.focus_force()
     dialog.wait_window()
@@ -1351,8 +1351,7 @@ class DescriptiveScorerGUI:
         result = [None]
         dialog = tk.Toplevel(self._list_win)
         dialog.title(f"{q_config['name']} の設定変更")
-        dialog.geometry("380x320")
-        dialog.resizable(False, False)
+        dialog.resizable(True, True)
         dialog.transient(self._list_win)
 
         frame = tk.Frame(dialog, padx=20, pady=15)
@@ -1467,6 +1466,7 @@ class DescriptiveScorerGUI:
         ).pack(side=tk.LEFT, padx=5)
 
         dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
+        fit_window_to_content(dialog, min_width=380, min_height=320)
         dialog.grab_set()
         dialog.focus_force()
         dialog.wait_window()
@@ -1939,8 +1939,7 @@ class _SingleQuestionScorer:
         """操作方法を小さいウィンドウで表示"""
         hw = tk.Toplevel(self._win)
         hw.title("操作方法")
-        hw.geometry("320x280")
-        hw.resizable(False, False)
+        hw.resizable(True, True)
         hw.transient(self._win)
 
         frame = tk.Frame(hw, padx=15, pady=10)
@@ -1981,6 +1980,8 @@ class _SingleQuestionScorer:
             frame, text="閉じる", command=hw.destroy,
             font=(UI_FONT, get_ui_font_size(9)), padx=10,
         ).pack(pady=(10, 0))
+
+        fit_window_to_content(hw, min_width=320, min_height=280)
 
     def _open_current_original(self):
         """現在表示中の画像の元画像をビューアで開く"""
@@ -2049,12 +2050,16 @@ class _SingleQuestionScorer:
         tk.Label(score_bar, text="得点ボタン（クリック後、サムネイルをクリックで得点付与）:",
                  font=(UI_FONT, get_ui_font_size(9)), bg="#ECEFF1", fg="#555").pack(side=tk.LEFT, padx=(0, 8))
 
-        self._grid_score_buttons: Dict[int, tk.Button] = {}
+        # 得点ボタンはtk.Buttonではなくtk.Labelで自作する。macOSのAquaテーマでは
+        # tk.Buttonのbg/relief変更がネイティブ描画に反映されず、選択状態が
+        # 見た目上まったく変化しないため（tk.Frame/tk.Labelは汎用Tk描画のため
+        # bg変更が正しく反映される。_refresh_gridのカード背景色切替と同じ理由）。
+        self._grid_score_buttons: Dict[int, tk.Label] = {}
         for i in range(min(self.max_score + 1, 11)):
-            btn = tk.Button(score_bar, text=str(i), width=3, font=(UI_FONT, get_ui_font_size(10), "bold"),
-                            bg="#E3F2FD", relief=tk.RAISED, cursor="hand2",
-                            command=lambda s=i: self._on_grid_score_btn(s))
+            btn = tk.Label(score_bar, text=str(i), width=3, font=(UI_FONT, get_ui_font_size(10), "bold"),
+                           bg="#E3F2FD", relief=tk.RAISED, bd=1, cursor="hand2")
             btn.pack(side=tk.LEFT, padx=2)
+            btn.bind("<Button-1>", lambda e, s=i: self._on_grid_score_btn(s))
             self._grid_score_buttons[i] = btn
 
         # 配点 > 10 の場合はEntry
@@ -2067,14 +2072,14 @@ class _SingleQuestionScorer:
             tk.Button(score_bar, text="選択", font=(UI_FONT, get_ui_font_size(9)), bg="#90CAF9",
                       relief=tk.FLAT, command=self._on_grid_score_entry_select).pack(side=tk.LEFT, padx=3)
 
-        # 答案プレビューボタン
-        self._grid_preview_btn = tk.Button(
+        # 答案プレビューボタン（同上の理由でtk.Labelを使用）
+        self._grid_preview_btn = tk.Label(
             score_bar, text="📷 答案を表示",
             font=(UI_FONT, get_ui_font_size(9), "bold"),
-            bg="#E3F2FD", relief=tk.RAISED, cursor="hand2",
-            command=self._on_grid_preview_btn,
+            bg="#E3F2FD", relief=tk.RAISED, bd=1, cursor="hand2", padx=4, pady=2,
         )
         self._grid_preview_btn.pack(side=tk.RIGHT, padx=(6, 0))
+        self._grid_preview_btn.bind("<Button-1>", lambda e: self._on_grid_preview_btn())
 
         # クリアボタン
         tk.Button(score_bar, text="選択解除", font=(UI_FONT, get_ui_font_size(8)),
@@ -2760,8 +2765,7 @@ class _SingleQuestionScorer:
         """全答案の採点が完了した際のカスタムダイアログ"""
         dlg = tk.Toplevel(self._win)
         dlg.title("採点完了")
-        dlg.geometry("360x150")
-        dlg.resizable(False, False)
+        dlg.resizable(True, True)
         dlg.transient(self._win)
 
         body = tk.Frame(dlg, padx=20, pady=15)
@@ -2802,6 +2806,7 @@ class _SingleQuestionScorer:
             cursor="hand2", padx=12, pady=4,
         ).pack(side=tk.LEFT, padx=8)
 
+        fit_window_to_content(dlg, min_width=360, min_height=150)
         dlg.grab_set()
         dlg.focus_force()
         dlg.wait_window()
@@ -3336,7 +3341,6 @@ class DescriptiveReviewGUI:
 
         if max_score <= 10:
             # 配点が低い場合: ボタン群で選択
-            dialog.geometry("350x200")
             btn_frame = tk.Frame(dialog, bg="#F5F7FA")
             btn_frame.pack(pady=10)
 
@@ -3349,7 +3353,6 @@ class DescriptiveReviewGUI:
                 ).pack(side=tk.LEFT, padx=2)
         else:
             # 配点が11点以上: 数値入力欄で入力
-            dialog.geometry("350x220")
             entry_frame = tk.Frame(dialog, bg="#F5F7FA")
             entry_frame.pack(pady=10)
             tk.Label(entry_frame, text="得点:", bg="#F5F7FA", font=("", 10)).pack(side=tk.LEFT)
@@ -3379,6 +3382,8 @@ class DescriptiveReviewGUI:
         tk.Button(dialog, text="キャンセル", command=dialog.destroy,
                   bg="#BDBDBD", relief=tk.FLAT).pack(pady=5)
 
+        min_h = 200 if max_score <= 10 else 220
+        fit_window_to_content(dialog, min_width=350, min_height=min_h)
         dialog.wait_window()
 
     def _save(self):

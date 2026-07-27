@@ -1,70 +1,52 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-id_area_config.py — 学籍番号欄の位置を「検出」ではなく「設定値による計算」で求めるための
-ロジック(GUI非依存)。
+id_area_config.py — 学籍番号OCRの設定(桁数・手動指定フォールバック)の永続化。
 
-学籍番号欄専用のマーカーを答案画像ごとに検出する方式は、実データ検証の結果
-ユーザーの矩形選択に非現実的な精度が必要になることが分かった(詳細は
-student_id_area_requirements.md 参照)。そこで、用紙全体の四隅マーカー
-(omr_engine.detect_corner_markers / apply_perspective_transform、既存の
-実績ある仕組み)を基準に、学籍番号欄の位置を割合(%)で一度だけ設定し、
-以降は毎回その割合から数学的に位置を計算する方式に変更した。
+学籍番号欄の位置は、四隅コーナーマーカーの割合計算には一切依存せず、答案画像
+全体からの赤枠色検出(id_area_color_detector.detect_red_digit_boxes)で求める。
+このモジュールが保持するのは以下のみ:
 
-割合は絶対mmではなく「四隅マーカーが作る四角形」の幅・高さに対する割合で
-持つ。これにより用紙サイズ(A4/B4等)が変わっても同じ設定を使い回せる。
-基準点はマーカーの中心(重心)。
+- digit_count: 学籍番号の桁数(自動検出の期待値としても使う)
+- manual_digit_rects_frac: 自動検出に失敗した場合のみ存在する、教員が1マスずつ
+  ドラッグ指定した矩形(画像全体の幅・高さに対する割合、桁ごとに個別の値)
+- alpha_positions: 任意。英字マスとして扱う0-indexedの桁位置のリスト
+  (例: [2] なら3桁目が英字)。学籍番号中の英字は位置が固定でも文字自体(A〜Z)は
+  事前に分からないため、教員が id_area_config_gui.IdAreaConfigDialog で位置だけ
+  指定し、その位置は digit_ocr_recognizer.LocalDigitOcrRecognizer の英字専用モデル
+  (resources/letter_classifier.joblib)で認識する。省略時は空リスト(全桁数字)。
+
+四隅マーカーが作る四角形を基準にした割合計算(旧方式)は撤回した経緯を
+student_id_area_requirements.md に記録している。
 """
 
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
-from constants import (
-    MARKER_X_FRAC_LEFT,
-    MARKER_X_FRAC_RIGHT,
-    MARKER_Y_FRAC_TOP,
-    MARKER_Y_FRAC_BOTTOM,
-    atomic_json_save,
-    load_json_safe,
-)
+from constants import atomic_json_save, load_json_safe
 
 ID_AREA_CONFIG_FILE = "student_id_area_config.json"
 
-REQUIRED_CONFIG_KEYS = ["left_frac", "top_frac", "width_frac", "height_frac", "digit_count"]
+REQUIRED_CONFIG_KEYS = ["digit_count"]
 
 
-def compute_marker_rect(img_w: int, img_h: int) -> Tuple[float, float, float, float]:
-    """用紙全体の四隅マーカー(の中心)が作る四角形を、与えられた画像サイズでのピクセル座標で返す。
-
-    Returns:
-        (left, top, right, bottom)
-    """
-    left = MARKER_X_FRAC_LEFT * img_w
-    right = MARKER_X_FRAC_RIGHT * img_w
-    top = MARKER_Y_FRAC_TOP * img_h
-    bottom = MARKER_Y_FRAC_BOTTOM * img_h
-    return left, top, right, bottom
-
-
-def compute_id_box_rect(img_w: int, img_h: int, config: Dict) -> Tuple[int, int, int, int]:
-    """設定値(割合)から、学籍番号欄の絶対ピクセル矩形を計算する。
+def compute_manual_digit_box_rect(
+    img_w: int, img_h: int, rect_frac: List[float],
+) -> Tuple[int, int, int, int]:
+    """1桁分の手動指定矩形(画像全体に対する割合)を、画像サイズに合わせた絶対座標に変換する。
 
     Args:
         img_w, img_h: 対象画像のサイズ
-        config: {'left_frac','top_frac','width_frac','height_frac', ...}
-            いずれも「四隅マーカーが作る四角形」の幅・高さに対する割合(0.0〜1.0)
+        rect_frac: [left_frac, top_frac, width_frac, height_frac]
+            （画像全体の幅・高さに対する割合。四隅マーカーとは無関係）
 
     Returns:
         (left, top, right, bottom)
     """
-    marker_left, marker_top, marker_right, marker_bottom = compute_marker_rect(img_w, img_h)
-    marker_w = marker_right - marker_left
-    marker_h = marker_bottom - marker_top
-
-    left = marker_left + config["left_frac"] * marker_w
-    top = marker_top + config["top_frac"] * marker_h
-    width = config["width_frac"] * marker_w
-    height = config["height_frac"] * marker_h
-
+    left_frac, top_frac, width_frac, height_frac = rect_frac
+    left = left_frac * img_w
+    top = top_frac * img_h
+    width = width_frac * img_w
+    height = height_frac * img_h
     return round(left), round(top), round(left + width), round(top + height)
 
 

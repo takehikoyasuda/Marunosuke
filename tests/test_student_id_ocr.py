@@ -27,6 +27,28 @@ from PIL import Image
 from test_name_trimmer import _make_dummy_mark2_files
 
 
+class _FakeClassifier:
+    """sklearn互換の最小限のダミー分類器(joblib.dumpでシリアライズしてテストに使う)。
+
+    常に固定のproba配列を返す。classes_の並び順がpredict_probaの列インデックスと
+    一致しない(=argmaxのインデックスをそのままラベルとして使うと壊れる)ケースを
+    再現するために使う。
+    """
+
+    def __init__(self, classes, proba_row):
+        self.classes_ = np.array(classes)
+        self._proba_row = np.array(proba_row, dtype=np.float64)
+
+    def predict_proba(self, X):
+        return np.tile(self._proba_row, (X.shape[0], 1))
+
+
+def _inked_image():
+    img = np.full((40, 40, 3), 255, dtype=np.uint8)
+    img[10:30, 10:30] = 0
+    return img
+
+
 # ============================================================
 # Part 1: digit_ocr_preprocessing / digit_ocr_recognizer
 # ============================================================
@@ -89,17 +111,78 @@ class TestLocalDigitOcrRecognizer(unittest.TestCase):
         """per_digit の長さが入力画像数と一致すること（精度自体はアサートしない）"""
         from digit_ocr_recognizer import LocalDigitOcrRecognizer
         recognizer = LocalDigitOcrRecognizer()
-        digit_images = []
-        for _ in range(4):
-            img = np.full((40, 40, 3), 255, dtype=np.uint8)
-            img[10:30, 10:30] = 0
-            digit_images.append(img)
+        digit_images = [_inked_image() for _ in range(4)]
         candidate = recognizer.recognize(digit_images)
         self.assertEqual(len(candidate.per_digit), 4)
         for digit_str, conf in candidate.per_digit:
             self.assertIsInstance(digit_str, str)
             self.assertGreaterEqual(conf, 0.0)
             self.assertLessEqual(conf, 1.0)
+
+    def test_05_letter_model_file_exists(self):
+        """英字分類モデル(resources/letter_classifier.joblib)が配置されていること"""
+        from constants import resource_path
+        model_path = resource_path("resources/letter_classifier.joblib")
+        self.assertTrue(Path(model_path).exists(), f"モデルファイルが見つかりません: {model_path}")
+
+    def test_06_label_uses_classes_not_argmax_index(self):
+        """予測ラベルは classes_[argmax] から取得すること(argmaxのインデックスを
+        そのまま数字化する実装だと、classes_の並び順がインデックスと一致しない
+        場合に誤ったラベルを返す回帰バグがある)。"""
+        import joblib
+        from digit_ocr_recognizer import LocalDigitOcrRecognizer
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # classes_ = ['0','5','9']、インデックス1が最大確率 → 正しくは'5'
+            # (インデックスをそのまま文字列化する実装だと'1'を返してしまう)
+            model_path = os.path.join(tmpdir, "fake_digit.joblib")
+            joblib.dump(_FakeClassifier(["0", "5", "9"], [0.1, 0.8, 0.1]), model_path)
+
+            recognizer = LocalDigitOcrRecognizer(model_path=model_path, letter_model_path=model_path)
+            candidate = recognizer.recognize([_inked_image()])
+            self.assertEqual(candidate.per_digit[0][0], "5")
+
+    def test_07_alpha_mask_routes_to_letter_model(self):
+        """alpha_maskがTrueの位置だけ英字分類器が使われること"""
+        import joblib
+        from digit_ocr_recognizer import LocalDigitOcrRecognizer
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            digit_model_path = os.path.join(tmpdir, "fake_digit.joblib")
+            letter_model_path = os.path.join(tmpdir, "fake_letter.joblib")
+            joblib.dump(_FakeClassifier(["3", "7"], [0.2, 0.9]), digit_model_path)
+            joblib.dump(_FakeClassifier(["A", "B"], [0.9, 0.1]), letter_model_path)
+
+            recognizer = LocalDigitOcrRecognizer(model_path=digit_model_path, letter_model_path=letter_model_path)
+            digit_images = [_inked_image(), _inked_image()]
+            candidate = recognizer.recognize(digit_images, alpha_mask=[False, True])
+
+            self.assertEqual(candidate.per_digit[0][0], "7")  # 数字マス → 数字分類器
+            self.assertEqual(candidate.per_digit[1][0], "A")  # 英字マス → 英字分類器
+            self.assertEqual(candidate.value, "7A")
+
+    def test_08_alpha_mask_none_matches_all_digit_behavior(self):
+        """alpha_mask省略時は既存動作(全桁数字分類器)と同じになること"""
+        import joblib
+        from digit_ocr_recognizer import LocalDigitOcrRecognizer
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            digit_model_path = os.path.join(tmpdir, "fake_digit.joblib")
+            letter_model_path = os.path.join(tmpdir, "fake_letter.joblib")
+            joblib.dump(_FakeClassifier(["3", "7"], [0.2, 0.9]), digit_model_path)
+            joblib.dump(_FakeClassifier(["A", "B"], [0.9, 0.1]), letter_model_path)
+
+            recognizer = LocalDigitOcrRecognizer(model_path=digit_model_path, letter_model_path=letter_model_path)
+            digit_images = [_inked_image(), _inked_image()]
+            candidate = recognizer.recognize(digit_images)  # alpha_mask省略
+
+            self.assertEqual(candidate.value, "77")
+
+    def test_09_alpha_mask_length_mismatch_raises(self):
+        from digit_ocr_recognizer import LocalDigitOcrRecognizer
+        recognizer = LocalDigitOcrRecognizer()
+        with self.assertRaises(ValueError):
+            recognizer.recognize([_inked_image(), _inked_image()], alpha_mask=[True])
 
 
 # ============================================================
@@ -142,41 +225,8 @@ class TestRosterLoader(unittest.TestCase):
 # Part 3: student_id_ocr
 # ============================================================
 
-class TestComputeDigitBoxRects(unittest.TestCase):
-    """compute_digit_box_rects() のテスト（1つのrect→マス矩形の幾何計算）"""
-
-    def test_01_even_division_count(self):
-        from student_id_ocr import compute_digit_box_rects
-        rect = (0, 0, 400, 100)
-        rects = compute_digit_box_rects(rect, 8, h_margin_frac=0.0, v_margin_frac=0.0)
-        self.assertEqual(len(rects), 8)
-        for i, (x0, y0, x1, y1) in enumerate(rects):
-            self.assertAlmostEqual(x0, i * 50, delta=1)
-            self.assertAlmostEqual(x1, (i + 1) * 50, delta=1)
-            self.assertEqual(y0, 0)
-            self.assertEqual(y1, 100)
-
-    def test_02_margin_shrinks_each_box(self):
-        from student_id_ocr import compute_digit_box_rects
-        rect = (0, 0, 400, 100)
-        rects = compute_digit_box_rects(rect, 4, h_margin_frac=0.1, v_margin_frac=0.2)
-        # 1マス幅100 -> 左右に10ずつマージン -> 幅80
-        for (x0, y0, x1, y1) in rects:
-            self.assertAlmostEqual(x1 - x0, 80, delta=1)
-            # 高さ100 -> 上下に20ずつマージン -> 高さ60
-            self.assertAlmostEqual(y1 - y0, 60, delta=1)
-
-    def test_03_rect_used_as_is(self):
-        """rectはそのまま(left, top, right, bottom)として扱われること"""
-        from student_id_ocr import compute_digit_box_rects
-        rect = (0, 0, 400, 100)
-        rects = compute_digit_box_rects(rect, 2, h_margin_frac=0.0, v_margin_frac=0.0)
-        self.assertEqual(rects[0], (0, 0, 200, 100))
-        self.assertEqual(rects[1], (200, 0, 400, 100))
-
-
 class TestRecognizeStudentIdsIntegration(unittest.TestCase):
-    """recognize_student_ids() の統合テスト（id_area_config による位置計算経由）"""
+    """recognize_student_ids() の統合テスト（赤枠自動検出／手動指定の両経路）"""
 
     SAMPLE_IMAGE = Path(__file__).parent.parent / "sample_basefile" / "sample_marksheet.jpg"
 
@@ -190,21 +240,18 @@ class TestRecognizeStudentIdsIntegration(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
-    def test_01_returns_result_per_image_with_thumbnail(self):
-        """設定値(割合)だけからマスを切り出し、画像ごとの候補が返ること"""
+    def test_01_no_red_frames_yields_safe_fallback_entry(self):
+        """赤枠が印刷されていないサンプル画像では自動検出が失敗し、安全な
+        フォールバック値（confidence=0.0等）が返ること。"""
         from student_id_ocr import recognize_student_ids
-        config = {
-            "left_frac": 0.10, "top_frac": 0.10,
-            "width_frac": 0.30, "height_frac": 0.05,
-            "digit_count": 6,
-        }
+        config = {"digit_count": 6}
         results = recognize_student_ids(self.image_folder, config, self.output_folder)
         self.assertEqual(len(results), 1)
         entry = results["page_001.jpg"]
-        self.assertIsNotNone(entry["thumbnail_path"])
-        self.assertTrue(Path(entry["thumbnail_path"]).exists())
-        self.assertEqual(len(entry["per_digit"]), 6)
-        self.assertGreaterEqual(entry["confidence"], 0.0)
+        self.assertIsNone(entry["thumbnail_path"])
+        self.assertIsNone(entry["text"])
+        self.assertEqual(entry["confidence"], 0.0)
+        self.assertEqual(entry["per_digit"], [])
 
     def test_02_invalid_image_yields_safe_fallback_entry(self):
         """壊れた画像でも例外を投げず、安全なフォールバック値を返すこと"""
@@ -213,17 +260,71 @@ class TestRecognizeStudentIdsIntegration(unittest.TestCase):
         os.makedirs(bad_folder, exist_ok=True)
         with open(os.path.join(bad_folder, "broken.jpg"), "wb") as f:
             f.write(b"not an image")
-        config = {
-            "left_frac": 0.10, "top_frac": 0.10,
-            "width_frac": 0.30, "height_frac": 0.05,
-            "digit_count": 6,
-        }
+        config = {"digit_count": 6}
         results = recognize_student_ids(bad_folder, config, self.output_folder)
         entry = results["broken.jpg"]
         self.assertIsNone(entry["thumbnail_path"])
         self.assertIsNone(entry["text"])
         self.assertEqual(entry["confidence"], 0.0)
         self.assertEqual(entry["per_digit"], [])
+
+    def test_03_manual_digit_rects_used_when_present(self):
+        """manual_digit_rects_fracがある場合、赤枠自動検出を経由せずそれを使って
+        画像ごとに候補が返ること（桁数分のper_digitが返る）。"""
+        from student_id_ocr import recognize_student_ids
+        config = {
+            "digit_count": 3,
+            "manual_digit_rects_frac": [
+                [0.10, 0.10, 0.05, 0.03],
+                [0.16, 0.10, 0.05, 0.03],
+                [0.22, 0.10, 0.05, 0.03],
+            ],
+        }
+        results = recognize_student_ids(self.image_folder, config, self.output_folder)
+        entry = results["page_001.jpg"]
+        self.assertIsNotNone(entry["thumbnail_path"])
+        self.assertTrue(Path(entry["thumbnail_path"]).exists())
+        self.assertEqual(len(entry["per_digit"]), 3)
+        self.assertGreaterEqual(entry["confidence"], 0.0)
+
+    def test_05_alpha_positions_routes_to_letter_model(self):
+        """alpha_positionsで指定した桁が英字分類器で処理され、例外なく完走すること"""
+        from student_id_ocr import recognize_student_ids
+        config = {
+            "digit_count": 3,
+            "manual_digit_rects_frac": [
+                [0.10, 0.10, 0.05, 0.03],
+                [0.16, 0.10, 0.05, 0.03],
+                [0.22, 0.10, 0.05, 0.03],
+            ],
+            "alpha_positions": [1],
+        }
+        results = recognize_student_ids(self.image_folder, config, self.output_folder)
+        entry = results["page_001.jpg"]
+        self.assertEqual(len(entry["per_digit"]), 3)
+
+    def test_04_red_frames_detected_and_used(self):
+        """赤枠を合成した画像では自動検出が成功し、画像ごとに候補が返ること。"""
+        import cv2
+        import numpy as np
+        from student_id_ocr import recognize_student_ids
+
+        img = np.full((300, 800, 3), 255, dtype=np.uint8)
+        digit_count = 4
+        box_w, box_h, gap, top = 80, 100, 20, 100
+        for i in range(digit_count):
+            x0 = 50 + i * (box_w + gap)
+            cv2.rectangle(img, (x0, top), (x0 + box_w, top + box_h), (0, 0, 255), 2)
+        red_folder = os.path.join(self.test_dir, "red_boxed")
+        os.makedirs(red_folder, exist_ok=True)
+        # JPEG圧縮による赤色のにじみ(色ズレ)を避けるためPNG(可逆圧縮)で保存する
+        cv2.imwrite(os.path.join(red_folder, "page_001.png"), img)
+
+        config = {"digit_count": digit_count}
+        results = recognize_student_ids(red_folder, config, self.output_folder)
+        entry = results["page_001.png"]
+        self.assertIsNotNone(entry["thumbnail_path"])
+        self.assertEqual(len(entry["per_digit"]), digit_count)
 
 
 class TestStudentIdOcrTrimmerCleanup(unittest.TestCase):

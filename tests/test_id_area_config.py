@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-test_id_area_config.py — id_area_config.py（学籍番号欄の位置を割合設定から計算する
-ロジック）のテスト。
+test_id_area_config.py — id_area_config.py（学籍番号OCR設定の永続化・手動指定矩形の
+座標変換）のテスト。
 """
 
 import shutil
@@ -13,62 +13,35 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "main_src"))
 
-from constants import (
-    MARKER_X_FRAC_LEFT,
-    MARKER_X_FRAC_RIGHT,
-    MARKER_Y_FRAC_TOP,
-    MARKER_Y_FRAC_BOTTOM,
-)
 
+class TestComputeManualDigitBoxRect(unittest.TestCase):
+    """compute_manual_digit_box_rect() のテスト"""
 
-class TestComputeMarkerRect(unittest.TestCase):
-    """compute_marker_rect() のテスト"""
-
-    def test_01_known_image_size(self):
-        from id_area_config import compute_marker_rect
+    def test_01_known_fraction(self):
+        from id_area_config import compute_manual_digit_box_rect
         img_w, img_h = 1000, 2000
-        left, top, right, bottom = compute_marker_rect(img_w, img_h)
-        self.assertAlmostEqual(left, MARKER_X_FRAC_LEFT * img_w)
-        self.assertAlmostEqual(right, MARKER_X_FRAC_RIGHT * img_w)
-        self.assertAlmostEqual(top, MARKER_Y_FRAC_TOP * img_h)
-        self.assertAlmostEqual(bottom, MARKER_Y_FRAC_BOTTOM * img_h)
+        rect_frac = [0.1, 0.2, 0.05, 0.03]
+        left, top, right, bottom = compute_manual_digit_box_rect(img_w, img_h, rect_frac)
+        self.assertAlmostEqual(left, 100, delta=1)
+        self.assertAlmostEqual(top, 400, delta=1)
+        self.assertAlmostEqual(right - left, 50, delta=1)
+        self.assertAlmostEqual(bottom - top, 60, delta=1)
 
-
-class TestComputeIdBoxRect(unittest.TestCase):
-    """compute_id_box_rect() のテスト"""
-
-    def test_01_zero_offset_full_size_matches_marker_rect(self):
-        """left_frac=top_frac=0, width_frac=height_frac=1 でマーカー矩形と一致すること"""
-        from id_area_config import compute_marker_rect, compute_id_box_rect
-        img_w, img_h = 1000, 2000
-        config = {"left_frac": 0.0, "top_frac": 0.0, "width_frac": 1.0, "height_frac": 1.0}
-        marker_left, marker_top, marker_right, marker_bottom = compute_marker_rect(img_w, img_h)
-        left, top, right, bottom = compute_id_box_rect(img_w, img_h, config)
-        self.assertAlmostEqual(left, marker_left, delta=1)
-        self.assertAlmostEqual(top, marker_top, delta=1)
-        self.assertAlmostEqual(right, marker_right, delta=1)
-        self.assertAlmostEqual(bottom, marker_bottom, delta=1)
-
-    def test_02_offset_and_size_applied_relative_to_marker_rect(self):
-        from id_area_config import compute_marker_rect, compute_id_box_rect
-        img_w, img_h = 2466, 3483
-        config = {"left_frac": 0.10, "top_frac": 0.20, "width_frac": 0.30, "height_frac": 0.05}
-        marker_left, marker_top, marker_right, marker_bottom = compute_marker_rect(img_w, img_h)
-        marker_w = marker_right - marker_left
-        marker_h = marker_bottom - marker_top
-
-        left, top, right, bottom = compute_id_box_rect(img_w, img_h, config)
-        self.assertAlmostEqual(left, marker_left + 0.10 * marker_w, delta=1)
-        self.assertAlmostEqual(top, marker_top + 0.20 * marker_h, delta=1)
-        self.assertAlmostEqual(right - left, 0.30 * marker_w, delta=1)
-        self.assertAlmostEqual(bottom - top, 0.05 * marker_h, delta=1)
-
-    def test_03_returns_ints(self):
-        from id_area_config import compute_id_box_rect
-        config = {"left_frac": 0.1, "top_frac": 0.1, "width_frac": 0.3, "height_frac": 0.05}
-        rect = compute_id_box_rect(1000, 1500, config)
+    def test_02_returns_ints(self):
+        from id_area_config import compute_manual_digit_box_rect
+        rect = compute_manual_digit_box_rect(1000, 1500, [0.1, 0.1, 0.05, 0.03])
         for v in rect:
             self.assertIsInstance(v, int)
+
+    def test_03_different_fracs_per_digit(self):
+        """桁ごとに個別のfracを与えても、均等分割ではなくそれぞれ独立に変換されること"""
+        from id_area_config import compute_manual_digit_box_rect
+        img_w, img_h = 2000, 1000
+        rect_frac_1 = [0.10, 0.50, 0.05, 0.10]
+        rect_frac_2 = [0.30, 0.51, 0.06, 0.09]  # 幅・位置とも1桁目と異なる実測値
+        r1 = compute_manual_digit_box_rect(img_w, img_h, rect_frac_1)
+        r2 = compute_manual_digit_box_rect(img_w, img_h, rect_frac_2)
+        self.assertNotEqual(r1[2] - r1[0], r2[2] - r2[0])  # 幅が異なる
 
 
 class TestConfigPersistence(unittest.TestCase):
@@ -80,28 +53,59 @@ class TestConfigPersistence(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
-    def test_01_round_trip(self):
+    def test_01_round_trip_auto_mode(self):
+        """自動検出モード（manual_digit_rects_fracなし）の往復保存"""
+        from id_area_config import load_id_area_config, save_id_area_config
+        config_path = str(Path(self.test_dir) / "student_id_area_config.json")
+        config = {"digit_count": 8}
+        save_id_area_config(config_path, config)
+        loaded = load_id_area_config(config_path)
+        self.assertEqual(loaded, config)
+
+    def test_02_round_trip_manual_mode(self):
+        """手動指定モード（manual_digit_rects_fracあり）の往復保存"""
         from id_area_config import load_id_area_config, save_id_area_config
         config_path = str(Path(self.test_dir) / "student_id_area_config.json")
         config = {
-            "left_frac": 0.1, "top_frac": 0.2, "width_frac": 0.3,
-            "height_frac": 0.05, "digit_count": 8,
+            "digit_count": 3,
+            "manual_digit_rects_frac": [
+                [0.10, 0.20, 0.05, 0.03],
+                [0.16, 0.20, 0.05, 0.03],
+                [0.22, 0.20, 0.05, 0.03],
+            ],
         }
         save_id_area_config(config_path, config)
         loaded = load_id_area_config(config_path)
         self.assertEqual(loaded, config)
 
-    def test_02_missing_file_returns_none(self):
+    def test_02b_round_trip_manual_mode_with_alpha_positions(self):
+        """英字マス指定(alpha_positions)込みの往復保存"""
+        from id_area_config import load_id_area_config, save_id_area_config
+        config_path = str(Path(self.test_dir) / "student_id_area_config.json")
+        config = {
+            "digit_count": 3,
+            "manual_digit_rects_frac": [
+                [0.10, 0.20, 0.05, 0.03],
+                [0.16, 0.20, 0.05, 0.03],
+                [0.22, 0.20, 0.05, 0.03],
+            ],
+            "alpha_positions": [1],
+        }
+        save_id_area_config(config_path, config)
+        loaded = load_id_area_config(config_path)
+        self.assertEqual(loaded, config)
+
+    def test_03_missing_file_returns_none(self):
         from id_area_config import load_id_area_config
         config_path = str(Path(self.test_dir) / "does_not_exist.json")
         self.assertIsNone(load_id_area_config(config_path))
 
-    def test_03_missing_required_key_returns_none(self):
+    def test_04_missing_required_key_returns_none(self):
         from id_area_config import load_id_area_config
         import json
         config_path = str(Path(self.test_dir) / "incomplete.json")
         with open(config_path, "w", encoding="utf-8") as f:
-            json.dump({"left_frac": 0.1, "top_frac": 0.2}, f)
+            json.dump({"manual_digit_rects_frac": []}, f)
         self.assertIsNone(load_id_area_config(config_path))
 
 

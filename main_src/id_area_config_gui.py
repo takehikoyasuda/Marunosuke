@@ -1,49 +1,54 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-id_area_config_gui.py — 学籍番号欄の位置設定を、初回のみ入力させるダイアログ。
+id_area_config_gui.py — 学籍番号欄の位置を、初回のみ検出/設定させるダイアログ。
 
-答案用紙に印字された「学籍番号欄の位置(割合)」の数値を教員がそのまま入力し、
-入力するたびに計算結果の矩形を画像上にオーバーレイ表示することで、
-打ち間違いに気付けるようにする。ドラッグでの矩形選択は行わない
-(用紙自体に位置情報が印字されている前提のため)。
+答案画像全体から、桁ごとに独立して印刷された赤枠を自動検出し、結果をプレビュー
+表示して教員に確認させる（四隅コーナーマーカーの割合計算には一切依存しない）。
+自動検出に失敗した場合のみ、教員が画像上で1桁ずつ枠をドラッグして手動指定する
+（記述式採点の採点範囲指定と同じドラッグ選択パターンを流用）。
+
+位置が確定したマス（自動検出成功時、または手動指定が全桁完了した時）は、クリックで
+「数字マス／英字マス」を切り替えられる。学籍番号中の英字は位置は固定でも文字自体
+(A〜Z)は事前に分からないことが多いため、位置だけ教員が指定し、その位置は
+digit_ocr_recognizer.LocalDigitOcrRecognizer の英字専用モデルで認識する
+(main_src/id_area_config.py の alpha_positions 参照)。
 """
 
 import logging
 import tkinter as tk
-from tkinter import messagebox
-from typing import Dict, Optional
+from typing import Dict, List, Optional, Tuple
 
 from PIL import Image, ImageTk
 
 from constants import get_ui_font_family, get_ui_font_size
-from id_area_config import compute_id_box_rect
+from id_area_color_detector import detect_red_digit_boxes
+from omr_engine import imread_unicode
 
 logger = logging.getLogger(__name__)
 
 UI_FONT = get_ui_font_family()
 
-MAX_DISPLAY_WIDTH = 500
-MAX_DISPLAY_HEIGHT = 700
-
-FIELD_LABELS = [
-    ("left_frac", "左 (%)"),
-    ("top_frac", "上 (%)"),
-    ("width_frac", "幅 (%)"),
-    ("height_frac", "高さ (%)"),
-]
+MAX_DISPLAY_WIDTH = 600
+MAX_DISPLAY_HEIGHT = 750
+MIN_DRAG_SIZE = 6  # 表示座標でこの値未満のドラッグは無視する
 
 
 class IdAreaConfigDialog:
-    """学籍番号欄の位置(割合)＋桁数を入力させるモーダルダイアログ。"""
+    """学籍番号欄の位置(自動検出結果、または手動指定)を確定させるモーダルダイアログ。"""
 
     def __init__(self, parent, first_image_path: str, default_digit_count: int = 8):
         self.parent = parent
         self._result: Optional[Dict] = None
         self._photo_ref = None
 
+        bgr = imread_unicode(first_image_path)
+        if bgr is None:
+            raise ValueError(f"サンプル画像を読み込めませんでした: {first_image_path}")
+        self._bgr_image = bgr
+        self._img_h, self._img_w = bgr.shape[:2]
+
         with Image.open(first_image_path) as img:
-            self._img_w, self._img_h = img.size
             display_img = img.convert("RGB").copy()
 
         ratio = min(MAX_DISPLAY_WIDTH / self._img_w, MAX_DISPLAY_HEIGHT / self._img_h, 1.0)
@@ -71,43 +76,77 @@ class IdAreaConfigDialog:
 
         tk.Label(
             form_frame,
-            text="答案用紙に印字された\n学籍番号欄の位置(割合)を\nそのまま入力してください",
+            text="学籍番号の桁ごとに印刷された\n赤枠を自動検出します",
             justify=tk.LEFT, font=(UI_FONT, get_ui_font_size(10), "bold"),
+        ).pack(pady=(0, 4), anchor=tk.W)
+
+        tk.Label(
+            form_frame,
+            text="マスの位置が確定したら、英字が入るマスを\nクリックして指定できます\n"
+                 "（未指定なら全桁を数字として認識）",
+            justify=tk.LEFT, fg="#555555", font=(UI_FONT, get_ui_font_size(8)),
         ).pack(pady=(0, 12), anchor=tk.W)
 
-        self._vars: Dict[str, tk.StringVar] = {}
-        for key, label in FIELD_LABELS:
-            row = tk.Frame(form_frame)
-            row.pack(fill=tk.X, pady=3)
-            tk.Label(row, text=label, width=9, anchor=tk.W, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT)
-            var = tk.StringVar()
-            var.trace_add("write", lambda *_args: self._update_preview())
-            entry = tk.Entry(row, textvariable=var, width=8, justify=tk.RIGHT)
-            entry.pack(side=tk.LEFT)
-            self._vars[key] = var
-
         digit_row = tk.Frame(form_frame)
-        digit_row.pack(fill=tk.X, pady=(14, 3))
+        digit_row.pack(fill=tk.X, pady=3)
         tk.Label(digit_row, text="桁数", width=9, anchor=tk.W, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT)
         self._digit_var = tk.StringVar(value=str(default_digit_count))
         tk.Entry(digit_row, textvariable=self._digit_var, width=8, justify=tk.RIGHT).pack(side=tk.LEFT)
 
+        tk.Button(
+            form_frame, text="🔍 自動検出を試す", command=self._run_auto_detect,
+            font=(UI_FONT, get_ui_font_size(9)),
+        ).pack(pady=(10, 4), anchor=tk.W)
+
         self._status_label = tk.Label(
-            form_frame, text="", fg="#C62828", font=(UI_FONT, get_ui_font_size(8)), wraplength=160, justify=tk.LEFT,
+            form_frame, text="", fg="#C62828", font=(UI_FONT, get_ui_font_size(8)),
+            wraplength=200, justify=tk.LEFT,
         )
-        self._status_label.pack(pady=(8, 0), anchor=tk.W)
+        self._status_label.pack(pady=(4, 0), anchor=tk.W)
+
+        self._manual_guide_label = tk.Label(
+            form_frame, text="", fg="#1565C0", font=(UI_FONT, get_ui_font_size(9), "bold"),
+            wraplength=200, justify=tk.LEFT,
+        )
+        self._manual_guide_label.pack(pady=(10, 0), anchor=tk.W)
+
+        self._alpha_guide_label = tk.Label(
+            form_frame, text="", fg="#EF6C00", font=(UI_FONT, get_ui_font_size(9), "bold"),
+            wraplength=200, justify=tk.LEFT,
+        )
+        self._alpha_guide_label.pack(pady=(4, 0), anchor=tk.W)
+
+        tk.Button(
+            form_frame, text="やり直す", command=self._reset_manual,
+            font=(UI_FONT, get_ui_font_size(8)),
+        ).pack(pady=(4, 0), anchor=tk.W)
 
         btn_frame = tk.Frame(form_frame)
-        btn_frame.pack(pady=20)
-        tk.Button(
+        btn_frame.pack(pady=20, side=tk.BOTTOM)
+        self._save_button = tk.Button(
             btn_frame, text="保存", command=self._on_save,
             bg="#2E7D32", fg="black", font=(UI_FONT, get_ui_font_size(10), "bold"),
-        ).pack(side=tk.LEFT, padx=5)
+            state=tk.DISABLED,
+        )
+        self._save_button.pack(side=tk.LEFT, padx=5)
         tk.Button(btn_frame, text="キャンセル", command=self._on_cancel, font=(UI_FONT, get_ui_font_size(9))).pack(
             side=tk.LEFT, padx=5
         )
 
-        self._update_preview()
+        # 検出結果 / 手動指定の状態
+        self._auto_detected = False
+        self._manual_mode = False
+        self._manual_rects: List[Tuple[int, int, int, int]] = []  # 元画像座標系(絶対px)
+        # 位置が確定したマス（自動検出成功時、または手動指定が全桁完了した時のみ設定）
+        self._final_rects: Optional[List[Tuple[int, int, int, int]]] = None
+        self._alpha_positions: set = set()  # 英字マスとして指定した0-indexedの桁位置
+        self._drag_state = {"active": False, "start_x": 0, "start_y": 0, "rect_id": None}
+
+        self.canvas.bind("<ButtonPress-1>", self._on_press)
+        self.canvas.bind("<B1-Motion>", self._on_drag)
+        self.canvas.bind("<ButtonRelease-1>", self._on_release)
+
+        self._run_auto_detect()
         self.window.grab_set()
 
     def run(self) -> Optional[Dict]:
@@ -117,47 +156,217 @@ class IdAreaConfigDialog:
 
     # ------------------------------------------------------------
 
-    def _parse_config(self, show_error: bool) -> Optional[Dict]:
-        config: Dict = {}
-        for key, label in FIELD_LABELS:
-            raw = self._vars[key].get().strip()
-            try:
-                config[key] = float(raw) / 100.0
-            except ValueError:
-                if show_error:
-                    self._status_label.config(text=f"「{label}」に数値を入力してください。")
-                return None
+    def _parse_digit_count(self) -> Optional[int]:
         try:
-            config["digit_count"] = int(self._digit_var.get().strip())
+            count = int(self._digit_var.get().strip())
         except ValueError:
-            if show_error:
-                self._status_label.config(text="「桁数」に整数を入力してください。")
+            self._status_label.config(text="「桁数」に整数を入力してください。")
             return None
-        if config["digit_count"] < 1:
-            if show_error:
-                self._status_label.config(text="桁数は1以上にしてください。")
+        if count < 1:
+            self._status_label.config(text="桁数は1以上にしてください。")
             return None
-        self._status_label.config(text="")
-        return config
+        return count
 
-    def _update_preview(self):
+    def _clear_overlay(self):
         self.canvas.delete("id_box_preview")
-        config = self._parse_config(show_error=False)
-        if config is None:
+
+    def _draw_rect_overlay(self, rects, color):
+        for (x0, y0, x1, y1) in rects:
+            dx0, dy0 = x0 * self._display_ratio, y0 * self._display_ratio
+            dx1, dy1 = x1 * self._display_ratio, y1 * self._display_ratio
+            self.canvas.create_rectangle(dx0, dy0, dx1, dy1, outline=color, width=2, tag="id_box_preview")
+
+    def _run_auto_detect(self):
+        digit_count = self._parse_digit_count()
+        if digit_count is None:
             return
+
+        self._manual_mode = False
+        self._manual_rects = []
+        self._auto_detected = False
+        self._final_rects = None
+        self._alpha_positions = set()
+        self._clear_overlay()
+        self._manual_guide_label.config(text="")
+        self._alpha_guide_label.config(text="")
+        self._save_button.config(state=tk.DISABLED)
+
         try:
-            left, top, right, bottom = compute_id_box_rect(self._img_w, self._img_h, config)
-        except Exception as e:
-            logger.debug("プレビュー計算エラー: %s", e)
+            rects = detect_red_digit_boxes(self._bgr_image, digit_count)
+        except ValueError as e:
+            logger.info("学籍番号欄の自動検出に失敗: %s", e)
+            self._status_label.config(
+                text=f"自動検出できませんでした（{e}）。\n"
+                     f"右の画像上で、1桁ずつ枠をドラッグして指定してください。"
+            )
+            self._start_manual_mode(digit_count)
             return
-        dl, dt = left * self._display_ratio, top * self._display_ratio
-        dr, db = right * self._display_ratio, bottom * self._display_ratio
-        self.canvas.create_rectangle(dl, dt, dr, db, outline="red", width=2, tag="id_box_preview")
+
+        self._auto_detected = True
+        self._status_label.config(text="")
+        self._final_rects = list(rects)
+        self._redraw_final_overlay()
+        self._manual_guide_label.config(text=f"検出成功: {len(rects)}個のマスが見つかりました。")
+        self._save_button.config(state=tk.NORMAL)
+
+    def _start_manual_mode(self, digit_count: int):
+        self._manual_mode = True
+        self._update_manual_guide(digit_count)
+
+    def _update_manual_guide(self, digit_count: int):
+        done = len(self._manual_rects)
+        if done < digit_count:
+            self._manual_guide_label.config(
+                text=f"{done + 1}桁目の枠をドラッグしてください（{done}/{digit_count}個 完了）"
+            )
+            self._save_button.config(state=tk.DISABLED)
+        else:
+            self._manual_guide_label.config(text=f"{digit_count}個すべて指定しました。保存できます。")
+            self._save_button.config(state=tk.NORMAL)
+
+    def _reset_manual(self):
+        self._manual_rects = []
+        self._final_rects = None
+        self._alpha_positions = set()
+        self._clear_overlay()
+        self._alpha_guide_label.config(text="")
+        digit_count = self._parse_digit_count()
+        if self._manual_mode and digit_count is not None:
+            self._update_manual_guide(digit_count)
+        else:
+            self._save_button.config(state=tk.DISABLED)
+
+    # ------------------------------------------------------------
+    # ドラッグ矩形選択（descriptive_gui.py の採点範囲指定と同じ実装パターン）。
+    # マス位置が確定済み(self._final_rects設定後)は、ドラッグではなく単純クリックで
+    # 英字/数字マスのトグルとして扱う。
+
+    def _on_press(self, event):
+        self._drag_state["active"] = True
+        self._drag_state["start_x"] = event.x
+        self._drag_state["start_y"] = event.y
+        if self._drag_state.get("rect_id"):
+            self.canvas.delete(self._drag_state["rect_id"])
+        self._drag_state["rect_id"] = None
+
+    def _on_drag(self, event):
+        if not self._drag_state["active"]:
+            return
+        if self._final_rects is not None or not self._manual_mode:
+            return  # 確定済み、または手動指定モードでない間はドラッグでの新規矩形描画はしない
+        ex = max(0, min(self._display_w, event.x))
+        ey = max(0, min(self._display_h, event.y))
+        if self._drag_state["rect_id"]:
+            self.canvas.coords(
+                self._drag_state["rect_id"],
+                self._drag_state["start_x"], self._drag_state["start_y"], ex, ey,
+            )
+        else:
+            self._drag_state["rect_id"] = self.canvas.create_rectangle(
+                self._drag_state["start_x"], self._drag_state["start_y"], ex, ey,
+                outline="#1565C0", width=2, dash=(4, 2),
+            )
+
+    def _on_release(self, event):
+        if not self._drag_state["active"]:
+            return
+        self._drag_state["active"] = False
+
+        ex = max(0, min(self._display_w, event.x))
+        ey = max(0, min(self._display_h, event.y))
+        sx, sy = self._drag_state["start_x"], self._drag_state["start_y"]
+        # is_click: ほぼ動かず離した(トグル対象) / too_small: 矩形として小さすぎる(いずれかの軸)
+        is_click = abs(ex - sx) < MIN_DRAG_SIZE and abs(ey - sy) < MIN_DRAG_SIZE
+        too_small = abs(ex - sx) < MIN_DRAG_SIZE or abs(ey - sy) < MIN_DRAG_SIZE
+
+        if self._final_rects is not None:
+            if self._drag_state.get("rect_id"):
+                self.canvas.delete(self._drag_state["rect_id"])
+            if is_click:
+                self._toggle_alpha_at(ex, ey)
+            return
+
+        if not self._manual_mode:
+            if self._drag_state.get("rect_id"):
+                self.canvas.delete(self._drag_state["rect_id"])
+            return
+
+        digit_count = self._parse_digit_count()
+        if digit_count is None or len(self._manual_rects) >= digit_count or too_small:
+            if self._drag_state.get("rect_id"):
+                self.canvas.delete(self._drag_state["rect_id"])
+            return
+
+        x0 = round(min(sx, ex) / self._display_ratio)
+        y0 = round(min(sy, ey) / self._display_ratio)
+        x1 = round(max(sx, ex) / self._display_ratio)
+        y1 = round(max(sy, ey) / self._display_ratio)
+        self._manual_rects.append((x0, y0, x1, y1))
+
+        if self._drag_state.get("rect_id"):
+            self.canvas.delete(self._drag_state["rect_id"])
+        self._draw_rect_overlay([(x0, y0, x1, y1)], "#1565C0")
+        self._update_manual_guide(digit_count)
+
+        if len(self._manual_rects) == digit_count:
+            self._final_rects = list(self._manual_rects)
+            self._redraw_final_overlay()
+
+    def _toggle_alpha_at(self, display_x: float, display_y: float):
+        """確定済みマスをクリックした位置に応じて英字/数字マスをトグルする。"""
+        if not self._final_rects:
+            return
+        img_x = display_x / self._display_ratio
+        img_y = display_y / self._display_ratio
+        for i, (x0, y0, x1, y1) in enumerate(self._final_rects):
+            if x0 <= img_x <= x1 and y0 <= img_y <= y1:
+                if i in self._alpha_positions:
+                    self._alpha_positions.discard(i)
+                else:
+                    self._alpha_positions.add(i)
+                self._redraw_final_overlay()
+                return
+
+    def _redraw_final_overlay(self):
+        """確定済みマスを、英字指定は橙・数字は緑で描き直す。"""
+        if not self._final_rects:
+            return
+        self._clear_overlay()
+        for i, rect in enumerate(self._final_rects):
+            color = "#EF6C00" if i in self._alpha_positions else "#2E7D32"
+            self._draw_rect_overlay([rect], color)
+        if self._alpha_positions:
+            pos_str = "、".join(str(i + 1) for i in sorted(self._alpha_positions))
+            self._alpha_guide_label.config(text=f"英字マスに指定: {pos_str}桁目")
+        else:
+            self._alpha_guide_label.config(text="")
+
+    # ------------------------------------------------------------
 
     def _on_save(self):
-        config = self._parse_config(show_error=True)
-        if config is None:
+        digit_count = self._parse_digit_count()
+        if digit_count is None:
             return
+
+        config: Dict = {"digit_count": digit_count}
+
+        if self._manual_mode:
+            if len(self._manual_rects) != digit_count:
+                self._status_label.config(
+                    text=f"あと{digit_count - len(self._manual_rects)}個、マスを指定してください。"
+                )
+                return
+            config["manual_digit_rects_frac"] = [
+                [x0 / self._img_w, y0 / self._img_h, (x1 - x0) / self._img_w, (y1 - y0) / self._img_h]
+                for (x0, y0, x1, y1) in self._manual_rects
+            ]
+        elif not self._auto_detected:
+            self._status_label.config(text="先に自動検出を実行してください。")
+            return
+
+        if self._alpha_positions:
+            config["alpha_positions"] = sorted(self._alpha_positions)
+
         self._result = config
         self._close()
 

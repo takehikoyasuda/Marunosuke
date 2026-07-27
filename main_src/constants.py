@@ -387,6 +387,22 @@ def get_ui_font_size(base_size):
     return base_size
 
 
+def fit_window_to_content(window, min_width=0, min_height=0):
+    """ウィジェット配置後に呼び、ウィンドウをコンテンツの実サイズに合わせてリサイズする。
+
+    Windows向けに決め打ちした固定ピクセル値の.geometry()指定は、Mac側で
+    get_ui_font_size()により文字・ボタンが約1.6倍(MAC_FONT_SCALE)に拡大される
+    ため、はみ出してボタンや文字が隠れる原因になっていた。min_width/min_height
+    には従来の固定値をそのまま「最小サイズ」として渡し、実際のコンテンツが
+    それより大きければその分だけウィンドウを広げる。全ウィジェットを配置し
+    終えた後（pack/grid呼び出しの後）に呼び出すこと。
+    """
+    window.update_idletasks()
+    width = max(min_width, window.winfo_reqwidth())
+    height = max(min_height, window.winfo_reqheight())
+    window.geometry(f"{width}x{height}")
+
+
 def get_excel_font_family():
     """openpyxl Font(name=...) 用の日本語フォントファミリー名を返す。"""
     return "Hiragino Sans" if sys.platform == 'darwin' else "Yu Gothic"

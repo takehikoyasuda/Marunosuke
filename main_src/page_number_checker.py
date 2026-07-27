@@ -23,7 +23,7 @@ from typing import Dict, Optional, Tuple
 import cv2
 from PIL import Image, ImageTk
 
-from constants import get_ui_font_family, get_ui_font_size
+from constants import get_ui_font_family, get_ui_font_size, fit_window_to_content
 from digit_ocr_recognizer import LocalDigitOcrRecognizer
 from name_trimmer import get_image_files
 from omr_engine import imread_unicode
@@ -329,7 +329,6 @@ def check_page_numbers(image_folder: str, parent: Optional[tk.Tk] = None) -> Opt
 def _show_result_dialog(parent, results: Dict[str, Dict], majority_value: Optional[str]):
     window = tk.Toplevel(parent)
     window.title("ページ番号確認結果")
-    window.geometry("500x450")
 
     mismatch_count = sum(1 for info in results.values() if info['mismatch'])
     summary_text = f"多数決のページ番号: {majority_value if majority_value is not None else '(認識できず)'}　／　不一致: {mismatch_count}件"
@@ -369,5 +368,6 @@ def _show_result_dialog(parent, results: Dict[str, Dict], majority_value: Option
     tk.Button(window, text="閉じる", command=window.destroy,
               font=(UI_FONT, get_ui_font_size(9))).pack(pady=(0, 10))
 
+    fit_window_to_content(window, min_width=500, min_height=450)
     window.grab_set()
     window.wait_window()

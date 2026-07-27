@@ -25,7 +25,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from constants import get_ui_font_family, get_ui_font_size
+from constants import get_ui_font_family, get_ui_font_size, fit_window_to_content
 
 logger = logging.getLogger(__name__)
 
@@ -227,7 +227,6 @@ def run_multi_page_merge_gui(parent: Optional[tk.Tk] = None) -> Optional[str]:
     """
     window = tk.Toplevel(parent)
     window.title("複数ページ統合")
-    window.geometry("520x420")
 
     tk.Label(
         window,
@@ -334,6 +333,7 @@ def run_multi_page_merge_gui(parent: Optional[tk.Tk] = None) -> Optional[str]:
         bg="#4CAF50", fg="black", font=(UI_FONT, get_ui_font_size(11), 'bold'), height=2,
     ).pack(fill=tk.X, padx=10, pady=10)
 
+    fit_window_to_content(window, min_width=520, min_height=420)
     window.grab_set()
     window.wait_window()
 

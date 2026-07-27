@@ -3,11 +3,12 @@
 """
 student_id_ocr.py — 学籍番号エリアの切り出し＋OCR認識(候補生成のみ)。
 
-学籍番号欄の位置は、答案画像ごとに検出するのではなく、用紙全体の四隅マーカー
-(omr_engine.detect_corner_markers / apply_perspective_transform、既存の実績ある
-仕組み)を基準に、教員が一度だけ入力した割合設定(id_area_config.py)から
-数学的に計算する。学籍番号欄専用のマーカーや、答案画像ごとの矩形選択・検出は
-不要（経緯は student_id_area_requirements.md 参照）。
+学籍番号欄の位置は、桁ごとに独立して印刷された赤枠を答案画像全体から色検出
+(id_area_color_detector.detect_red_digit_boxes)することで求める。四隅コーナー
+マーカー(omr_engine.detect_corner_markers)の割合計算には一切依存しない、独立
+した仕組み。自動検出に失敗した場合のみ、教員が id_area_config_gui.IdAreaConfigDialog
+で1マスずつ手動指定した矩形(id_area_config.py の manual_digit_rects_frac)を
+使う（経緯は student_id_area_requirements.md 参照）。
 
 認識結果はあくまで「候補」であり、このモジュール単体では確定を行わない。
 候補を教員が答案画像と見比べて確認・修正するのは student_id_review_gui.py の役割。
@@ -19,14 +20,15 @@ import tempfile
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 import cv2
 from PIL import Image
 
 from constants import get_app_temp_dir
 from digit_ocr_recognizer import LocalDigitOcrRecognizer
-from id_area_config import compute_id_box_rect, load_id_area_config, save_id_area_config
+from id_area_color_detector import detect_red_digit_boxes, mask_red_border
+from id_area_config import compute_manual_digit_box_rect, load_id_area_config, save_id_area_config
 from name_trimmer import get_image_files
 from omr_engine import (
     apply_perspective_transform,
@@ -39,38 +41,6 @@ logger = logging.getLogger(__name__)
 
 # Excel埋め込み用サムネイルの高さ（氏名欄画像と揃える）
 THUMBNAIL_MAX_HEIGHT = 50
-
-# マス内側のマージン（罫線を避けるため、マス幅・高さに対する割合）
-BOX_H_MARGIN_FRAC = 0.08
-BOX_V_MARGIN_FRAC = 0.08
-
-
-def compute_digit_box_rects(
-    rect: Tuple[int, int, int, int], digit_count: int,
-    h_margin_frac: float = BOX_H_MARGIN_FRAC,
-    v_margin_frac: float = BOX_V_MARGIN_FRAC,
-) -> List[Tuple[int, int, int, int]]:
-    """学籍番号欄の矩形から、digit_count個のマス矩形を計算する。
-
-    各マスは罫線を避けるため、左右に h_margin_frac、上下に v_margin_frac 分だけ
-    内側にオフセットする。
-
-    Returns:
-        List[Tuple[int,int,int,int]]: (left, top, right, bottom) のリスト
-    """
-    left, top, right, bottom = rect
-    box_w = (right - left) / digit_count
-    h_margin = box_w * h_margin_frac
-    v_margin = (bottom - top) * v_margin_frac
-
-    rects = []
-    for i in range(digit_count):
-        x0 = left + i * box_w + h_margin
-        x1 = left + (i + 1) * box_w - h_margin
-        y0 = top + v_margin
-        y1 = bottom - v_margin
-        rects.append((round(x0), round(y0), round(x1), round(y1)))
-    return rects
 
 
 def _clamp_rect(rect: Tuple[int, int, int, int], img_w: int, img_h: int) -> Tuple[int, int, int, int]:
@@ -118,8 +88,14 @@ def recognize_student_ids(
 ) -> Dict[str, Dict]:
     """全画像の学籍番号エリアを切り出し、OCRで候補を生成する。
 
-    学籍番号欄の位置は id_area_config（割合設定）から画像サイズごとに計算する
-    （id_area_config.compute_id_box_rect）。答案画像ごとの検出処理は行わない。
+    学籍番号欄の位置は、id_area_config に manual_digit_rects_frac（手動指定）が
+    あればそれを画像サイズに合わせて使い、なければ画像全体からの赤枠自動検出
+    （id_area_color_detector.detect_red_digit_boxes）で求める。いずれも四隅
+    コーナーマーカーの割合計算には依存しない。
+
+    id_area_config の alpha_positions（0-indexedの桁位置リスト）で指定された
+    位置だけは英字専用モデルで認識する（LocalDigitOcrRecognizer.recognize の
+    alpha_mask 引数経由）。
 
     Returns:
         {ファイル名: {'thumbnail_path': str, 'text': Optional[str],
@@ -131,6 +107,8 @@ def recognize_student_ids(
     image_files = get_image_files(image_folder)
     recognizer = LocalDigitOcrRecognizer()
     digit_count = id_area_config["digit_count"]
+    manual_rects_frac = id_area_config.get("manual_digit_rects_frac")
+    alpha_positions = set(id_area_config.get("alpha_positions", []))
     results: Dict[str, Dict] = {}
 
     for image_path in image_files:
@@ -141,15 +119,22 @@ def recognize_student_ids(
                 raise ValueError("画像を読み込めませんでした")
 
             img_h, img_w = image.shape[:2]
-            id_box_rect = compute_id_box_rect(img_w, img_h, id_area_config)
-            box_rects = compute_digit_box_rects(id_box_rect, digit_count)
+            if manual_rects_frac:
+                box_rects = [
+                    compute_manual_digit_box_rect(img_w, img_h, rect_frac)
+                    for rect_frac in manual_rects_frac
+                ]
+            else:
+                box_rects = detect_red_digit_boxes(image, digit_count)
 
             digit_images = []
             for box_rect in box_rects:
                 x0, y0, x1, y1 = _clamp_rect(box_rect, img_w, img_h)
-                digit_images.append(cv2.cvtColor(image[y0:y1, x0:x1], cv2.COLOR_BGR2RGB))
+                crop = mask_red_border(image[y0:y1, x0:x1])
+                digit_images.append(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
 
-            candidate = recognizer.recognize(digit_images)
+            alpha_mask = [i in alpha_positions for i in range(len(digit_images))]
+            candidate = recognizer.recognize(digit_images, alpha_mask=alpha_mask)
 
             # サムネイル: 全マスをまとめた外接矩形を1枚の画像として保存
             whole_rect = (
