@@ -5,7 +5,7 @@
 <h1 align="center">採点侍 — SaitenSamurai (Mac版)</h1>
 
 <p align="center">
-  <strong>普通紙マークシート採点 ＆ 記述式採点を、これ1本で。</strong><br>
+  <strong>記述式の採点を、これ1本で。</strong><br>
   教員による教員のための、macOS 向け無料採点支援ソフトウェアです。
 </p>
 
@@ -27,13 +27,18 @@
 > 本フォークの開発には Anthropic の Claude（Claude Code）を活用しています。
 
 > **本リポジトリについて**
-> 本ソフトウェアは、phys-ken 氏が開発・公開している Windows 向け採点支援ソフト **[採点侍 SaitenSamurai](https://github.com/phys-ken/SaitenSamurai)**（GPL-3.0）を fork し、macOS 上で動作するように移植したものです。日本語フォントの扱い・ファイル/フォルダを開く処理・パス解決などをクロスプラットフォーム対応させています。採点ロジックや機能そのものはオリジナル版を踏襲しています。Windows でご利用の方はオリジナル版をご利用ください。
+> 本ソフトウェアは、phys-ken 氏が開発・公開している Windows 向け採点支援ソフト **[採点侍 SaitenSamurai](https://github.com/phys-ken/SaitenSamurai)**（GPL-3.0）を fork し、macOS 上で動作するように移植したものです。日本語フォントの扱い・ファイル/フォルダを開く処理・パス解決などをクロスプラットフォーム対応させています。
+>
+> 本フォークでは開発方針の見直しにより、**マークシート採点機能を廃止し、記述式採点に特化**しています。マークシート採点も含めて利用したい場合は、フォーク元の Windows 版をご利用ください。
 
 ---
 
 ## :book: ドキュメント
 
-本フォークでは Mac 専用のドキュメントサイトは公開していません（Mac 版の変更を追いかけて逐一更新するのが大変なため）。使い方・機能一覧・FAQ・免責事項などの詳細は、フォーク元（**Windows 版**）のドキュメントサイトをご覧ください。操作方法や画面の考え方はほぼ共通です。
+本フォークでは Mac 専用のドキュメントサイトは公開していません（Mac 版の変更を追いかけて逐一更新するのが大変なため）。使い方や画面の考え方は、フォーク元（**Windows 版**）のドキュメントサイトの「記述式採点」に関する部分をご覧ください。
+
+> [!NOTE]
+> フォーク元のドキュメントは「マーク採点」「マーク＋記述」モードも解説していますが、本フォークにはそれらの機能はありません。記述式採点に関する記述のみが対象です。
 
 ### **:point_right: [https://phys-ken.github.io/SaitenSamurai/](https://phys-ken.github.io/SaitenSamurai/)**（Windows 版の説明です）
 
@@ -60,22 +65,19 @@
 
 ---
 
-採点侍は、3 つの採点モードであらゆる試験形式に対応します。
+### 対応する採点モード
 
-| モード | 用途 | 必要なもの |
-|---|---|---|
-| **マーク採点** | マークシートのみ | スキャン画像 + Mark2 座標ファイル |
-| **記述式採点** | 記述式のみ | スキャン画像のみ |
-| **マーク＋記述** | 混在する試験 | スキャン画像 + Mark2 座標ファイル |
+現在は **記述式採点のみ** に対応しています。スキャンした答案画像があれば、Mark2 座標ファイルなどの事前準備なしに採点を始められます。
 
 ### 主な特徴
 
-- **OMR 自動読み取り** — コーナーマーカー検出・傾き補正・閾値自動キャリブレーション
 - **記述式採点** — マウスで採点領域を設定、○×ボタンや数字キーで効率的に採点
-- **グリッド一覧モード** — 全生徒の解答を一覧表示で素早く処理
+- **学籍番号OCR（実験的機能）** — 学籍番号欄を自動認識し、名簿と照合
 - **CTT 分析** — α 係数・P 値・D 値・I-T 相関を自動算出、PDF レポート出力
 - **Excel 一括出力** — 生徒別成績サマリー・試験統計を自動生成
+- **R 連携エクスポート** — exametrika 等による項目反応理論分析用のデータキットを出力
 - **セッション保存** — 作業途中の状態を保存・復元
+- **PDF 入力対応** — スキャン PDF をそのまま読み込み、画像に展開
 - **クロスプラットフォーム対応** — macOS の日本語フォント・ファイル操作に対応
 
 ### 動作環境
@@ -83,22 +85,43 @@
 | 項目 | 要件 |
 |---|---|
 | **OS** | **macOS**（Apple Silicon / Intel、動作確認中） |
+| **Python** | 3.9 以上、かつ **Tkinter（Tcl/Tk）が有効なビルド** |
 | **実行方法** | Python 3.9 以上のソースから実行（単体アプリの配布は未対応） |
+
+> [!IMPORTANT]
+> pyenv などで Python をソースビルドした環境では、ビルド時に Tcl/Tk が見つからず `_tkinter` モジュールが無効なままインストールされることがあります。その場合 `python main_src/saitensamurai.py` は次のようなエラーで起動に失敗します。
+>
+> ```
+> ModuleNotFoundError: No module named '_tkinter'
+> ```
+>
+> 事前に `brew install tcl-tk` してから Python を入れ直す（pyenv なら `pyenv install` をやり直す）ことで解決します。`python3 -c "import tkinter"` がエラーなく通ることを事前に確認してください。
 
 ---
 
 ## クイックスタート
 
-詳しい使い方は **[ドキュメントサイト（Windows 版）](https://phys-ken.github.io/SaitenSamurai/)** をご覧ください。
+詳しい使い方は **[ドキュメントサイト（Windows 版）](https://phys-ken.github.io/SaitenSamurai/)** をご覧ください（「記述式採点」の解説部分のみ対象です）。
 
 ### ソースから実行
 
 ```bash
 git clone https://github.com/takehikoyasuda/SaitenSamurai-mac.git
 cd SaitenSamurai-mac
+
+# Tkinter が有効な Python であることを確認
+python3 -c "import tkinter"
+
+# 仮想環境を作成して依存パッケージをインストール
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
+
+# 起動
 python main_src/saitensamurai.py
 ```
+
+2 回目以降に起動する際も、`source .venv/bin/activate` で仮想環境を有効化してから `python main_src/saitensamurai.py` を実行してください。
 
 ---
 
@@ -119,7 +142,6 @@ python main_src/saitensamurai.py
 ## クレジット
 
 - **[phys-ken/SaitenSamurai](https://github.com/phys-ken/SaitenSamurai)** — phys-ken 氏（GPL-3.0）— 本フォークの元になったオリジナル版（Windows 向け）
-- **[Mark2](https://github.com/Mark2OSS/Mark2)** — 慶應義塾大学 SFC 研究所（MIT License）— 座標系・OMR 基盤
 - **[採点斬り 2021](https://phys-ken.github.io/saitenGiri2021/)** — phys-ken（GPL-3.0）— 記述式採点の設計参考
 - **採点斬り** — 島守睦美 氏 — デジタル採点のコンセプトの元祖
 - **採点革命** — 竹内俊彦 氏 — デジタル採点の草分け
