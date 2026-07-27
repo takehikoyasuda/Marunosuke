@@ -30,7 +30,7 @@ from digit_ocr_recognizer import LocalDigitOcrRecognizer
 from id_area_color_detector import detect_red_digit_boxes, mask_red_border
 from id_area_config import compute_manual_digit_box_rect, load_id_area_config, save_id_area_config
 from name_trimmer import get_image_files
-from omr_engine import (
+from image_alignment import (
     apply_perspective_transform,
     compute_output_scale,
     detect_corner_markers,

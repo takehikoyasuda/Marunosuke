@@ -400,7 +400,7 @@ def trim_images(
     use_highres = original_image_folder is not None
     if use_highres:
         try:
-            from omr_engine import (
+            from image_alignment import (
                 detect_corner_markers, apply_perspective_transform,
                 compute_output_scale,
             )

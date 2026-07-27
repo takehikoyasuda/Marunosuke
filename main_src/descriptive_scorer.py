@@ -181,7 +181,7 @@ def trim_descriptive_regions(
     # 元画像からの高解像度切り出しモード
     use_highres = original_image_folder is not None
     if use_highres:
-        from omr_engine import (
+        from image_alignment import (
             detect_corner_markers, apply_perspective_transform,
             compute_output_scale,
         )

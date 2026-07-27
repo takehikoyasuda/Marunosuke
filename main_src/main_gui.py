@@ -59,11 +59,16 @@ from scoring_engine import (
     number_to_circled, load_template, load_mark2_results, score_answers,
 )
 
-# OMR認識エンジン（omr_engine.pyから）
+# 画像アライメント（採点モード非依存。image_alignment.pyから）
+from image_alignment import (
+    detect_corner_markers, compute_output_scale,
+    apply_perspective_transform, imread_unicode,
+)
+
+# OMR認識エンジン（マーク採点専用。omr_engine.pyから）
 from omr_engine import (
-    parse_excel_coordinates, detect_corner_markers, compute_output_scale,
-    apply_perspective_transform, process_box_drawer, save_recognition_results,
-    generate_template, imread_unicode, process_folder,
+    parse_excel_coordinates, process_box_drawer, save_recognition_results,
+    generate_template, process_folder,
 )
 
 # 画像描画・採点結果レンダリング（image_renderer.pyから）

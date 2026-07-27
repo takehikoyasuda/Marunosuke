@@ -25,7 +25,7 @@ import cv2
 from constants import get_ui_font_family, get_ui_font_size, fit_window_to_content
 from digit_ocr_recognizer import LocalDigitOcrRecognizer
 from name_trimmer import get_image_files, select_region_on_image
-from omr_engine import imread_unicode
+from image_alignment import imread_unicode
 
 logger = logging.getLogger(__name__)
 

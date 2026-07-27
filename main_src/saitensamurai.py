@@ -123,12 +123,17 @@ from scoring_engine import (
     load_template, load_mark2_results, score_answers,
 )
 
-# OMR認識エンジン
+# 画像アライメント（採点モード非依存）
+from image_alignment import (
+    imread_unicode, detect_corner_markers,
+    apply_perspective_transform, compute_output_scale,
+)
+
+# OMR認識エンジン（マーク採点専用）
 from omr_engine import (
-    imread_unicode, parse_excel_coordinates,
+    parse_excel_coordinates,
     save_template_coordinates_debug, load_coordinates_from_csv,
-    detect_corner_markers, apply_perspective_transform,
-    compute_output_scale, draw_all_areas,
+    draw_all_areas,
     generate_template, save_coordinates_to_csv,
     _save_coordinates_to_csv_impl,
     recognize_marks, save_recognition_results,

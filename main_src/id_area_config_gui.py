@@ -23,7 +23,7 @@ from PIL import Image, ImageTk
 
 from constants import get_ui_font_family, get_ui_font_size
 from id_area_color_detector import detect_red_digit_boxes
-from omr_engine import imread_unicode
+from image_alignment import imread_unicode
 
 logger = logging.getLogger(__name__)
 
