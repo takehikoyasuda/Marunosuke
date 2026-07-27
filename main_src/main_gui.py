@@ -1604,12 +1604,17 @@ class SaitenSamuraiGUI:
         return (len(unscored_images) == 0, len(unscored_images), total_images, detail)
 
     def _reset_descriptive_data(self):
-        """記述問題の設定と採点結果をすべて削除して初期状態に戻す。
+        """記述問題の設定・採点結果と、学籍番号欄の位置設定をすべて削除して初期状態に戻す。
+
+        同じテスト用データ(PDF/フォルダ)を使い回して設定をやり直す際、
+        学籍番号欄の位置設定だけが残っていて英字マス指定・桁数確認の画面が
+        再度出てこない、という混乱を避けるため、記述設定とあわせてここで削除する。
 
         削除対象:
             - descriptive_config.json（問題設定）
             - descriptive_scores.json（採点結果）
             - total_display_config.json（合計点表示位置設定）
+            - student_id_area_config.json（学籍番号欄の位置設定）
         """
         img_folder = self.image_folder_path.get()
         if not img_folder:
@@ -1623,6 +1628,9 @@ class SaitenSamuraiGUI:
         from descriptive_scorer import TOTAL_DISPLAY_CONFIG_FILE
         total_pos_path = results_data / TOTAL_DISPLAY_CONFIG_FILE
 
+        from id_area_config import ID_AREA_CONFIG_FILE
+        id_area_path = results_data / ID_AREA_CONFIG_FILE
+
         # 削除対象ファイルの存在チェック
         existing = []
         if config_path.exists():
@@ -1631,18 +1639,20 @@ class SaitenSamuraiGUI:
             existing.append(f"・記述採点結果（{scores_path.name}）")
         if total_pos_path.exists():
             existing.append(f"・合計点位置設定（{total_pos_path.name}）")
+        if id_area_path.exists():
+            existing.append(f"・学籍番号欄の位置設定（{id_area_path.name}）")
 
         if not existing:
-            messagebox.showinfo("初期化", "削除対象の記述設定ファイルが見つかりません。\nすでに初期状態です。")
+            messagebox.showinfo("初期化", "削除対象の設定ファイルが見つかりません。\nすでに初期状態です。")
             return
 
         # 確認ダイアログ — 既存の採点データが消えることを明示
         answer = messagebox.askokcancel(
-            "⚠ 記述設定の初期化",
-            "以下のファイルを削除し、記述採点を初期状態に戻します。\n\n"
+            "⚠ 記述設定・学籍番号欄設定の初期化",
+            "以下のファイルを削除し、初期状態に戻します。\n\n"
             + "\n".join(existing) + "\n\n"
             "この操作は取り消せません。\n"
-            "進行中の記述採点データもすべて失われます。\n\n"
+            "進行中の記述採点データ・学籍番号欄の位置設定もすべて失われます。\n\n"
             "本当に初期化しますか？",
             icon="warning",
         )
@@ -1655,7 +1665,7 @@ class SaitenSamuraiGUI:
         backup_suffix = datetime.datetime.now().strftime("_%Y%m%d_%H%M%S.bak")
         backed_up = []
         backup_failed = []
-        for path in [config_path, scores_path, total_pos_path]:
+        for path in [config_path, scores_path, total_pos_path, id_area_path]:
             if path.exists():
                 try:
                     bak_path = path.with_suffix(path.suffix + backup_suffix)
@@ -1679,7 +1689,7 @@ class SaitenSamuraiGUI:
 
         # ファイル削除
         deleted = []
-        for path in [config_path, scores_path, total_pos_path]:
+        for path in [config_path, scores_path, total_pos_path, id_area_path]:
             if path.exists():
                 try:
                     path.unlink()
@@ -1696,7 +1706,7 @@ class SaitenSamuraiGUI:
                 except Exception as e:
                     self.log_message(f"削除エラー: {bak_atomic.name} — {e}")
 
-        self.log_message(f"✓ 記述設定を初期化しました（{', '.join(deleted)}）")
+        self.log_message(f"✓ 記述設定・学籍番号欄設定を初期化しました（{', '.join(deleted)}）")
         self._update_descriptive_status()
 
     # ---------------------------------------------------------
@@ -2813,6 +2823,18 @@ class SaitenSamuraiGUI:
 ・マーク認識結果Excel (Mark2-Result-...)
 ・枠描画済み画像
 ・coordinates.csv"""
+                error_files = result.get('error_files') or []
+                if error_files:
+                    shown = error_files[:20]
+                    file_list = "\n".join(f"・{fn}" for fn in shown)
+                    if len(error_files) > len(shown):
+                        file_list += f"\n…他{len(error_files) - len(shown)}件"
+                    summary += (
+                        "\n\n【排除候補（四隅マーカー等が検出できず処理できなかったページ）】\n"
+                        f"{file_list}\n"
+                        "スキャン向き・折れ・切れなどを確認し、必要であれば元フォルダから\n"
+                        "除外して再スキャン・再実行してください。"
+                    )
             else:
                 summary = "マーク認識・枠描画処理が正常に完了しました！"
 

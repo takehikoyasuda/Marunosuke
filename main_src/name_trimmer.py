@@ -47,9 +47,14 @@ IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff'}
 # トリミング後の名前画像の最大高さ（ピクセル）
 DEFAULT_MAX_HEIGHT = 50
 
-# GUI表示用の最大幅・高さ
+# GUI表示用の最大幅・高さ（ズーム倍率1.0の時のビューポートサイズとしても使う）
 MAX_DISPLAY_WIDTH = 700
 MAX_DISPLAY_HEIGHT = 700
+
+# ズーム対応の矩形選択ダイアログ用の定数
+MIN_ZOOM = 1.0
+MAX_ZOOM = 8.0
+ZOOM_STEP = 1.25
 
 
 # ============================================================
@@ -91,8 +96,10 @@ def select_region_on_image(
     """
     GUIウィンドウを表示し、ユーザーにマウスドラッグで矩形を選択させる。
 
-    将来、記述式得点エリアの選択などにも再利用可能な汎用関数。
-    legacy_trim_app/name_trim.py の select_name_area() を参考に再実装。
+    マウスホイール／＋－ボタンで拡大縮小しながら選択できる（細かい範囲を
+    正確に選びたい場合向け）。将来、記述式得点エリアの選択などにも再利用
+    可能な汎用関数。legacy_trim_app/name_trim.py の select_name_area() を
+    参考に再実装。
 
     Args:
         image_path: 表示する画像のパス
@@ -105,35 +112,20 @@ def select_region_on_image(
         (left, top, right, bottom) の座標タプル（元画像の実寸座標）。
         キャンセルされた場合は None。
     """
-    # 画像を読み込み
-    original_img = Image.open(image_path)
+    original_img = Image.open(image_path).convert("RGB")
     orig_w, orig_h = original_img.size
 
-    # --------------------------------------------------
-    # 表示用リサイズ比率の計算
-    # --------------------------------------------------
-    if orig_w >= orig_h:
-        if orig_w <= MAX_DISPLAY_WIDTH:
-            resize_ratio = 1.0
-        else:
-            resize_ratio = orig_w / MAX_DISPLAY_WIDTH
-    else:
-        if orig_h <= MAX_DISPLAY_HEIGHT:
-            resize_ratio = 1.0
-        else:
-            resize_ratio = orig_h / MAX_DISPLAY_HEIGHT
+    # zoom=1.0 のとき画像全体がビューポートに収まる基準スケール
+    base_scale = min(MAX_DISPLAY_WIDTH / orig_w, MAX_DISPLAY_HEIGHT / orig_h, 1.0)
 
-    display_w = int(orig_w / resize_ratio)
-    display_h = int(orig_h / resize_ratio)
-    display_img = original_img.resize(
-        (display_w, display_h), Image.LANCZOS
-    )
-    original_img.close()  # リソース解放
-
-    # --------------------------------------------------
-    # GUI ウィンドウの構築
-    # --------------------------------------------------
-    result_rect = [None]  # リストで包んでクロージャ内から変更可能にする
+    state = {
+        'zoom': 1.0,
+        'rect_orig': None,   # 確定済み矩形（元画像実寸座標）
+        'drag_id': None,     # ドラッグ中の仮矩形のcanvas item id
+        'start_x': 0.0, 'start_y': 0.0,
+        'photo': None,       # PhotoImage参照保持(GC対策)
+        'overlay_photo': None,
+    }
 
     owns_root = False
     if parent is None:
@@ -145,10 +137,7 @@ def select_region_on_image(
 
     selector_win = tk.Toplevel(root)
     selector_win.title(title)
-    selector_win.geometry(f"{display_w + 200}x{display_h + 20}")
-    selector_win.resizable(False, False)
 
-    # --- レイアウト ---
     main_frame = tk.Frame(selector_win)
     main_frame.pack(fill=tk.BOTH, expand=True)
 
@@ -158,103 +147,130 @@ def select_region_on_image(
     button_frame = tk.Frame(main_frame)
     button_frame.pack(side=tk.RIGHT, padx=10, pady=10, fill=tk.Y)
 
-    # --- キャンバス ---
+    h_scroll = tk.Scrollbar(canvas_frame, orient=tk.HORIZONTAL)
+    v_scroll = tk.Scrollbar(canvas_frame, orient=tk.VERTICAL)
     canvas = tk.Canvas(
-        canvas_frame,
-        width=display_w,
-        height=display_h,
-        bg="black",
-        highlightthickness=0,
+        canvas_frame, width=MAX_DISPLAY_WIDTH, height=MAX_DISPLAY_HEIGHT, bg="black",
+        highlightthickness=0, xscrollcommand=h_scroll.set, yscrollcommand=v_scroll.set,
     )
-    tk_img = ImageTk.PhotoImage(display_img, master=selector_win)
-    canvas.create_image(0, 0, image=tk_img, anchor=tk.NW)
-    canvas.pack()
+    h_scroll.config(command=canvas.xview)
+    v_scroll.config(command=canvas.yview)
+    canvas.grid(row=0, column=0)
+    v_scroll.grid(row=0, column=1, sticky='ns')
+    h_scroll.grid(row=1, column=0, sticky='ew')
 
-    # --- 矩形ドラッグ状態 ---
-    drag_state = {"start_x": 0, "start_y": 0, "rect_id": None}
-    overlay_refs = []  # GC防止用
+    def _total_scale():
+        return base_scale * state['zoom']
+
+    def _redraw_confirmed_rect():
+        canvas.delete("region_overlay")
+        canvas.delete("region_rect")
+        canvas.delete("region_label")
+        if state['rect_orig'] is None:
+            return
+        scale = _total_scale()
+        ox1, oy1, ox2, oy2 = state['rect_orig']
+        x1, y1, x2, y2 = ox1 * scale, oy1 * scale, ox2 * scale, oy2 * scale
+        overlay_img = Image.new('RGBA', (max(1, round(x2 - x1)), max(1, round(y2 - y1))), (0, 200, 0, 80))
+        overlay_tk = ImageTk.PhotoImage(overlay_img, master=selector_win)
+        state['overlay_photo'] = overlay_tk
+        canvas.create_image(x1, y1, image=overlay_tk, anchor='nw', tag="region_overlay")
+        canvas.create_rectangle(x1, y1, x2, y2, outline="green", width=2, tag="region_rect")
+        canvas.create_text(
+            (x1 + x2) / 2, (y1 + y2) / 2, text=label_text, fill="white",
+            font=("", 14, "bold"), tag="region_label",
+        )
+
+    def _redraw_image():
+        scale = _total_scale()
+        disp_w = max(1, round(orig_w * scale))
+        disp_h = max(1, round(orig_h * scale))
+        resized = original_img.resize((disp_w, disp_h), Image.LANCZOS)
+        photo = ImageTk.PhotoImage(resized, master=selector_win)
+        state['photo'] = photo
+        canvas.delete("bg_image")
+        canvas.create_image(0, 0, image=photo, anchor=tk.NW, tag="bg_image")
+        canvas.tag_lower("bg_image")
+        canvas.configure(scrollregion=(0, 0, disp_w, disp_h))
+        _zoom_label.config(text=f"{state['zoom'] * 100:.0f}%")
+        _redraw_confirmed_rect()
 
     def _on_press(event):
         """マウスボタン押下 → ドラッグ開始"""
-        drag_state["start_x"] = event.x
-        drag_state["start_y"] = event.y
-        if drag_state["rect_id"] is not None:
-            canvas.delete(drag_state["rect_id"])
+        state['start_x'] = canvas.canvasx(event.x)
+        state['start_y'] = canvas.canvasy(event.y)
+        if state['drag_id'] is not None:
+            canvas.delete(state['drag_id'])
+            state['drag_id'] = None
         canvas.delete("region_overlay")
         canvas.delete("region_rect")
         canvas.delete("region_label")
 
     def _on_drag(event):
         """マウスドラッグ中 → 矩形をリアルタイム描画"""
-        ex = max(0, min(display_w, event.x))
-        ey = max(0, min(display_h, event.y))
-
-        if drag_state["rect_id"] is not None:
-            canvas.coords(
-                drag_state["rect_id"],
-                drag_state["start_x"], drag_state["start_y"],
-                ex, ey,
-            )
+        cx = canvas.canvasx(event.x)
+        cy = canvas.canvasy(event.y)
+        if state['drag_id'] is not None:
+            canvas.coords(state['drag_id'], state['start_x'], state['start_y'], cx, cy)
         else:
-            drag_state["rect_id"] = canvas.create_rectangle(
-                drag_state["start_x"], drag_state["start_y"],
-                ex, ey,
+            state['drag_id'] = canvas.create_rectangle(
+                state['start_x'], state['start_y'], cx, cy,
                 outline="red", width=2, dash=(4, 4),
             )
 
     def _on_release(event):
         """マウスボタン離す → 矩形確定"""
-        ex = max(0, min(display_w, event.x))
-        ey = max(0, min(display_h, event.y))
-
-        sx = drag_state["start_x"]
-        sy = drag_state["start_y"]
+        cx = canvas.canvasx(event.x)
+        cy = canvas.canvasy(event.y)
+        sx, sy = state['start_x'], state['start_y']
 
         # 選択範囲が小さすぎる場合は無視
-        if abs(ex - sx) < 5 or abs(ey - sy) < 5:
+        if abs(cx - sx) < 5 or abs(cy - sy) < 5:
             return
 
         # 座標を正規化（左上 → 右下）
-        x1, x2 = min(sx, ex), max(sx, ex)
-        y1, y2 = min(sy, ey), max(sy, ey)
+        x1, x2 = min(sx, cx), max(sx, cx)
+        y1, y2 = min(sy, cy), max(sy, cy)
 
-        # 仮矩形を削除し、確定版を描画
-        if drag_state["rect_id"] is not None:
-            canvas.delete(drag_state["rect_id"])
-            drag_state["rect_id"] = None
+        if state['drag_id'] is not None:
+            canvas.delete(state['drag_id'])
+            state['drag_id'] = None
 
-        # 半透明の緑色オーバーレイ
-        overlay_img = Image.new(
-            'RGBA', (x2 - x1, y2 - y1), (0, 200, 0, 80)
-        )
-        overlay_tk = ImageTk.PhotoImage(overlay_img, master=selector_win)
-        overlay_refs.clear()
-        overlay_refs.append(overlay_tk)
-        canvas.create_image(x1, y1, image=overlay_tk, anchor='nw', tag="region_overlay")
-
-        # 矩形の枠線
-        canvas.create_rectangle(
-            x1, y1, x2, y2,
-            outline="green", width=2, tag="region_rect"
-        )
-        # ラベル
-        canvas.create_text(
-            (x1 + x2) / 2, (y1 + y2) / 2,
-            text=label_text, fill="white",
-            font=("", 14, "bold"), tag="region_label"
-        )
-
-        # 元画像の実寸座標に変換して保持
-        result_rect[0] = (
-            round(x1 * resize_ratio),
-            round(y1 * resize_ratio),
-            round(x2 * resize_ratio),
-            round(y2 * resize_ratio),
-        )
+        scale = _total_scale()
+        state['rect_orig'] = (x1 / scale, y1 / scale, x2 / scale, y2 / scale)
+        _redraw_confirmed_rect()
 
     canvas.bind("<ButtonPress-1>", _on_press)
     canvas.bind("<B1-Motion>", _on_drag)
     canvas.bind("<ButtonRelease-1>", _on_release)
+
+    def _zoom(factor):
+        new_zoom = max(MIN_ZOOM, min(MAX_ZOOM, state['zoom'] * factor))
+        if new_zoom == state['zoom']:
+            return
+        state['zoom'] = new_zoom
+        _redraw_image()
+
+    def _pan(dx_units=0, dy_units=0):
+        if dx_units:
+            canvas.xview_scroll(dx_units, "units")
+        if dy_units:
+            canvas.yview_scroll(dy_units, "units")
+
+    def _wheel_units(event) -> int:
+        # Windows/Linuxではevent.deltaが120単位、macOSでは±1程度と環境依存のため、
+        # 120で割った結果が0になる場合は符号だけで1単位動かす。
+        units = int(-1 * (event.delta / 120))
+        return units if units != 0 else (-1 if event.delta > 0 else 1)
+
+    def _on_mousewheel(event):
+        canvas.yview_scroll(_wheel_units(event), "units")
+
+    def _on_shift_mousewheel(event):
+        canvas.xview_scroll(_wheel_units(event), "units")
+
+    canvas.bind("<MouseWheel>", _on_mousewheel)
+    canvas.bind("<Shift-MouseWheel>", _on_shift_mousewheel)
 
     # --- 説明ラベル ---
     tk.Label(
@@ -268,11 +284,36 @@ def select_region_on_image(
         text=instruction_text,
         justify=tk.LEFT,
         wraplength=160,
-    ).pack(pady=(0, 20))
+    ).pack(pady=(0, 15))
+
+    # --- ズーム操作 ---
+    zoom_group = tk.Frame(button_frame)
+    zoom_group.pack(pady=(0, 15))
+    tk.Label(zoom_group, text="拡大縮小", font=("", 9), wraplength=160, justify=tk.LEFT).pack()
+    zoom_btns = tk.Frame(zoom_group)
+    zoom_btns.pack(pady=5)
+    tk.Button(zoom_btns, text="－", width=3, command=lambda: _zoom(1 / ZOOM_STEP)).pack(side=tk.LEFT, padx=2)
+    _zoom_label = tk.Label(zoom_btns, text="100%", width=6)
+    _zoom_label.pack(side=tk.LEFT, padx=4)
+    tk.Button(zoom_btns, text="＋", width=3, command=lambda: _zoom(ZOOM_STEP)).pack(side=tk.LEFT, padx=2)
+
+    # --- 移動(パン)操作 ---
+    pan_group = tk.Frame(button_frame)
+    pan_group.pack(pady=(0, 20))
+    tk.Label(
+        pan_group, text="移動（拡大後、マウスホイールや\nスクロールバーでも移動できます）",
+        font=("", 9), wraplength=160, justify=tk.LEFT,
+    ).pack()
+    pan_grid = tk.Frame(pan_group)
+    pan_grid.pack(pady=5)
+    tk.Button(pan_grid, text="▲", width=3, command=lambda: _pan(dy_units=-2)).grid(row=0, column=1)
+    tk.Button(pan_grid, text="◀", width=3, command=lambda: _pan(dx_units=-2)).grid(row=1, column=0)
+    tk.Button(pan_grid, text="▶", width=3, command=lambda: _pan(dx_units=2)).grid(row=1, column=2)
+    tk.Button(pan_grid, text="▼", width=3, command=lambda: _pan(dy_units=2)).grid(row=2, column=1)
 
     # --- ボタン ---
     def _confirm():
-        if result_rect[0] is None:
+        if state['rect_orig'] is None:
             messagebox.showwarning(
                 "未選択",
                 "エリアが選択されていません。\n画像上でドラッグしてください。",
@@ -282,7 +323,7 @@ def select_region_on_image(
         selector_win.destroy()
 
     def _cancel():
-        result_rect[0] = None
+        state['rect_orig'] = None
         selector_win.destroy()
 
     tk.Button(
@@ -303,6 +344,8 @@ def select_region_on_image(
 
     selector_win.protocol("WM_DELETE_WINDOW", _cancel)
 
+    _redraw_image()
+
     # モーダルにする
     selector_win.grab_set()
     selector_win.wait_window()
@@ -310,7 +353,9 @@ def select_region_on_image(
     if owns_root:
         root.destroy()
 
-    return result_rect[0]
+    if state['rect_orig'] is None:
+        return None
+    return tuple(round(v) for v in state['rect_orig'])
 
 
 # ============================================================

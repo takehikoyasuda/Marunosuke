@@ -61,6 +61,17 @@ from constants import (
 
 logger = logging.getLogger(__name__)
 
+# コーナーマーカー検出の「マーカーらしさ」判定閾値。
+# サーチ領域内の最大連結成分を無条件にマーカー扱いしていたため、マーカーが
+# 実際には印刷されていないページ(異なる様式の混入・白紙・スキャンノイズ等)でも
+# ノイズやゴミを誤ってマーカーとして採用し、正常なページとして処理されてしまう
+# 問題があった。実物のMark2マーカーはサーチ領域(30%×8%)に対して数%程度を占める
+# ほぼ正方形の黒塗り四角であるため、その範囲から大きく外れる成分は除外する。
+MARKER_MIN_AREA_FRAC = 0.005   # サーチ領域面積に対する最小割合(小さすぎるノイズを除外)
+MARKER_MAX_AREA_FRAC = 0.25    # サーチ領域面積に対する最大割合(領域全体が暗い異常ケースを除外)
+MARKER_MIN_ASPECT = 0.5        # 幅/高さの下限(細長い罫線等を除外)
+MARKER_MAX_ASPECT = 2.0        # 幅/高さの上限
+
 
 def imread_unicode(filepath):
     """日本語パスに対応した画像読み込み（np.fromfile + cv2.imdecode）"""
@@ -264,38 +275,50 @@ def detect_corner_markers(image, debug=False):
     
     for region in search_regions:
         x, y, rw, rh = region['x'], region['y'], region['w'], region['h']
-        
+
         # サーチ領域を切り出し
         roi = gray[y:y+rh, x:x+rw]
-        
+
         # 二値化（Otsu's法）
         _, binary = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-        
+
         # 連結成分解析
         num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary, connectivity=8)
-        
-        # 最大面積の成分を検出（背景を除く）
-        max_area = 0
-        max_label = -1
-        
+
+        # 「マーカーらしさ」(サーチ領域に対する面積比・アスペクト比)を満たす
+        # 成分の中で最大面積のものを採用する（背景を除く）。単純に最大連結成分を
+        # 無条件採用すると、マーカーが実際には印刷されていないページでも
+        # ノイズ・罫線・文字等を誤ってマーカーとして採用してしまうため。
+        region_area = float(rw * rh)
+        best_area = 0
+        best_label = -1
+
         for i in range(1, num_labels):  # 0はバックグラウンド
             area = stats[i, cv2.CC_STAT_AREA]
-            if area > max_area:
-                max_area = area
-                max_label = i
-        
-        if max_label >= 0:
+            area_frac = area / region_area if region_area > 0 else 0
+            bw = stats[i, cv2.CC_STAT_WIDTH]
+            bh = stats[i, cv2.CC_STAT_HEIGHT]
+            aspect = bw / bh if bh > 0 else 0
+            if not (MARKER_MIN_AREA_FRAC <= area_frac <= MARKER_MAX_AREA_FRAC):
+                continue
+            if not (MARKER_MIN_ASPECT <= aspect <= MARKER_MAX_ASPECT):
+                continue
+            if area > best_area:
+                best_area = area
+                best_label = i
+
+        if best_label >= 0:
             # マーカーの中心座標（画像全体座標系）
-            center_x = int(centroids[max_label][0]) + x
-            center_y = int(centroids[max_label][1]) + y
+            center_x = int(centroids[best_label][0]) + x
+            center_y = int(centroids[best_label][1]) + y
             markers.append((center_x, center_y))
-            
+
             if debug:
                 # サーチ領域を描画
                 cv2.rectangle(debug_img, (x, y), (x + rw, y + rh), (255, 0, 0), 2)
                 # マーカー中心を描画
                 cv2.circle(debug_img, (center_x, center_y), 10, (0, 0, 255), -1)
-    
+
     if len(markers) != 4:
         raise ValueError(f"4個のマーカーが必要ですが、{len(markers)}個しか検出されませんでした")
     
@@ -1467,7 +1490,7 @@ def process_box_drawer(image_folder, coord_excel_path, skip_questions=0, output_
     
     if not image_files:
         logger.error("%s に画像ファイルが見つかりません", image_folder)
-        return {'success_count': 0, 'error_count': 0, 'total_count': 0, 'elapsed_time': 0}
+        return {'success_count': 0, 'error_count': 0, 'error_files': [], 'total_count': 0, 'elapsed_time': 0}
     
     logger.info("=" * 60)
     logger.info("処理対象: %d個の画像", len(image_files))
@@ -1475,6 +1498,7 @@ def process_box_drawer(image_folder, coord_excel_path, skip_questions=0, output_
     
     success_count = 0
     error_count = 0
+    error_files = []  # 排除候補: コーナーマーカー未検出等で処理できなかったファイル名
     all_csv_data = []
     recognition_results_list = []
     marker_cache = {}  # マーカー座標キャッシュ（Step2高速化用）
@@ -1543,7 +1567,8 @@ def process_box_drawer(image_folder, coord_excel_path, skip_questions=0, output_
             except Exception as e:
                 logger.error("処理エラー (%s): %s", fname, e)
                 error_count += 1
-    
+                error_files.append(fname)
+
     csv_path = results_data_folder / 'coordinates.csv'
     save_coordinates_to_csv(csv_path, all_csv_data)
     logger.info("座標データCSV保存: %s", csv_path.name)
@@ -1600,6 +1625,7 @@ def process_box_drawer(image_folder, coord_excel_path, skip_questions=0, output_
     return {
         'success_count': success_count,
         'error_count': error_count,
+        'error_files': sorted(error_files),
         'total_count': len(image_files),
         'elapsed_time': elapsed_time,
         'kmeans_report_path': str(kmeans_report_path) if kmeans_report_path else None,

@@ -10,13 +10,15 @@ id_area_color_detector.py — 学籍番号欄の各桁マスを、赤枠の色�
 撤回した「学籍番号欄専用マーカー」方式の失敗要因(罫線・筆跡との誤認)を解消する
 狙い。詳細は student_id_area_requirements.md 参照。
 
-検出はあくまで「候補位置」であり、期待した桁数と一致しない場合は例外を送出する。
-呼び出し元(student_id_ocr.py)はこれを自動検出失敗として扱い、手動指定へフォール
-バックする。
+検出はあくまで「候補位置」であり、expected_digit_count を指定した場合はそれと
+一致しない検出数を例外として扱う。expected_digit_count を省略した場合は、検出
+できた赤枠の個数をそのまま桁数として採用する(=桁数の自動決定)。
+呼び出し元(student_id_ocr.py)はいずれの例外も自動検出失敗として扱い、手動指定
+へフォールバックする。
 """
 
 import logging
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -51,15 +53,20 @@ def _red_mask(bgr_image: np.ndarray) -> np.ndarray:
 
 
 def detect_red_digit_boxes(
-    image: np.ndarray, expected_digit_count: int,
+    image: np.ndarray, expected_digit_count: Optional[int] = None,
 ) -> List[Tuple[int, int, int, int]]:
-    """画像全体から赤枠のマスを expected_digit_count 個検出し、左から右の順で返す。
+    """画像全体から赤枠のマスを検出し、左から右の順で返す。
 
     四隅マーカーの位置・割合には一切依存しない(画像全体を検索範囲とする)。
 
+    Args:
+        expected_digit_count: 指定した場合、検出数がこれと一致しないと失敗扱いにする
+            (教員が桁数を知っていて厳密に検証したい場合向け)。省略(None)した場合は
+            検出できた個数をそのまま桁数として採用する(=桁数の自動決定)。
+
     Raises:
-        ValueError: 検出数が一致しない、またはマスの大きさのばらつきが
-            大きすぎる場合(=自動検出失敗)。
+        ValueError: 検出数が0個、expected_digit_countと不一致、またはマスの
+            大きさのばらつきが大きすぎる場合(=自動検出失敗)。
 
     Returns:
         List[Tuple[int,int,int,int]]: 各マスの (left, top, right, bottom)。
@@ -82,11 +89,14 @@ def detect_red_digit_boxes(
         bh = int(stats[i, cv2.CC_STAT_HEIGHT])
         candidates.append((x, y, x + bw, y + bh))
 
-    if len(candidates) != expected_digit_count:
-        raise ValueError(
-            f"赤枠のマスが{expected_digit_count}個期待されるところ"
-            f"{len(candidates)}個検出されました"
-        )
+    if expected_digit_count is not None:
+        if len(candidates) != expected_digit_count:
+            raise ValueError(
+                f"赤枠のマスが{expected_digit_count}個期待されるところ"
+                f"{len(candidates)}個検出されました"
+            )
+    elif len(candidates) == 0:
+        raise ValueError("赤枠のマスが検出されませんでした")
 
     candidates.sort(key=lambda r: r[0])
 

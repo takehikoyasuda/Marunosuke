@@ -41,6 +41,7 @@ class IdAreaConfigDialog:
         self.parent = parent
         self._result: Optional[Dict] = None
         self._photo_ref = None
+        self._default_digit_count = default_digit_count
 
         bgr = imread_unicode(first_image_path)
         if bgr is None:
@@ -76,22 +77,37 @@ class IdAreaConfigDialog:
 
         tk.Label(
             form_frame,
-            text="学籍番号の桁ごとに印刷された\n赤枠を自動検出します",
+            text="学籍番号の桁ごとに印刷された\n赤枠を自動検出します（桁数も自動判定）",
             justify=tk.LEFT, font=(UI_FONT, get_ui_font_size(10), "bold"),
         ).pack(pady=(0, 4), anchor=tk.W)
 
+        alpha_hint_frame = tk.Frame(
+            form_frame, bg="#FFF3CD", highlightbackground="#F0AD4E", highlightthickness=1,
+        )
+        alpha_hint_frame.pack(pady=(0, 12), anchor=tk.W, fill=tk.X)
         tk.Label(
-            form_frame,
-            text="マスの位置が確定したら、英字が入るマスを\nクリックして指定できます\n"
-                 "（未指定なら全桁を数字として認識）",
-            justify=tk.LEFT, fg="#555555", font=(UI_FONT, get_ui_font_size(8)),
-        ).pack(pady=(0, 12), anchor=tk.W)
+            alpha_hint_frame,
+            text="💡 マスをクリックすると「英字マス」に\n　　切り替えられます",
+            justify=tk.LEFT, bg="#FFF3CD", fg="#8A6D00",
+            font=(UI_FONT, get_ui_font_size(9), "bold"), wraplength=210,
+        ).pack(padx=6, pady=(6, 2), anchor=tk.W)
+        tk.Label(
+            alpha_hint_frame,
+            text="（未指定なら全桁を数字として認識）",
+            justify=tk.LEFT, bg="#FFF3CD", fg="#8A6D00",
+            font=(UI_FONT, get_ui_font_size(8)), wraplength=210,
+        ).pack(padx=6, pady=(0, 6), anchor=tk.W)
 
         digit_row = tk.Frame(form_frame)
         digit_row.pack(fill=tk.X, pady=3)
         tk.Label(digit_row, text="桁数", width=9, anchor=tk.W, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT)
-        self._digit_var = tk.StringVar(value=str(default_digit_count))
+        self._digit_var = tk.StringVar(value="")
         tk.Entry(digit_row, textvariable=self._digit_var, width=8, justify=tk.RIGHT).pack(side=tk.LEFT)
+        tk.Label(
+            form_frame, text="空欄なら検出数をそのまま桁数にします\n"
+                             "（分かっている桁数と違う時だけ入力）",
+            justify=tk.LEFT, fg="#555555", font=(UI_FONT, get_ui_font_size(8)), wraplength=210,
+        ).pack(pady=(0, 4), anchor=tk.W)
 
         tk.Button(
             form_frame, text="🔍 自動検出を試す", command=self._run_auto_detect,
@@ -157,6 +173,7 @@ class IdAreaConfigDialog:
     # ------------------------------------------------------------
 
     def _parse_digit_count(self) -> Optional[int]:
+        """桁数欄をパースする。手動指定モード(ドラッグ・保存)では桁数が必須。"""
         try:
             count = int(self._digit_var.get().strip())
         except ValueError:
@@ -166,6 +183,25 @@ class IdAreaConfigDialog:
             self._status_label.config(text="桁数は1以上にしてください。")
             return None
         return count
+
+    def _parse_expected_digit_count(self) -> Tuple[bool, Optional[int]]:
+        """桁数欄をパースする。空欄は「検出数をそのまま桁数にする(自動決定)」を意味する。
+
+        Returns:
+            (成功したか, 桁数 or None(=自動決定))。失敗時はステータスラベルにエラー表示。
+        """
+        text = self._digit_var.get().strip()
+        if not text:
+            return True, None
+        try:
+            count = int(text)
+        except ValueError:
+            self._status_label.config(text="「桁数」に整数を入力するか、空欄のままにしてください。")
+            return False, None
+        if count < 1:
+            self._status_label.config(text="桁数は1以上にしてください。")
+            return False, None
+        return True, count
 
     def _clear_overlay(self):
         self.canvas.delete("id_box_preview")
@@ -177,8 +213,8 @@ class IdAreaConfigDialog:
             self.canvas.create_rectangle(dx0, dy0, dx1, dy1, outline=color, width=2, tag="id_box_preview")
 
     def _run_auto_detect(self):
-        digit_count = self._parse_digit_count()
-        if digit_count is None:
+        ok, expected_count = self._parse_expected_digit_count()
+        if not ok:
             return
 
         self._manual_mode = False
@@ -192,25 +228,33 @@ class IdAreaConfigDialog:
         self._save_button.config(state=tk.DISABLED)
 
         try:
-            rects = detect_red_digit_boxes(self._bgr_image, digit_count)
+            rects = detect_red_digit_boxes(self._bgr_image, expected_count)
         except ValueError as e:
             logger.info("学籍番号欄の自動検出に失敗: %s", e)
             self._status_label.config(
                 text=f"自動検出できませんでした（{e}）。\n"
                      f"右の画像上で、1桁ずつ枠をドラッグして指定してください。"
             )
-            self._start_manual_mode(digit_count)
+            self._start_manual_mode(expected_count)
             return
 
         self._auto_detected = True
         self._status_label.config(text="")
         self._final_rects = list(rects)
+        self._digit_var.set(str(len(rects)))  # 検出数をそのまま桁数として欄に反映
         self._redraw_final_overlay()
         self._manual_guide_label.config(text=f"検出成功: {len(rects)}個のマスが見つかりました。")
         self._save_button.config(state=tk.NORMAL)
 
-    def _start_manual_mode(self, digit_count: int):
+    def _start_manual_mode(self, digit_count: Optional[int]):
         self._manual_mode = True
+        if digit_count is None:
+            # 桁数が未確定(自動検出も0件)のため、手動指定にはデフォルト値を仮入力する
+            if not self._digit_var.get().strip():
+                self._digit_var.set(str(self._default_digit_count))
+            ok, digit_count = self._parse_expected_digit_count()
+            if not ok or digit_count is None:
+                return
         self._update_manual_guide(digit_count)
 
     def _update_manual_guide(self, digit_count: int):
@@ -328,13 +372,29 @@ class IdAreaConfigDialog:
                 return
 
     def _redraw_final_overlay(self):
-        """確定済みマスを、英字指定は橙・数字は緑で描き直す。"""
+        """確定済みマスを描き直す。
+
+        色(緑/橙)だけでは区別しにくいとの指摘を踏まえ、線種(実線/破線)と
+        マス内のテキストラベル(「数」/「英」+桁番号)でも英字/数字を明示する。
+        """
         if not self._final_rects:
             return
         self._clear_overlay()
         for i, rect in enumerate(self._final_rects):
-            color = "#EF6C00" if i in self._alpha_positions else "#2E7D32"
-            self._draw_rect_overlay([rect], color)
+            is_alpha = i in self._alpha_positions
+            color = "#EF6C00" if is_alpha else "#2E7D32"
+            x0, y0, x1, y1 = rect
+            dx0, dy0 = x0 * self._display_ratio, y0 * self._display_ratio
+            dx1, dy1 = x1 * self._display_ratio, y1 * self._display_ratio
+            rect_kwargs = {"outline": color, "width": 3, "tag": "id_box_preview"}
+            if is_alpha:
+                rect_kwargs["dash"] = (5, 3)
+            self.canvas.create_rectangle(dx0, dy0, dx1, dy1, **rect_kwargs)
+            label_text = f"{i + 1}:英" if is_alpha else f"{i + 1}:数"
+            self.canvas.create_text(
+                dx0 + 3, dy0 + 2, text=label_text, fill=color, anchor=tk.NW,
+                font=(UI_FONT, get_ui_font_size(8), "bold"), tag="id_box_preview",
+            )
         if self._alpha_positions:
             pos_str = "、".join(str(i + 1) for i in sorted(self._alpha_positions))
             self._alpha_guide_label.config(text=f"英字マスに指定: {pos_str}桁目")
