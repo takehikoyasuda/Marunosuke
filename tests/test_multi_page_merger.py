@@ -235,7 +235,7 @@ class TestWriteMergedExcel(unittest.TestCase):
              "ページ2: 問2 (15)", "ページ2 合計", "総合計", "総配点", "欠落ページ"],
         )
 
-        # 1001(欠落なし)は2行目、1002(欠落あり)は3行目(sorted順)
+        # 1001(欠落なし)は2行目、1002(欠落あり)は3行目(merged_rowsの挿入順)
         row2 = [c.value for c in ws[2]]
         row3 = [c.value for c in ws[3]]
         self.assertEqual(row2[1], "1001")

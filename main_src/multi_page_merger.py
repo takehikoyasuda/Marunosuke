@@ -194,7 +194,7 @@ def write_merged_excel(merged_rows: Dict[str, Dict], pages: List[PageSummary], o
         cell.alignment = center
         cell.border = thin_border
 
-    for row_idx, (sid, row_data) in enumerate(sorted(merged_rows.items()), 2):
+    for row_idx, (sid, row_data) in enumerate(merged_rows.items(), 2):
         has_missing = bool(row_data.get('欠落ページ'))
         values = [row_idx - 1, sid]
         for page in pages:

@@ -1815,11 +1815,13 @@ class SaitenSamuraiGUI:
         どちらからも呼べるよう、対象フォルダの存在チェックも含めて自己完結させる。
 
         Returns:
-            (aborted, student_id_result, trimmer) のタプル。
+            (aborted, student_id_result, roster, trimmer) のタプル。
+            roster は {学籍番号: 氏名} の dict（名簿の並び順を保持）で、
+            名簿を使わなかった場合は None。
             aborted=True の場合、呼び出し元は処理全体を中断する。
         """
         if not self.student_id_ocr_enabled.get():
-            return False, None, None
+            return False, None, None, None
 
         boxed_folder = Path(image_folder) / RESULTS_FOLDER / BOXED_FOLDER
         if not boxed_folder.exists():
@@ -1828,7 +1830,7 @@ class SaitenSamuraiGUI:
                 f"補正済み画像フォルダが存在しません:\n{boxed_folder}\n\n"
                 "Step 1（OMR認識）を先に実行してください。"
             )
-            return True, None, None
+            return True, None, None, None
 
         try:
             from student_id_ocr import StudentIdOcrTrimmer
@@ -1847,34 +1849,21 @@ class SaitenSamuraiGUI:
                     "学籍番号OCRがキャンセルされました。\n"
                     "OCRなしでサマリー生成を続行しますか？"
                 ):
-                    return True, None, None
-                return False, None, None
+                    return True, None, None, None
+                return False, None, None, None
 
             self.log_message(f"✓ 学籍番号OCR完了: {len(ocr_results)}枚")
 
-            roster = None
-            roster_path = filedialog.askopenfilename(
-                title="名簿Excelを選択（任意・キャンセルでスキップ）",
-                filetypes=[("Excelファイル", "*.xlsx *.xls"), ("すべてのファイル", "*.*")],
-            )
-            if roster_path:
-                try:
-                    from roster_loader import load_roster
-                    roster = load_roster(roster_path)
-                    self.log_message(f"✓ 名簿読込: {len(roster)}件")
-                except Exception as e:
-                    self.log_message(f"名簿読込エラー: {e}")
-                    messagebox.showwarning(
-                        "名簿読込エラー",
-                        f"名簿の読込に失敗しました:\n{e}\n\n名簿照合なしで続行します。"
-                    )
-                    roster = None
+            from roster_loader import select_roster_gui
+            roster = select_roster_gui(parent=self.root)
+            if roster:
+                self.log_message(f"✓ 名簿読込: {len(roster)}件")
 
             from student_id_review_gui import StudentIdReviewGUI
             review = StudentIdReviewGUI(self.root, ocr_results, roster)
             student_id_result = review.run()
             self.log_message(f"✓ 学籍番号OCR確認完了: {len(student_id_result)}枚")
-            return False, student_id_result, ocr_trimmer
+            return False, student_id_result, roster, ocr_trimmer
 
         except Exception as e:
             self.log_message(f"学籍番号OCRエラー: {e}")
@@ -1883,8 +1872,8 @@ class SaitenSamuraiGUI:
                 f"学籍番号OCR中にエラーが発生しました:\n{e}\n\n"
                 "OCRなしでサマリー生成を続行しますか？"
             ):
-                return True, None, None
-            return False, None, None
+                return True, None, None, None
+            return False, None, None, None
 
     # ---------------------------------------------------------
     # 記述のみモード: サマリー生成
@@ -1962,7 +1951,7 @@ class SaitenSamuraiGUI:
                     name_images = None
 
         # 学籍番号OCR（チェックボックスで制御・実験的機能）
-        aborted, student_id_result, id_ocr_trimmer = self._run_student_id_ocr_flow(
+        aborted, student_id_result, roster, id_ocr_trimmer = self._run_student_id_ocr_flow(
             self.image_folder_path.get()
         )
         if aborted:
@@ -1976,12 +1965,12 @@ class SaitenSamuraiGUI:
         }
         thread = threading.Thread(
             target=self._run_summary_descriptive_only_thread,
-            args=(params, name_images, student_id_result),
+            args=(params, name_images, student_id_result, roster),
             daemon=True,
         )
         thread.start()
 
-    def _run_summary_descriptive_only_thread(self, params, name_images=None, student_id_result=None):
+    def _run_summary_descriptive_only_thread(self, params, name_images=None, student_id_result=None, roster=None):
         """記述のみモード: サマリー生成スレッド"""
         try:
             self.log_message("")
@@ -2009,6 +1998,7 @@ class SaitenSamuraiGUI:
                     descriptive_scores=desc_scores,
                     name_images=name_images,
                     student_id_result=student_id_result,
+                    roster=roster,
                     output_base_folder=None,
                 )
             finally:

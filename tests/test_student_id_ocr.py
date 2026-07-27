@@ -187,7 +187,7 @@ class TestLocalDigitOcrRecognizer(unittest.TestCase):
 # ============================================================
 
 class TestRosterLoader(unittest.TestCase):
-    """load_roster() のテスト"""
+    """load_roster() のテスト（列名なし・2列のみの形式）"""
 
     def setUp(self):
         self.test_dir = tempfile.mkdtemp(prefix="test_roster_")
@@ -195,27 +195,124 @@ class TestRosterLoader(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
+    def _write_roster_excel(self, name, rows):
+        path = os.path.join(self.test_dir, name)
+        pd.DataFrame(rows).to_excel(path, index=False, header=False)
+        return path
+
     def test_01_valid_roster(self):
         from roster_loader import load_roster
-        df = pd.DataFrame({
-            '学籍番号': ['20230001', '20230002'],
-            '氏名': ['山田太郎', '佐藤花子'],
-        })
-        path = os.path.join(self.test_dir, "roster.xlsx")
-        df.to_excel(path, index=False)
+        path = self._write_roster_excel("roster.xlsx", [
+            ['20230001', '山田太郎'],
+            ['20230002', '佐藤花子'],
+        ])
 
         roster = load_roster(path)
         self.assertEqual(roster['20230001'], '山田太郎')
         self.assertEqual(roster['20230002'], '佐藤花子')
 
-    def test_02_missing_column_raises(self):
+    def test_02_single_column_raises(self):
+        """列が1列しかない場合はエラー"""
         from roster_loader import load_roster
-        df = pd.DataFrame({'学籍番号': ['20230001'], '名前': ['山田太郎']})
         path = os.path.join(self.test_dir, "roster_bad.xlsx")
-        df.to_excel(path, index=False)
+        pd.DataFrame({0: ['20230001', '20230002']}).to_excel(path, index=False, header=False)
 
         with self.assertRaises(ValueError):
             load_roster(path)
+
+    def test_03_preserves_row_order(self):
+        """名簿の並び順(挿入順)が保持されること"""
+        from roster_loader import load_roster
+        path = self._write_roster_excel("roster_order.xlsx", [
+            ['20230003', '鈴木一郎'],
+            ['20230001', '山田太郎'],
+            ['20230002', '佐藤花子'],
+        ])
+
+        roster = load_roster(path)
+        self.assertEqual(list(roster.keys()), ['20230003', '20230001', '20230002'])
+
+
+class TestLoadRosterCsv(unittest.TestCase):
+    """load_roster_csv() のテスト（列名なし・2列のみの形式）"""
+
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp(prefix="test_roster_csv_")
+
+    def tearDown(self):
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def _write_csv(self, name, rows, encoding="utf-8-sig"):
+        import csv
+        path = os.path.join(self.test_dir, name)
+        with open(path, "w", newline="", encoding=encoding) as f:
+            csv.writer(f).writerows(rows)
+        return path
+
+    def test_01_no_header_two_columns(self):
+        from roster_loader import load_roster_csv
+        path = self._write_csv("roster.csv", [
+            ["20230003", "鈴木一郎"],
+            ["20230001", "山田太郎"],
+        ])
+        roster = load_roster_csv(path)
+        self.assertEqual(list(roster.keys()), ["20230003", "20230001"])
+        self.assertEqual(roster["20230001"], "山田太郎")
+
+    def test_02_cp932_encoding(self):
+        """Excel(Windows日本語版)由来のcp932 CSVも読めること"""
+        from roster_loader import load_roster_csv
+        path = self._write_csv("cp932.csv", [
+            ["20230001", "山田太郎"],
+        ], encoding="cp932")
+        roster = load_roster_csv(path)
+        self.assertEqual(roster["20230001"], "山田太郎")
+
+    def test_03_empty_csv_raises(self):
+        from roster_loader import load_roster_csv
+        path = os.path.join(self.test_dir, "empty.csv")
+        open(path, "w").close()
+        with self.assertRaises(ValueError):
+            load_roster_csv(path)
+
+
+class TestBuildRosterFromPaste(unittest.TestCase):
+    """build_roster_from_paste() のテスト（TAB区切り1テキスト入力）"""
+
+    def test_01_tab_separated_pairs(self):
+        """Excelの2列をまとめてコピーした場合の形式(TAB区切り)"""
+        from roster_loader import build_roster_from_paste
+        text = "20230003\t鈴木一郎\n20230001\t山田太郎\n20230002\t佐藤花子"
+        roster = build_roster_from_paste(text)
+        self.assertEqual(
+            list(roster.items()),
+            [("20230003", "鈴木一郎"), ("20230001", "山田太郎"), ("20230002", "佐藤花子")],
+        )
+
+    def test_02_manually_typed_with_tabs(self):
+        """手入力でもTab区切りなら通ること"""
+        from roster_loader import build_roster_from_paste
+        roster = build_roster_from_paste("20230001\t山田太郎")
+        self.assertEqual(roster, {"20230001": "山田太郎"})
+
+    def test_03_line_without_tab_raises(self):
+        from roster_loader import build_roster_from_paste
+        with self.assertRaises(ValueError):
+            build_roster_from_paste("20230001 山田太郎")
+
+    def test_04_empty_input_raises(self):
+        from roster_loader import build_roster_from_paste
+        with self.assertRaises(ValueError):
+            build_roster_from_paste("")
+
+    def test_05_strips_blank_lines_and_whitespace(self):
+        from roster_loader import build_roster_from_paste
+        text = "  20230001 \t 山田太郎  \n\n20230002\t佐藤花子\n"
+        roster = build_roster_from_paste(text)
+        self.assertEqual(
+            list(roster.items()),
+            [("20230001", "山田太郎"), ("20230002", "佐藤花子")],
+        )
 
 
 # ============================================================

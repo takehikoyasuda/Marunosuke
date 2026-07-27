@@ -241,6 +241,126 @@ class TestProcessDescriptiveOnlySummary(unittest.TestCase):
         self.assertTrue(student_path.exists())
         self.assertTrue(exam_path.exists())
 
+    def test_roster_order_controls_row_order(self):
+        """名簿(roster)を渡すと、出力行が名簿の並び順になること"""
+        from summary_generator import process_descriptive_only_summary
+        from openpyxl import load_workbook
+
+        config = {
+            "questions": [
+                {"id": "D1", "name": "記述1", "max_score": 5, "aspect": 1,
+                 "region": [10, 10, 200, 100]},
+            ]
+        }
+        # ファイル名の自然順とは異なる順で名簿を用意する
+        scores = {
+            "c.jpg": {"D1": 1},
+            "a.jpg": {"D1": 2},
+            "b.jpg": {"D1": 3},
+        }
+        student_id_result = {
+            "c.jpg": {"text": "20230002", "name": "佐藤"},
+            "a.jpg": {"text": "20230001", "name": "山田"},
+            "b.jpg": {"text": "20230003", "name": "鈴木"},
+        }
+        roster = {"20230003": "鈴木", "20230001": "山田", "20230002": "佐藤"}
+
+        result = process_descriptive_only_summary(
+            image_folder=str(self.img_folder),
+            descriptive_config=config,
+            descriptive_scores=scores,
+            student_id_result=student_id_result,
+            roster=roster,
+        )
+        self.assertTrue(result["success"])
+
+        wb = load_workbook(result["student_summary_path"])
+        ws = wb.active
+        # B列=ファイル名の並びが、名簿の順(鈴木→山田→佐藤 = b,a,c)になっているはず
+        filenames_in_order = [ws.cell(row=r, column=2).value for r in (2, 3, 4)]
+        self.assertEqual(filenames_in_order, ["b.jpg", "a.jpg", "c.jpg"])
+
+    def test_no_roster_falls_back_to_filename_order(self):
+        """名簿を渡さない場合は従来通りファイル名の自然順になること"""
+        from summary_generator import process_descriptive_only_summary
+        from openpyxl import load_workbook
+
+        config = {
+            "questions": [
+                {"id": "D1", "name": "記述1", "max_score": 5, "aspect": 1,
+                 "region": [10, 10, 200, 100]},
+            ]
+        }
+        scores = {"c.jpg": {"D1": 1}, "a.jpg": {"D1": 2}, "b.jpg": {"D1": 3}}
+
+        result = process_descriptive_only_summary(
+            image_folder=str(self.img_folder),
+            descriptive_config=config,
+            descriptive_scores=scores,
+        )
+        self.assertTrue(result["success"])
+
+        wb = load_workbook(result["student_summary_path"])
+        ws = wb.active
+        filenames_in_order = [ws.cell(row=r, column=2).value for r in (2, 3, 4)]
+        self.assertEqual(filenames_in_order, ["a.jpg", "b.jpg", "c.jpg"])
+
+    def test_roster_absent_student_gets_blank_row(self):
+        """名簿にいるが未提出の学生も、名簿の行数どおり空欄行として出力されること"""
+        from summary_generator import process_descriptive_only_summary
+        from openpyxl import load_workbook
+
+        config = {
+            "questions": [
+                {"id": "D1", "name": "記述1", "max_score": 5, "aspect": 1,
+                 "region": [10, 10, 200, 100]},
+            ]
+        }
+        # 名簿には3名いるが、20230002(佐藤)は答案が見つからない(未提出)
+        scores = {
+            "a.jpg": {"D1": 4},
+            "c.jpg": {"D1": 2},
+        }
+        student_id_result = {
+            "a.jpg": {"text": "20230001", "name": "山田"},
+            "c.jpg": {"text": "20230003", "name": "鈴木"},
+        }
+        roster = {"20230001": "山田", "20230002": "佐藤", "20230003": "鈴木"}
+
+        result = process_descriptive_only_summary(
+            image_folder=str(self.img_folder),
+            descriptive_config=config,
+            descriptive_scores=scores,
+            student_id_result=student_id_result,
+            roster=roster,
+        )
+        self.assertTrue(result["success"])
+
+        wb = load_workbook(result["student_summary_path"])
+        ws = wb.active
+        headers = [c.value for c in ws[1]]
+        sid_col = headers.index("学籍番号(確認済み)") + 1
+        name_col = headers.index("氏名候補(名簿照合)") + 1
+        total_col = headers.index("合計") + 1
+        score_col = headers.index("記述1 (5)") + 1
+
+        # 3行(名簿の人数分)出力され、2行目が未提出の空欄行になっているはず
+        self.assertEqual(ws.cell(row=2, column=2).value, "a.jpg")
+        self.assertEqual(ws.cell(row=3, column=2).value, "(未提出)")
+        self.assertEqual(ws.cell(row=4, column=2).value, "c.jpg")
+
+        # 未提出行でも学籍番号・氏名は名簿から埋まる
+        self.assertEqual(ws.cell(row=3, column=sid_col).value, "20230002")
+        self.assertEqual(ws.cell(row=3, column=name_col).value, "佐藤")
+        # 得点・合計は空欄(None)のまま
+        self.assertIsNone(ws.cell(row=3, column=score_col).value)
+        self.assertIsNone(ws.cell(row=3, column=total_col).value)
+
+        # 統計は実際に提出された2名分のみで計算される(未提出者を0点として混入させない)
+        stats = result["stats"]
+        self.assertEqual(stats["受験者数"], 2)
+        self.assertAlmostEqual(stats["平均点"], 3.0, places=1)
+
 
 # ============================================================
 # DescriptiveReviewGUI 構造テスト

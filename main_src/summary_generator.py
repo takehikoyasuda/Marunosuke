@@ -43,12 +43,56 @@ def _natural_sort_key(text: str):
             for c in re.split(r'(\d+)', text)]
 
 
+def _build_roster_row_specs(all_files, student_id_result, roster):
+    """名簿(roster)の並び順・行数に合わせて、出力行の並びを決める。
+
+    名簿にある学籍番号の順に1行ずつ行を作る。対応する答案ファイルが
+    見つかった学生は ('scored', ファイル名)、見つからなかった学生
+    (未提出等)は ('absent', 学籍番号) として、名簿の行数をそのまま
+    出力行数に反映する(空欄行として出力される)。名簿にない
+    (または学籍番号が一致しなかった)ファイルは、末尾に自然順で追加する。
+
+    後で名簿Excelに得点列を貼り戻すことを想定し、名簿の行順・行数を
+    できるだけ壊さないようにするための処理。
+
+    Args:
+        all_files: 対象となる全ファイル名のリスト
+        student_id_result: {filename: {'text': 学籍番号, ...}}
+        roster: {学籍番号: 氏名} の dict（挿入順=名簿の並び順）
+
+    Returns:
+        [(kind, key), ...] のリスト。kind='scored' の場合 key はファイル名、
+        kind='absent' の場合 key は学籍番号(未提出者のプレースホルダ行)。
+    """
+    sid_to_files = {}
+    for fname, info in (student_id_result or {}).items():
+        sid = (info.get('text') or '').strip()
+        if sid:
+            sid_to_files.setdefault(sid, []).append(fname)
+
+    specs = []
+    seen = set()
+    for sid in roster.keys():
+        files_for_sid = [f for f in sid_to_files.get(sid, []) if f in all_files]
+        if files_for_sid:
+            for fname in files_for_sid:
+                specs.append(('scored', fname))
+                seen.add(fname)
+        else:
+            specs.append(('absent', sid))
+
+    remaining = sorted(f for f in all_files if f not in seen)
+    specs.extend(('scored', f) for f in remaining)
+    return specs
+
+
 def process_descriptive_only_summary(
     image_folder,
     descriptive_config,
     descriptive_scores,
     name_images=None,
     student_id_result=None,
+    roster=None,
     output_base_folder=None,
 ):
     """記述のみモードのサマリー生成。
@@ -63,6 +107,8 @@ def process_descriptive_only_summary(
         name_images: {filename: trimmed_image_path}
         student_id_result: {filename: {'thumbnail_path','text','name'}}
             （学籍番号OCR＋人間確認済みのデータ）
+        roster: {学籍番号: 氏名} の dict（挿入順=名簿の並び順）。指定時は
+            出力の行順を名簿の並びに合わせる（名簿にない行は末尾に自然順で追加）。
         output_base_folder: 出力先 (None→image_folder)
 
     Returns:
@@ -136,19 +182,27 @@ def process_descriptive_only_summary(
             cell.alignment = center
             cell.border = thin_border
 
-        # データ行
-        sorted_files = sorted(descriptive_scores.keys())
+        # データ行（名簿がある場合は名簿の並び順・行数、無ければファイル名の自然順）
+        if roster:
+            row_specs = _build_roster_row_specs(list(descriptive_scores.keys()), student_id_result, roster)
+        else:
+            row_specs = [('scored', f) for f in sorted(descriptive_scores.keys())]
+        # 設問別統計は実際に採点された(未提出でない)ファイルのみを対象にする
+        scored_filenames = [key for kind, key in row_specs if kind == 'scored']
         totals = []
-        for row_idx, fname in enumerate(sorted_files, 2):
-            scores_for_file = descriptive_scores.get(fname, {})
+        for row_idx, (kind, key) in enumerate(row_specs, 2):
+            is_absent = kind == 'absent'
+            fname = None if is_absent else key
+            scores_for_file = {} if is_absent else descriptive_scores.get(fname, {})
             col = 1
             ws.cell(row=row_idx, column=col, value=row_idx - 1).border = thin_border
             col += 1
-            ws.cell(row=row_idx, column=col, value=escape_excel_formula(fname)).border = thin_border
+            fname_display = "(未提出)" if is_absent else escape_excel_formula(fname)
+            ws.cell(row=row_idx, column=col, value=fname_display).border = thin_border
             col += 1
 
             if name_images:
-                name_path = name_images.get(fname)
+                name_path = None if is_absent else name_images.get(fname)
                 if name_path and Path(name_path).exists():
                     try:
                         img = XlImage(str(name_path))
@@ -161,7 +215,7 @@ def process_descriptive_only_summary(
                 col += 1
 
             if has_student_id_result:
-                sid_info = student_id_result.get(fname, {})
+                sid_info = {} if is_absent else student_id_result.get(fname, {})
                 sid_thumb = sid_info.get('thumbnail_path')
                 if sid_thumb and Path(sid_thumb).exists():
                     try:
@@ -174,32 +228,41 @@ def process_descriptive_only_summary(
                 ws.cell(row=row_idx, column=col).border = thin_border
                 col += 1
 
-                ws.cell(row=row_idx, column=col, value=escape_excel_formula(sid_info.get('text') or '')).border = thin_border
+                # 未提出者は名簿から学籍番号がすでに分かっているのでそのまま表示する
+                sid_text = key if is_absent else (sid_info.get('text') or '')
+                ws.cell(row=row_idx, column=col, value=escape_excel_formula(sid_text)).border = thin_border
                 ws.cell(row=row_idx, column=col).alignment = center
                 col += 1
 
                 if has_roster_names:
-                    ws.cell(row=row_idx, column=col, value=escape_excel_formula(sid_info.get('name') or '')).border = thin_border
+                    name_text = roster.get(key, '') if is_absent else (sid_info.get('name') or '')
+                    ws.cell(row=row_idx, column=col, value=escape_excel_formula(name_text)).border = thin_border
                     ws.cell(row=row_idx, column=col).alignment = center
                     col += 1
 
-            student_total = 0
+            student_total = None if is_absent else 0
             for q in questions:
-                sc = scores_for_file.get(q["id"], 0)
-                if sc is None:
-                    sc = 0
-                ws.cell(row=row_idx, column=col, value=sc).border = thin_border
-                ws.cell(row=row_idx, column=col).alignment = center
-                student_total += sc
+                if is_absent:
+                    ws.cell(row=row_idx, column=col).border = thin_border
+                else:
+                    sc = scores_for_file.get(q["id"], 0)
+                    if sc is None:
+                        sc = 0
+                    ws.cell(row=row_idx, column=col, value=sc).border = thin_border
+                    ws.cell(row=row_idx, column=col).alignment = center
+                    student_total += sc
                 col += 1
 
-            ws.cell(row=row_idx, column=col, value=student_total).border = thin_border
-            ws.cell(row=row_idx, column=col).alignment = center
-            ws.cell(row=row_idx, column=col).font = Font(bold=True)
+            if not is_absent:
+                ws.cell(row=row_idx, column=col, value=student_total).border = thin_border
+                ws.cell(row=row_idx, column=col).alignment = center
+                ws.cell(row=row_idx, column=col).font = Font(bold=True)
+                totals.append(student_total)
+            else:
+                ws.cell(row=row_idx, column=col).border = thin_border
             col += 1
             ws.cell(row=row_idx, column=col, value=full_score).border = thin_border
             ws.cell(row=row_idx, column=col).alignment = center
-            totals.append(student_total)
 
         # 列幅調整
         ws.column_dimensions["A"].width = 6
@@ -218,7 +281,7 @@ def process_descriptive_only_summary(
                 img_col_idx += 1
         if name_images or has_student_id_result:
             ws.row_dimensions[1].height = 20
-            for r in range(2, len(sorted_files) + 2):
+            for r in range(2, len(row_specs) + 2):
                 ws.row_dimensions[r].height = 25
 
         wb_student.save(str(student_summary_path))
@@ -267,7 +330,7 @@ def process_descriptive_only_summary(
             qid = q["id"]
             q_scores = [
                 descriptive_scores.get(f, {}).get(qid, 0) or 0
-                for f in sorted_files
+                for f in scored_filenames
             ]
             q_arr = np.array(q_scores) if q_scores else np.array([0])
             ws_q.cell(row=qi, column=1, value=q["name"])
