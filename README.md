@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="resources/marunosuke-logo.png" alt="マル之助ロゴ" width="180">
+</p>
+
 <h1 align="center">マル之助 — Marunosuke</h1>
 
 <p align="center">

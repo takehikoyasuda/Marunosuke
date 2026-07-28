@@ -119,8 +119,10 @@ Appleが`/Library/Developer/CommandLineTools/`等に同梱している古いTcl/
 │   ├── conftest.py              # Tk ルート共有・パス設定
 │   └── test_*.py
 ├── resources/                   # アプリリソース
-│   ├── icon.ico
-│   └── samurai.png
+│   ├── marunosuke-icon.png      # GUIウィンドウ用アイコン
+│   ├── marunosuke-icon.ico      # Windows配布用アイコン
+│   ├── marunosuke-icon.icns     # macOS配布用アイコン
+│   └── marunosuke-logo.png      # README・広報用ロゴ
 ├── .github/workflows/test.yml   # GitHub Actions CI
 ├── saitensamurai.spec           # PyInstaller 設定
 ├── build_exe.bat                # exe ビルドスクリプト
@@ -543,7 +545,7 @@ build_exe.bat
 ### spec ファイルの構成 (`saitensamurai.spec`)
 
 - **エントリポイント**: `main_src/marunosuke.py`
-- **同梱データ**: `resources/icon.ico`, `resources/samurai.png`
+- **同梱データ**: `resources/marunosuke-icon.*`, `resources/marunosuke-logo.png`
 - **hiddenimports**: main_src の全モジュール + オプション依存
 - **excludes**: 不要なバックエンド (GTK/Qt/Wx)、テスト、開発ツール等
 - **バイナリ除外**: AVIF/WebP プラグイン DLL、FFmpeg DLL

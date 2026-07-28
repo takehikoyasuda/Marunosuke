@@ -147,7 +147,7 @@ def resource_path(relative_path):
     通常の Python 実行では main_src/ の親ディレクトリを基準にする。
     
     Args:
-        relative_path: リソースへの相対パス (例: "resources/icon.ico")
+        relative_path: リソースへの相対パス (例: "resources/marunosuke-icon.png")
     Returns:
         str: リソースの絶対パス
     """

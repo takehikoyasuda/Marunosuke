@@ -33,8 +33,10 @@ a = Analysis(
     pathex=[MAIN_SRC],
     binaries=[] + _sklearn_binaries + _joblib_binaries,
     datas=[
-        ('resources/icon.ico', 'resources'),
-        ('resources/samurai.png', 'resources'),
+        ('resources/marunosuke-icon.png', 'resources'),
+        ('resources/marunosuke-icon.ico', 'resources'),
+        ('resources/marunosuke-icon.icns', 'resources'),
+        ('resources/marunosuke-logo.png', 'resources'),
         ('resources/digit_classifier.joblib', 'resources'),
     ] + _sklearn_datas + _joblib_datas,
     hiddenimports=[
@@ -243,5 +245,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='resources/icon.ico',
+    icon='resources/marunosuke-icon.ico',
 )

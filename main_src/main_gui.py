@@ -135,11 +135,19 @@ class SaitenSamuraiGUI:
         self.root.title(APP_TITLE)
         self.root.geometry("1100x600")
 
-        # ウィンドウアイコン設定
+        # ウィンドウアイコン設定（PhotoImage は参照を保持しないと破棄される）
+        self._app_icon = None
         try:
-            icon_path = resource_path("resources/icon.ico")
-            if Path(icon_path).exists():
-                self.root.iconbitmap(icon_path)
+            icon_png_path = resource_path("resources/marunosuke-icon.png")
+            if Path(icon_png_path).exists():
+                self._app_icon = tk.PhotoImage(file=icon_png_path)
+                self.root.iconphoto(True, self._app_icon)
+
+            # Windowsではタスクバーとタイトルバー用にICOも指定する。
+            if sys.platform == "win32":
+                icon_ico_path = resource_path("resources/marunosuke-icon.ico")
+                if Path(icon_ico_path).exists():
+                    self.root.iconbitmap(icon_ico_path)
         except Exception:
             pass  # アイコンが見つからない場合はデフォルトのまま
 
