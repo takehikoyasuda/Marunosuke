@@ -181,8 +181,16 @@ def select_roster_gui(parent: Optional[tk.Tk] = None) -> Optional[Dict[str, str]
 
     tk.Label(
         body,
-        text="学籍番号OCRの結果と照合する名簿を読み込みます（任意・列名なし2列）",
+        text="学籍番号OCRの結果と照合する名簿を読み込みます（任意）",
         font=(UI_FONT, get_ui_font_size(10), 'bold'), justify=tk.LEFT,
+    ).pack(anchor=tk.W, pady=(0, 6))
+
+    tk.Label(
+        body,
+        text="Excel・CSVは、1列目を学籍番号、2列目を氏名にしてください。\n"
+             "先頭行の「学籍番号」「氏名」などの見出しセルは不要です。\n"
+             "入力例：  20260001  ｜  山田 太郎",
+        font=(UI_FONT, get_ui_font_size(8)), fg="#555", justify=tk.LEFT,
     ).pack(anchor=tk.W, pady=(0, 10))
 
     # ----- 方法選択ボタン行 -----
@@ -240,23 +248,25 @@ def select_roster_gui(parent: Optional[tk.Tk] = None) -> Optional[Dict[str, str]
         fit_window_to_content(window, min_width=460, min_height=220)
 
     tk.Button(
-        method_row, text="📄 Excelファイルを選択（列名なし2列）", command=_pick_excel,
+        method_row, text="📄 Excelファイルから読み込む", command=_pick_excel,
         font=(UI_FONT, get_ui_font_size(9)),
     ).pack(fill=tk.X, pady=2)
     tk.Button(
-        method_row, text="📄 CSVファイルを選択（列名なし2列）", command=_pick_csv,
+        method_row, text="📄 CSVファイルから読み込む", command=_pick_csv,
         font=(UI_FONT, get_ui_font_size(9)),
     ).pack(fill=tk.X, pady=2)
     tk.Button(
-        method_row, text="📋 Excelの2列をコピペで入力", command=_show_paste_ui,
+        method_row, text="📋 コピー＆ペースト／手入力", command=_show_paste_ui,
         font=(UI_FONT, get_ui_font_size(9)),
     ).pack(fill=tk.X, pady=2)
 
     # ----- コピペ入力UI（初期状態では非表示） -----
     tk.Label(
         paste_frame,
-        text="Excelで「学籍番号」「氏名」の2列を選択してコピーし、下に貼り付けてください\n"
-             "（1行が「学籍番号 → TAB → 氏名」の形式。手入力の場合はTabキーで区切ってください）。",
+        text="Excelなどから、1列目「学籍番号」・2列目「氏名」のデータを貼り付けてください。\n"
+             "「学籍番号」「氏名」という見出し行は含めません。\n"
+             "下の欄へ直接手入力してもOKです（学籍番号と氏名の間はTabキーで区切ります）。\n"
+             "入力例：  20260001  → Tab →  山田 太郎",
         font=(UI_FONT, get_ui_font_size(8)), fg="#555", justify=tk.LEFT,
     ).pack(anchor=tk.W, pady=(0, 6))
 
@@ -295,7 +305,7 @@ def select_roster_gui(parent: Optional[tk.Tk] = None) -> Optional[Dict[str, str]
     ).pack(anchor=tk.E, pady=(10, 0))
 
     window.protocol("WM_DELETE_WINDOW", lambda: _finish(None))
-    fit_window_to_content(window, min_width=460, min_height=220)
+    fit_window_to_content(window, min_width=500, min_height=290)
     window.wait_window()
 
     return result[0]
