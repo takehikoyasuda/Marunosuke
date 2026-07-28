@@ -2075,22 +2075,20 @@ class _SingleQuestionScorer:
         mid_bar = tk.Frame(self._single_frame, bg="#ECEFF1", padx=6, pady=2)
         mid_bar.pack(fill=tk.X)
 
-        # 画像サイズスライダー
+        # 画像ズーム操作（100%は自動フィット）
         self._single_zoom_factor = 100  # % (100 = auto-fit)
         self._single_zoom_after_id: Optional[str] = None
 
         tk.Label(mid_bar, text="🔍", font=(UI_FONT, get_ui_font_size(9)),
                  bg="#ECEFF1").pack(side=tk.LEFT)
-        self._single_zoom_slider = tk.Scale(
-            mid_bar, from_=25, to=300, orient=tk.HORIZONTAL,
-            length=120, sliderlength=14, bg="#ECEFF1",
-            highlightthickness=0,
-            command=self._on_single_zoom_change,
-        )
-        self._single_zoom_slider.set(100)
-        self._single_zoom_slider.pack(side=tk.LEFT, padx=(0, 2))
+        tk.Button(mid_bar, text="－ 縮小", command=lambda: self._change_single_zoom(1 / 1.25),
+                  font=(UI_FONT, get_ui_font_size(8))).pack(side=tk.LEFT, padx=2)
+        tk.Button(mid_bar, text="＋ 拡大", command=lambda: self._change_single_zoom(1.25),
+                  font=(UI_FONT, get_ui_font_size(8))).pack(side=tk.LEFT, padx=2)
+        tk.Button(mid_bar, text="自動フィット", command=self._fit_single_image,
+                  font=(UI_FONT, get_ui_font_size(8))).pack(side=tk.LEFT, padx=2)
         self._single_zoom_label = tk.Label(
-            mid_bar, text="100%",
+            mid_bar, text="自動フィット",
             font=(UI_FONT, get_ui_font_size(8)), fg="#555", bg="#ECEFF1",
         )
         self._single_zoom_label.pack(side=tk.LEFT, padx=(0, 8))
@@ -2308,6 +2306,11 @@ class _SingleQuestionScorer:
         self._canvas_yscroll.pack(side=tk.RIGHT, fill=tk.Y)
         self._canvas_xscroll.pack(side=tk.BOTTOM, fill=tk.X)
         self.canvas.pack(fill=tk.BOTH, expand=True)
+        self.canvas.bind("<Configure>", self._on_single_canvas_resize, add="+")
+        self.canvas.bind("<ButtonPress-1>", self._start_single_pan, add="+")
+        self.canvas.bind("<B1-Motion>", self._drag_single_pan, add="+")
+        self.canvas.bind("<ButtonRelease-1>", self._end_single_pan, add="+")
+        self.canvas.bind("<Double-Button-1>", self._show_magnifier, add="+")
         # マウスホイールでスクロール（1枚ずつモード）
         self.canvas.bind("<MouseWheel>",
                          lambda e: self.canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
@@ -3206,6 +3209,60 @@ class _SingleQuestionScorer:
             self._win.after_cancel(self._single_zoom_after_id)
         self._single_zoom_after_id = self._win.after(100, self._show_current)
 
+    def _change_single_zoom(self, factor: float):
+        current = self._single_zoom_factor if self._single_zoom_factor != 100 else 100
+        self._single_zoom_factor = max(25, min(400, int(round(current * factor))))
+        self._single_zoom_label.config(text=f"{self._single_zoom_factor}%")
+        self._show_current()
+
+    def _fit_single_image(self):
+        self._single_zoom_factor = 100
+        self._single_zoom_label.config(text="自動フィット")
+        self._show_current()
+
+    def _on_single_canvas_resize(self, _event=None):
+        # ウィンドウサイズ変更時は自動フィットを常に再計算する。
+        if self._single_zoom_factor == 100 and self._win:
+            if self._single_zoom_after_id:
+                self._win.after_cancel(self._single_zoom_after_id)
+            self._single_zoom_after_id = self._win.after(80, self._show_current)
+
+    def _start_single_pan(self, event):
+        self.canvas.scan_mark(event.x, event.y)
+
+    def _drag_single_pan(self, event):
+        if self._single_zoom_factor > 100:
+            self.canvas.scan_dragto(event.x, event.y, gain=1)
+
+    def _end_single_pan(self, _event):
+        pass
+
+    def _show_magnifier(self, event):
+        """ダブルクリック位置に、その部分だけを拡大した虫眼鏡枠を表示する。"""
+        image = getattr(self, "_display_pil_image", None)
+        item = getattr(self, "_single_image_item", None)
+        if image is None or item is None:
+            return "break"
+        if self.canvas.find_withtag("magnifier"):
+            self.canvas.delete("magnifier")
+            return "break"
+        x = self.canvas.canvasx(event.x)
+        y = self.canvas.canvasy(event.y)
+        left, top, right, bottom = self.canvas.bbox(item)
+        ix = int((x - left) * image.width / max(right - left, 1))
+        iy = int((y - top) * image.height / max(bottom - top, 1))
+        radius = 70
+        crop = image.crop((max(0, ix - radius), max(0, iy - radius),
+                           min(image.width, ix + radius), min(image.height, iy + radius)))
+        crop = crop.resize((220, 220), Image.Resampling.LANCZOS)
+        photo = ImageTk.PhotoImage(crop, master=self._win)
+        self._magnifier_photo = photo
+        self.canvas.create_rectangle(x - 112, y - 112, x + 112, y + 112,
+                                     outline="#1976D2", width=3, fill="white",
+                                     tags="magnifier")
+        self.canvas.create_image(x, y, image=photo, anchor=tk.CENTER, tags="magnifier")
+        return "break"
+
     def _show_current(self):
         """現在の画像を表示"""
         if not self.filenames:
@@ -3284,6 +3341,7 @@ class _SingleQuestionScorer:
                 new_h = max(1, int(pil_img.height * ratio))
             pil_img = pil_img.resize((new_w, new_h), Image.LANCZOS)
 
+            self._display_pil_image = pil_img.copy()
             tk_img = ImageTk.PhotoImage(pil_img, master=self._win)
             # LRU キャッシュ: 古い画像を解放してメモリ消費を抑制
             # ズーム変更時はキャッシュを無効化するためキーにズーム%を含める
@@ -3300,13 +3358,13 @@ class _SingleQuestionScorer:
             # ズーム拡大時はスクロール領域を設定
             if new_w > canvas_w or new_h > canvas_h:
                 self.canvas.configure(scrollregion=(0, 0, new_w, new_h))
-                self.canvas.create_image(
+                self._single_image_item = self.canvas.create_image(
                     new_w // 2, new_h // 2,
                     image=tk_img, anchor=tk.CENTER,
                 )
             else:
                 self.canvas.configure(scrollregion=(0, 0, canvas_w, canvas_h))
-                self.canvas.create_image(
+                self._single_image_item = self.canvas.create_image(
                     canvas_w // 2, canvas_h // 2,
                     image=tk_img, anchor=tk.CENTER,
                 )
