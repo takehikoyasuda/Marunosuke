@@ -14,7 +14,7 @@
     <img src="https://img.shields.io/badge/%E3%83%89%E3%82%AD%E3%83%A5%E3%83%A1%E3%83%B3%E3%83%88-Windows%E7%89%88-F5921B?style=for-the-badge" alt="ドキュメント (Windows版)">
   </a>
   <a href="LICENSE">
-    <img src="https://img.shields.io/github/license/takehikoyasuda/SaitenSamurai-mac?style=for-the-badge&color=gray" alt="License">
+    <img src="https://img.shields.io/github/license/takehikoyasuda/Marunosuke?style=for-the-badge&color=gray" alt="License">
   </a>
 </p>
 
@@ -102,8 +102,8 @@
 ### ソースから実行
 
 ```bash
-git clone https://github.com/takehikoyasuda/SaitenSamurai-mac.git
-cd SaitenSamurai-mac
+git clone https://github.com/takehikoyasuda/Marunosuke.git
+cd Marunosuke
 
 # Tkinter が有効な Python であることを確認（エラーが出たら下の「補足」を参照）
 python3 -c "import tkinter"

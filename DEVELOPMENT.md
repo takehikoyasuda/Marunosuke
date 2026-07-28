@@ -21,8 +21,8 @@
 ## 開発環境のセットアップ
 
 ```bash
-git clone https://github.com/takehikoyasuda/SaitenSamurai-mac.git
-cd SaitenSamurai-mac
+git clone https://github.com/takehikoyasuda/Marunosuke.git
+cd Marunosuke
 pip install -r requirements.txt
 ```
 

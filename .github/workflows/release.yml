@@ -97,7 +97,7 @@ jobs:
 
             ---
 
-            :book: [ドキュメント（Windows版）](https://phys-ken.github.io/SaitenSamurai/) | :beetle: [バグ報告](https://github.com/takehikoyasuda/SaitenSamurai-mac/issues)
+            :book: [ドキュメント（Windows版）](https://phys-ken.github.io/SaitenSamurai/) | :beetle: [バグ報告](https://github.com/takehikoyasuda/Marunosuke/issues)
           draft: false
           # タグ名にハイフンを含む場合(例: v0.2.0-beta.1)はPre-releaseとして公開する。
           # Pre-releaseは /releases/latest に含まれず、一般ユーザーの導線に影響しない
