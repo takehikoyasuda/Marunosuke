@@ -84,8 +84,8 @@ class TestInitialState:
     def test_window_title(self):
         """ウィンドウタイトルが設定されている"""
         title = self.root.title()
-        assert "採点侍" in title
-        assert "v4." in title
+        assert "マル之助" in title
+        assert "v0.1.0" in title
 
     def test_window_geometry(self):
         """初期サイズが設定されている"""

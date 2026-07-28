@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-採点侍 (SaitenSamurai) — 記述式答案の採点支援アプリケーション
+マル之助 (Marunosuke) — 記述式答案の採点支援アプリケーション
 
 モジュール構成:
   constants.py          : 共通定数・ユーティリティ
@@ -81,6 +81,7 @@ import tkinter as tk
 
 # 共通定数・ユーティリティ
 from constants import (
+    APP_NAME,
     setup_logging,
     safe_print, extract_pdf_to_images, combine_images_to_pdf,
     HAS_PYMUPDF, fitz,
@@ -188,7 +189,7 @@ if __name__ == '__main__':
         try:
             with open(log_path, "a", encoding="utf-8") as f:
                 f.write(f"\n{'='*60}\n")
-                f.write(f"[{timestamp}] 採点侍 クラッシュレポート\n")
+                f.write(f"[{timestamp}] {APP_NAME} クラッシュレポート\n")
                 f.write(f"{'='*60}\n")
                 f.write(f"Python: {sys.version}\n")
                 f.write(f"Frozen: {getattr(sys, 'frozen', False)}\n")
@@ -211,7 +212,7 @@ if __name__ == '__main__':
                 root.withdraw()
 
             messagebox.showerror(
-                "採点侍 - エラー",
+                f"{APP_NAME} - エラー",
                 f"アプリケーションの起動中にエラーが発生しました。\n\n"
                 f"エラー: {type(e).__name__}: {e}\n\n"
                 f"詳細ログ:\n{log_path}\n\n"

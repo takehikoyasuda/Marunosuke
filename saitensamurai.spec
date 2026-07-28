@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-採点侍 (SaitenSamurai) — PyInstaller spec ファイル
+マル之助 (Marunosuke) — PyInstaller spec ファイル
 
 ビルド方法:
   build_exe.bat を実行するか、以下のコマンドを実行:
@@ -21,12 +21,12 @@ _joblib_datas, _joblib_binaries, _joblib_hiddenimports = collect_all('joblib')
 # main_src をインポートパスに追加
 MAIN_SRC = os.path.join(os.path.dirname(os.path.abspath(SPEC)), 'main_src')
 
-# saitensamurai.py からバージョンを読み取り、exe 名に付与
-_version_file = os.path.join(MAIN_SRC, 'saitensamurai.py')
+# constants.py をアプリ情報の唯一の管理元として、exe 名に反映
+_version_file = os.path.join(MAIN_SRC, 'constants.py')
 with open(_version_file, 'r', encoding='utf-8') as _f:
-    _m = re.search(r'バージョン:\s*(\S+)', _f.read())
+    _m = re.search(r'^APP_VERSION\s*=\s*["\']([^"\']+)["\']', _f.read(), re.MULTILINE)
     _version = _m.group(1) if _m else 'unknown'
-EXE_NAME = f'SaitenSamurai_v{_version}'
+EXE_NAME = f'Marunosuke_v{_version}'
 
 a = Analysis(
     ['main_src/saitensamurai.py'],

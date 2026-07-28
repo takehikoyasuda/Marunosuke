@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-採点侍 (SaitenSamurai) メインGUIモジュール
+マル之助 (Marunosuke) メインGUIモジュール
 
 SaitenSamuraiGUI クラスを提供する。マークシート解析・採点・チェックの
 統合GUIウィンドウを構築し、各処理パイプラインを制御する。
@@ -33,7 +33,7 @@ from PIL import Image, ImageDraw, ImageFont
 from constants import (
     safe_print, extract_pdf_to_images, combine_images_to_pdf,
     HAS_PYMUPDF,
-    APP_VERSION,
+    APP_TITLE,
     RESULTS_FOLDER, BOXED_FOLDER, CLEAN_FOLDER, RESULTS_DATA_FOLDER,
     SCORED_FOLDER, FINAL_REPORT_FOLDER,
     ANSWER_KEY_FILE,
@@ -127,12 +127,12 @@ class _ToolTip:
 # ========================================
 
 class SaitenSamuraiGUI:
-    """採点侍 統合GUIクラス"""
+    """マル之助 統合GUIクラス（クラス名は後方互換のため維持）。"""
     def __init__(self, root, restore_session_path=None):
         self.root = root
         self._restore_session_path = restore_session_path  # 起動時復元用
 
-        self.root.title(f"採点侍 v{APP_VERSION} — 記述採点")
+        self.root.title(APP_TITLE)
         self.root.geometry("1100x600")
 
         # ウィンドウアイコン設定
@@ -246,8 +246,7 @@ class SaitenSamuraiGUI:
         title_row = tk.Frame(controls_frame, bg=BG_COLOR)
         title_row.pack(fill=tk.X, pady=(0, 5))
 
-        title_text = f"採点侍 v{APP_VERSION} — 記述採点"
-        tk.Label(title_row, text=title_text, font=FONT_TITLE, fg="#1976D2", bg=BG_COLOR).pack(side=tk.LEFT)
+        tk.Label(title_row, text=APP_TITLE, font=FONT_TITLE, fg="#1976D2", bg=BG_COLOR).pack(side=tk.LEFT)
         tk.Button(
             title_row, text="📂 前回の状態を復元",
             command=self._restore_session_interactive,

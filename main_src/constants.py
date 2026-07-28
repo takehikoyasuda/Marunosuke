@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-constants.py — 採点侍 共通定数・ユーティリティ
+constants.py — マル之助 共通定数・ユーティリティ
 
 全モジュールが参照する定数と、汎用ユーティリティ関数を集約。
 循環importを防止する基盤モジュール（他モジュールに依存しない）。
@@ -32,10 +32,12 @@ except ImportError:
 # 共通定数定義
 # ========================================
 
-# アプリケーションバージョン（一元管理）
-# ※ saitensamurai.py 冒頭docstringの「バージョン:」も合わせて更新すること
-#   (saitensamurai.spec がそこから exe 名を生成する)
-APP_VERSION = "4.7.0-beta.1"
+# アプリケーション情報（一元管理）
+# バージョンは Semantic Versioning（MAJOR.MINOR.PATCH）に従う。
+APP_NAME = "マル之助"
+APP_NAME_EN = "Marunosuke"
+APP_VERSION = "0.1.0"
+APP_TITLE = f"{APP_NAME} v{APP_VERSION}"
 
 # Mark2の基準サイズ (A4: 595x842ポイント)
 MARK2_WIDTH = 595

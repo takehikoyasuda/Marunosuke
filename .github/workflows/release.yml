@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "リリースするタグ名 (例: v4.7.0)"
+        description: "リリースするタグ名 (例: v0.1.0)"
         required: true
 
 permissions:
@@ -55,9 +55,9 @@ jobs:
       - name: Detect exe name
         id: exe-name
         run: |
-          $exe = Get-ChildItem "dist/SaitenSamurai_v*.exe" | Select-Object -First 1
+          $exe = Get-ChildItem "dist/Marunosuke_v*.exe" | Select-Object -First 1
           if (!$exe) {
-            Write-Error "SaitenSamurai_v*.exe not found in dist/"
+            Write-Error "Marunosuke_v*.exe not found in dist/"
             exit 1
           }
           $size = $exe.Length / 1MB
@@ -68,9 +68,9 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          name: "採点侍 ${{ github.event.inputs.tag }}"
+          name: "マル之助 ${{ github.event.inputs.tag }}"
           body: |
-            ## 採点侍 ${{ github.event.inputs.tag }}
+            ## マル之助 ${{ github.event.inputs.tag }}
 
             ### ダウンロード
 
@@ -99,7 +99,7 @@ jobs:
 
             :book: [ドキュメント（Windows版）](https://phys-ken.github.io/SaitenSamurai/) | :beetle: [バグ報告](https://github.com/takehikoyasuda/SaitenSamurai-mac/issues)
           draft: false
-          # タグ名にハイフンを含む場合(例: v4.6.0-beta.1)はPre-releaseとして公開する。
+          # タグ名にハイフンを含む場合(例: v0.2.0-beta.1)はPre-releaseとして公開する。
           # Pre-releaseは /releases/latest に含まれず、一般ユーザーの導線に影響しない
           prerelease: ${{ contains(github.event.inputs.tag, '-') }}
           files: dist/${{ steps.exe-name.outputs.EXE_NAME }}

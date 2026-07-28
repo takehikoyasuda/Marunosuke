@@ -26,6 +26,17 @@ cd SaitenSamurai-mac
 pip install -r requirements.txt
 ```
 
+### アプリ名とバージョン
+
+- 表示名は `main_src/constants.py` の `APP_NAME` / `APP_NAME_EN` で管理します。
+- バージョンは同ファイルの `APP_VERSION` だけを更新します。
+- バージョンは Semantic Versioning の `MAJOR.MINOR.PATCH` 形式を使用します。
+- `0.x.y` は正式安定版前、`1.0.0` 以降は後方互換性を意識した安定版とします。
+- 修正のみは PATCH、後方互換のある機能追加は MINOR、互換性を壊す変更は
+  `1.0.0` 以降に MAJOR を上げます。
+- GitHub のリリースタグには、バージョンの先頭に `v` を付けます
+  （例：アプリバージョン `0.1.0`、タグ `v0.1.0`）。
+
 ### 型チェック
 
 `pyrightconfig.json` で `main_src/` がインポートパスに設定されています。
@@ -521,7 +532,7 @@ PyMuPDF, matplotlib, reportlab はオプション扱いです。
 build_exe.bat
 ```
 
-出力: `dist/SaitenSamurai.exe`
+出力: `dist/Marunosuke_v<バージョン>.exe`
 
 ### 仕組み
 
