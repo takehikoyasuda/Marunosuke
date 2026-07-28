@@ -1334,7 +1334,7 @@ class DescriptiveScorerGUI:
     def _show_question_list(self):
         """問題一覧・採点進捗画面（モーダル）"""
         win = tk.Toplevel(self.parent)
-        win.title("記述問題 採点")
+        win.title("採点")
         win.geometry("600x520")
         win.resizable(True, True)
         win.minsize(500, 350)
@@ -3724,6 +3724,13 @@ class DescriptiveReviewGUI:
         self.scores = {k: dict(v) for k, v in scores.items()}  # deep copy
         self.boxed_folder = Path(boxed_folder)
         self.scores_save_path = scores_save_path
+        self.annotations_path = str(Path(scores_save_path).parent / DESCRIPTIVE_ANNOTATIONS_FILE)
+        self.annotations = load_descriptive_annotations(self.annotations_path)
+        try:
+            from roster_config import ROSTER_CONFIG_FILE, load_roster_config
+            self.roster = load_roster_config(str(Path(scores_save_path).parent / ROSTER_CONFIG_FILE)) or {}
+        except Exception:
+            self.roster = {}
         self.original_image_folder = original_image_folder
         self.questions = config.get("questions", [])
         self.modified = False
@@ -3750,7 +3757,7 @@ class DescriptiveReviewGUI:
 
     def _build_gui(self):
         self.win = tk.Toplevel(self.parent)
-        self.win.title("🔎 記述採点の確認・修正")
+        self.win.title("🔎 採点の確認・修正")
         self.win.geometry("1100x700")
         self.win.configure(bg="#F5F7FA")
         self.win.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -3779,6 +3786,17 @@ class DescriptiveReviewGUI:
         )
         self._filter_combo.pack(side=tk.LEFT, padx=3)
         self._filter_combo.bind("<<ComboboxSelected>>", lambda e: self._refresh_grid())
+
+        display_frame = tk.Frame(left, bg="#F5F7FA")
+        display_frame.pack(fill=tk.X, pady=(3, 0))
+        tk.Label(display_frame, text="表示:", bg="#F5F7FA", font=("", 9)).pack(side=tk.LEFT)
+        self._display_mode_var = tk.StringVar(value="画像一覧")
+        display_combo = ttk.Combobox(
+            display_frame, textvariable=self._display_mode_var,
+            values=["画像一覧", "テキスト一覧"], state="readonly", width=14,
+        )
+        display_combo.pack(side=tk.LEFT, padx=3)
+        display_combo.bind("<<ComboboxSelected>>", lambda e: self._on_display_mode_changed())
 
         # 並び順
         sort_frame = tk.Frame(left, bg="#F5F7FA")
@@ -3811,19 +3829,16 @@ class DescriptiveReviewGUI:
 
         # ズームスライダー
         zoom_bar = tk.Frame(right, bg="#37474F", padx=10, pady=4)
+        self._review_zoom_bar = zoom_bar
         zoom_bar.pack(fill=tk.X)
 
         tk.Label(zoom_bar, text="🔍 サイズ:",
                  font=(UI_FONT, get_ui_font_size(9)), bg="#37474F", fg="white"
                  ).pack(side=tk.LEFT)
-        self._review_zoom_slider = tk.Scale(
-            zoom_bar, from_=80, to=800, orient=tk.HORIZONTAL,
-            length=200, bg="#37474F", fg="#FFD54F", troughcolor="#546E7A",
-            highlightthickness=0, sliderlength=20,
-            command=self._on_review_zoom_change,
-        )
-        self._review_zoom_slider.set(self._thumb_size)
-        self._review_zoom_slider.pack(side=tk.LEFT, padx=5)
+        tk.Button(zoom_bar, text="－ 縮小", command=lambda: self._change_review_zoom(0.8),
+                  font=(UI_FONT, get_ui_font_size(8))).pack(side=tk.LEFT, padx=4)
+        tk.Button(zoom_bar, text="＋ 拡大", command=lambda: self._change_review_zoom(1.25),
+                  font=(UI_FONT, get_ui_font_size(8))).pack(side=tk.LEFT, padx=4)
 
         self._review_zoom_label = tk.StringVar(value=f"{self._thumb_size}px")
         tk.Label(zoom_bar, textvariable=self._review_zoom_label,
@@ -3854,6 +3869,21 @@ class DescriptiveReviewGUI:
         if self.questions:
             self._q_listbox.selection_set(0)
             self._on_question_selected(None)
+
+    def _on_display_mode_changed(self):
+        if self._display_mode_var.get() == "画像一覧":
+            self._review_zoom_bar.pack(fill=tk.X, before=self._canvas)
+        else:
+            self._review_zoom_bar.pack_forget()
+        self._refresh_grid()
+
+    def _change_review_zoom(self, factor: float):
+        self._thumb_size = max(100, min(800, int(round(self._thumb_size * factor))))
+        self._review_zoom_label.set(f"{self._thumb_size}px")
+        self._thumb_cache.clear()
+        self._photo_refs.clear()
+        self._grid_cols = max(1, self._canvas.winfo_width() // (self._thumb_size + 14))
+        self._refresh_grid()
 
     # ----------------------------------------------------------
     # イベントハンドラ
@@ -3928,7 +3958,7 @@ class DescriptiveReviewGUI:
         q = self.questions[self._current_q_idx]
         # フィルタ更新: セマンティックフィルタ + 数値フィルタ
         vals = [
-            "全て", "○ 満点", "× 0点", "△ 中間点", "未採点",
+            "全て", "○ 満点", "× 0点", "△ 中間点", "未採点", "保留",
         ] + [str(s) for s in range(q["max_score"] + 1)]
         self._filter_combo.config(values=vals)
         self._filter_var.set("全て")
@@ -3962,6 +3992,9 @@ class DescriptiveReviewGUI:
                 filtered.append((fname, sc))
             elif filter_val == "未採点":
                 if sc is None:
+                    filtered.append((fname, sc))
+            elif filter_val == "保留":
+                if self.annotations.get("answers", {}).get(fname, {}).get(qid, {}).get("held", False):
                     filtered.append((fname, sc))
             elif filter_val == "○ 満点":
                 if sc is not None and sc >= max_score:
@@ -4003,6 +4036,10 @@ class DescriptiveReviewGUI:
         cols = max(1, canvas_w // (self._thumb_size + 14))
         self._grid_cols = cols
 
+        if self._display_mode_var.get() == "テキスト一覧":
+            self._render_text_table(filtered, qid, max_score)
+            return
+
         # グリッド生成
         for idx, (fname, sc) in enumerate(filtered):
             row, col = divmod(idx, cols)
@@ -4021,15 +4058,24 @@ class DescriptiveReviewGUI:
                             padx=3, pady=3)
             cell.grid(row=row, column=col, padx=4, pady=4, sticky="nsew")
 
-            # サムネイル画像
-            thumb = self._get_thumb(fname, qid)
-            if thumb:
-                self._photo_refs.append(thumb)
-                img_label = tk.Label(cell, image=thumb, bg=card_bg, cursor="hand2")
-                img_label.pack()
-                img_label.bind("<Button-1>", lambda e, f=fname, q_=qid, ms=max_score: self._edit_score(f, q_, ms))
+            annotation = self.annotations.get("answers", {}).get(fname, {}).get(qid, {})
+            memo_preview = self._annotation_preview(annotation.get("memo", ""))
+            comment_preview = self._annotation_preview(annotation.get("comment", ""))
+
+            if self._display_mode_var.get() == "テキスト一覧":
+                cell.grid_configure(sticky="ew")
+                tk.Label(cell, text=fname, bg=card_bg, anchor=tk.W,
+                         font=(UI_FONT, get_ui_font_size(9), "bold")).pack(fill=tk.X)
             else:
-                tk.Label(cell, text="(画像なし)", bg=card_bg, fg="#999").pack()
+                # サムネイル画像
+                thumb = self._get_thumb(fname, qid)
+                if thumb:
+                    self._photo_refs.append(thumb)
+                    img_label = tk.Label(cell, image=thumb, bg=card_bg, cursor="hand2")
+                    img_label.pack()
+                    img_label.bind("<Button-1>", lambda e, f=fname, q_=qid, ms=max_score: self._edit_score(f, q_, ms))
+                else:
+                    tk.Label(cell, text="(画像なし)", bg=card_bg, fg="#999").pack()
 
             # ファイル名（省略表示）
             display_name = fname[:20] + "…" if len(fname) > 20 else fname
@@ -4046,6 +4092,32 @@ class DescriptiveReviewGUI:
             score_lbl.pack()
             score_lbl.bind("<Button-1>", lambda e, f=fname, q_=qid, ms=max_score: self._edit_score(f, q_, ms))
 
+            annotation = self.annotations.get("answers", {}).get(fname, {}).get(qid, {})
+            badges = []
+            if annotation.get("held"):
+                badges.append("⏸ 保留")
+            if annotation.get("memo"):
+                badges.append("📝 メモ")
+            if annotation.get("comment"):
+                badges.append("💬 コメント")
+            tk.Label(cell, text="  ".join(badges) or "注釈なし", bg=card_bg,
+                     fg="#AD1457" if annotation.get("held") else "#777",
+                     font=(UI_FONT, get_ui_font_size(8))).pack()
+            tk.Label(cell, text=f"メモ: {memo_preview or '—'}", bg=card_bg,
+                     fg="#5D4037", anchor=tk.W, justify=tk.LEFT,
+                     wraplength=self._thumb_size).pack(fill=tk.X)
+            tk.Label(cell, text=f"コメント: {comment_preview or '—'}", bg=card_bg,
+                     fg="#37474F", anchor=tk.W, justify=tk.LEFT,
+                     wraplength=self._thumb_size).pack(fill=tk.X)
+            tk.Button(cell, text="採点画面へ",
+                      command=lambda q_=qid: self._open_scoring_screen(q_),
+                      font=(UI_FONT, get_ui_font_size(7))).pack(side=tk.LEFT, pady=(2, 0))
+            tk.Button(cell, text="注釈を編集",
+                      command=lambda f=fname, q_=qid: self._edit_annotation(f, q_),
+                      font=(UI_FONT, get_ui_font_size(7))).pack(side=tk.LEFT, padx=(3, 0), pady=(2, 0))
+            cell.bind("<Double-Button-1>",
+                      lambda e, f=fname, q_=qid, ms=max_score: self._edit_score(f, q_, ms))
+
             # 元画像を開くリンク
             open_lbl = tk.Label(cell, text="📷開く", bg=card_bg, fg="#1976D2",
                                 font=(UI_FONT, get_ui_font_size(8), "underline"), cursor="hand2")
@@ -4055,6 +4127,58 @@ class DescriptiveReviewGUI:
         # グリッド列の伸縮設定
         for c in range(cols):
             self._grid_frame.columnconfigure(c, weight=1)
+
+    @staticmethod
+    def _annotation_preview(value: str, limit: int = 80) -> str:
+        """一覧用に改行を整え、長文を先頭だけ表示する。"""
+        text = str(value or "").replace("\n", " / ").strip()
+        return text if len(text) <= limit else text[:limit] + "…"
+
+    def _render_text_table(self, filtered, qid: str, max_score: int):
+        """答案1件を1行に表示する表形式の一覧を描画する。"""
+        columns = ["氏名", "学籍番号", "ファイル名", "得点", "状態", "保留", "教員用メモ", "生徒コメント", "操作"]
+        widths = [14, 12, 24, 8, 10, 8, 28, 28, 16]
+        for col, (name, width) in enumerate(zip(columns, widths)):
+            tk.Label(self._grid_frame, text=name, bg="#455A64", fg="white",
+                     font=(UI_FONT, get_ui_font_size(8), "bold"), width=width,
+                     anchor=tk.W, padx=4, pady=5).grid(row=0, column=col, sticky="nsew")
+
+        for row, (fname, score) in enumerate(filtered, start=1):
+            annotation = self.annotations.get("answers", {}).get(fname, {}).get(qid, {})
+            student_id, student_name = self._identity_for_filename(fname)
+            bg = "#FFF8E1" if row % 2 else "#FFFFFF"
+            values = [
+                student_name, student_id, fname,
+                f"{score} / {max_score}" if score is not None else "未採点",
+                "採点済み" if score is not None else "未採点",
+                "保留" if annotation.get("held") else "",
+                self._annotation_preview(annotation.get("memo", ""), 56) or "—",
+                self._annotation_preview(annotation.get("comment", ""), 56) or "—",
+            ]
+            for col, (value, width) in enumerate(zip(values, widths[:-1])):
+                label = tk.Label(self._grid_frame, text=value, bg=bg,
+                                 anchor=tk.W, justify=tk.LEFT, width=width,
+                                 padx=4, pady=5, wraplength=width * 7)
+                label.grid(row=row, column=col, sticky="nsew")
+                label.bind("<Double-Button-1>",
+                           lambda e, q_=qid: self._open_scoring_screen(q_))
+            actions = tk.Frame(self._grid_frame, bg=bg)
+            actions.grid(row=row, column=len(columns) - 1, sticky="nsew")
+            tk.Button(actions, text="採点", command=lambda q_=qid: self._open_scoring_screen(q_),
+                      font=(UI_FONT, get_ui_font_size(7))).pack(side=tk.LEFT, padx=2, pady=2)
+            tk.Button(actions, text="注釈", command=lambda f=fname, q_=qid: self._edit_annotation(f, q_),
+                      font=(UI_FONT, get_ui_font_size(7))).pack(side=tk.LEFT, padx=2, pady=2)
+
+        for col in range(len(columns)):
+            self._grid_frame.columnconfigure(col, weight=1 if col in (0, 4, 5) else 0)
+
+    def _identity_for_filename(self, fname: str):
+        """ファイル名から名簿情報を取得できる場合だけ氏名・番号を補う。"""
+        stem = Path(fname).stem
+        for student_id, name in self.roster.items():
+            if str(student_id) == stem or str(student_id) in stem:
+                return str(student_id), str(name)
+        return "未取得", "未取得"
 
     def _get_thumb(self, fname: str, qid: str):
         """指定ファイル・設問の切り出しサムネイルを取得"""
@@ -4205,6 +4329,59 @@ class DescriptiveReviewGUI:
         fit_window_to_content(dialog, min_width=350, min_height=min_h)
         dialog.wait_window()
 
+    def _edit_annotation(self, fname: str, qid: str):
+        annotation = self.annotations.setdefault("answers", {}).setdefault(fname, {}).setdefault(
+            qid, {"memo": "", "comment": "", "held": False})
+        dialog = tk.Toplevel(self.win)
+        dialog.title(f"注釈編集: {fname}")
+        dialog.transient(self.win)
+        frame = tk.Frame(dialog, padx=12, pady=10)
+        frame.pack(fill=tk.BOTH, expand=True)
+        tk.Label(frame, text="教員用メモ").pack(anchor=tk.W)
+        memo = tk.Text(frame, width=45, height=4)
+        memo.pack(fill=tk.X)
+        memo.insert("1.0", annotation.get("memo", ""))
+        tk.Label(frame, text="生徒へのコメント").pack(anchor=tk.W, pady=(6, 0))
+        comment = tk.Text(frame, width=45, height=3)
+        comment.pack(fill=tk.X)
+        comment.insert("1.0", annotation.get("comment", ""))
+        held = tk.BooleanVar(value=bool(annotation.get("held", False)))
+        tk.Checkbutton(frame, text="保留", variable=held).pack(anchor=tk.W)
+
+        def save():
+            annotation["memo"] = memo.get("1.0", "end-1c")
+            annotation["comment"] = comment.get("1.0", "end-1c").strip()
+            annotation["held"] = held.get()
+            self.modified = True
+            save_descriptive_annotations(self.annotations_path, self.annotations)
+            dialog.destroy()
+            self._refresh_grid()
+
+        tk.Button(frame, text="保存", command=save, bg="#81C784").pack(side=tk.LEFT, pady=8)
+        tk.Button(frame, text="キャンセル", command=dialog.destroy).pack(side=tk.LEFT, padx=5, pady=8)
+        fit_window_to_content(dialog, min_width=420, min_height=300)
+        dialog.grab_set()
+
+    def _open_scoring_screen(self, qid: str):
+        """一覧から選択中の設問の通常採点画面へ移動する。"""
+        q_config = next((q for q in self.questions if q["id"] == qid), None)
+        if not q_config:
+            return
+        image_paths = {fname: str(self.boxed_folder / fname) for fname in self._image_files}
+        scorer = _SingleQuestionScorer(
+            parent=self.win, question_config=q_config, image_paths=image_paths,
+            existing_scores=self.scores, initial_mode="1枚ずつ",
+            image_folder=str(self.boxed_folder), annotations=self.annotations,
+            annotations_save_callback=lambda: save_descriptive_annotations(
+                self.annotations_path, self.annotations),
+        )
+        result = scorer.run()
+        if result is not None:
+            for fname, scores in result.items():
+                self.scores.setdefault(fname, {}).update(scores)
+            self.modified = True
+            self._refresh_grid()
+
     def _save(self):
         """変更を保存。成功時 True、失敗時 False を返す。"""
         if not self.modified:
@@ -4214,6 +4391,7 @@ class DescriptiveReviewGUI:
         try:
             save_data = {"version": 1, "scores": self.scores}
             atomic_json_save(self.scores_save_path, save_data)
+            save_descriptive_annotations(self.annotations_path, self.annotations)
             self.modified = False
             messagebox.showinfo("保存完了", "採点結果を保存しました。", parent=self.win)
             return True

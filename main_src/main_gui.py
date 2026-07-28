@@ -28,6 +28,31 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 from PIL import Image, ImageDraw, ImageFont
 
+
+def _askyesno_japanese(title, message, **kwargs):
+    """OSロケールに依存せず、確認ボタンを「はい／いいえ」で表示する。"""
+    parent = kwargs.get("parent") or tk._default_root
+    dialog = tk.Toplevel(parent)
+    dialog.title(title)
+    dialog.transient(parent)
+    result = {"value": False}
+    tk.Label(dialog, text=message, justify=tk.LEFT, wraplength=460,
+             padx=20, pady=16).pack(fill=tk.BOTH, expand=True)
+    buttons = tk.Frame(dialog)
+    buttons.pack(pady=(0, 14))
+    tk.Button(buttons, text="はい", width=10,
+              command=lambda: (result.update(value=True), dialog.destroy())).pack(side=tk.LEFT, padx=5)
+    tk.Button(buttons, text="いいえ", width=10,
+              command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+    dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
+    dialog.grab_set()
+    dialog.wait_window()
+    return result["value"]
+
+
+# アプリ内の確認ダイアログは日本語ボタンを統一して使う。
+messagebox.askyesno = _askyesno_japanese
+
 # 共通定数・ユーティリティ（constants.pyから）
 from constants import (
     safe_print, extract_pdf_to_images, combine_images_to_pdf,
@@ -44,6 +69,7 @@ from constants import (
     resource_path,
     MODE_DESCRIPTIVE_ONLY,
     atomic_json_save, load_json_safe,
+    get_app_temp_dir,
     open_in_file_manager, get_ui_font_family, get_ui_font_size,
     number_to_circled,
 )
@@ -133,6 +159,10 @@ class MarunosukeGUI:
 
         self.root.title(APP_TITLE)
         self.root.geometry("1100x600")
+        self.root.lift()
+        self.root.attributes("-topmost", True)
+        self.root.after(250, lambda: self.root.attributes("-topmost", False))
+        self.root.after(300, self.root.focus_force)
 
         # ウィンドウアイコン設定（PhotoImage は参照を保持しないと破棄される）
         self._app_icon = None
@@ -348,7 +378,7 @@ class MarunosukeGUI:
 
         # 記述採点ボタン
         self.desc_scoring_btn = tk.Button(
-            step2, text="✏ 記述採点",
+            step2, text="✏ 採点",
             command=self.run_descriptive_scoring,
             bg="#B39DDB", **BTN_STYLE,
         )
@@ -375,7 +405,7 @@ class MarunosukeGUI:
 
         # --- 採点確認ボタン（α: 記述採点の確認機能） ---
         self._btn_desc_review = tk.Button(
-            step2, text="🔎 記述採点の確認",
+            step2, text="🔎 採点の確認",
             command=self._open_descriptive_review,
             bg="#E1BEE7", **BTN_STYLE,
         )
@@ -1336,6 +1366,11 @@ class MarunosukeGUI:
             return None
         return Path(img_folder) / RESULTS_FOLDER / RESULTS_DATA_FOLDER / SESSION_STATE_FILE
 
+    def _get_last_session_pointer(self):
+        # OSの一時領域は再起動・環境によって変わることがあるため、
+        # ユーザー領域に固定して前回パスを保持する。
+        return Path.home() / ".marunosuke_last_session.json"
+
     def _save_session_state(self):
         """現在のGUI状態を session_state.json に保存する"""
         session_path = self._get_session_state_path()
@@ -1356,6 +1391,7 @@ class MarunosukeGUI:
 
         try:
             atomic_json_save(session_path, state)
+            atomic_json_save(self._get_last_session_pointer(), {"path": str(session_path)})
         except Exception as e:
             self.log_message(f"⚠ セッション保存失敗: {e}")
 
@@ -1370,6 +1406,12 @@ class MarunosukeGUI:
             True: 復元成功, False: 復元キャンセル
         """
         base_folder = Path(state.get("image_folder", ""))
+        # 復元に成功したセッションを次回の自動復元候補として記憶する。
+        session_path = base_folder / RESULTS_FOLDER / RESULTS_DATA_FOLDER / SESSION_STATE_FILE
+        try:
+            atomic_json_save(self._get_last_session_pointer(), {"path": str(session_path)})
+        except Exception:
+            pass
 
         # 画像フォルダ自体の確認（PDF展開後のフォルダも含む）
         if not base_folder.exists():
@@ -1401,15 +1443,25 @@ class MarunosukeGUI:
           3. _apply_session_state でパス検証 → 壊れたパスの修復ダイアログ
           4. 成功時にステータスパネル更新
         """
-        # Step 1: ユーザーに session_state.json を選択させる
-        selected = filedialog.askopenfilename(
+        # 前回使用した画像フォルダが分かっていて、そこにセッションがあれば
+        # ファイル選択を省略してそのまま復元する。
+        remembered = self._get_session_state_path()
+        if not remembered:
+            pointer = self._get_last_session_pointer()
+            pointer_state = load_json_safe(pointer)
+            if isinstance(pointer_state, dict) and pointer_state.get("path"):
+                remembered = Path(pointer_state["path"])
+        if remembered and remembered.exists():
+            selected = str(remembered)
+        else:
+            selected = filedialog.askopenfilename(
             title=f"セッションファイルを選択 — {SESSION_STATE_FILE}",
             filetypes=[
                 ("セッションファイル", SESSION_STATE_FILE),
                 ("JSONファイル", "*.json"),
                 ("すべてのファイル", "*.*"),
             ],
-        )
+            )
         if not selected:
             return
 
