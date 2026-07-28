@@ -4,7 +4,7 @@
 
 ビルド方法:
   build_exe.bat を実行するか、以下のコマンドを実行:
-  pyinstaller saitensamurai.spec
+  pyinstaller marunosuke.spec
 """
 
 import os

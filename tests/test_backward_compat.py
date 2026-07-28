@@ -69,6 +69,7 @@ EXPECTED_SYMBOLS = [
     "R_RMD_TEMPLATE_FILE",
     # --- main_gui.py ---
     "SaitenSamuraiGUI",
+    "MarunosukeGUI",
     "Mark2GUI",
     # --- フラグ ---
     "HAS_MATPLOTLIB",
@@ -104,7 +105,9 @@ def test_mark2gui_is_class():
     assert isinstance(Mark2GUI, type)
 
 
-def test_mark2gui_is_saitensamuraigui_alias():
-    """Mark2GUI は SaitenSamuraiGUI の後方互換エイリアス"""
-    from saitensamurai import Mark2GUI, SaitenSamuraiGUI
-    assert Mark2GUI is SaitenSamuraiGUI
+def test_legacy_gui_names_alias_marunosuke_gui():
+    """旧GUI名は MarunosukeGUI の後方互換エイリアス。"""
+    from saitensamurai import MarunosukeGUI, Mark2GUI, SaitenSamuraiGUI
+
+    assert Mark2GUI is MarunosukeGUI
+    assert SaitenSamuraiGUI is MarunosukeGUI

@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 REM =====================================================
-REM 採点侍 (SaitenSamurai) — exe ビルドスクリプト
+REM マル之助 (Marunosuke) — exe ビルドスクリプト
 REM
 REM このスクリプトは以下を自動実行します:
 REM   1. ビルド用仮想環境 (venv_build) の作成
@@ -12,12 +12,12 @@ REM 使い方:
 REM   build_exe.bat
 REM
 REM 出力:
-REM   dist/SaitenSamurai_vX.Y.exe  (バージョン番号は自動付与)
+REM   dist/Marunosuke_vX.Y.Z.exe  (バージョン番号は自動付与)
 REM =====================================================
 
 echo.
 echo ===================================================
-echo  採点侍 (SaitenSamurai) — exe ビルド
+echo  マル之助 (Marunosuke) — exe ビルド
 echo ===================================================
 echo.
 
@@ -72,7 +72,7 @@ echo [3/3] PyInstaller で exe をビルドしています...
 echo     （数分かかる場合があります）
 echo.
 
-pyinstaller saitensamurai.spec --noconfirm --clean
+pyinstaller marunosuke.spec --noconfirm --clean
 
 if errorlevel 1 (
     echo.
@@ -90,7 +90,7 @@ echo ===================================================
 echo.
 
 REM --- ファイルサイズ表示 ---
-for %%F in (dist\SaitenSamurai_v*.exe) do (
+for %%F in (dist\Marunosuke_v*.exe) do (
     echo  出力: %%F
     echo  ファイルサイズ: 約 %%~zF bytes
 )

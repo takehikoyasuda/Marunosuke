@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-GUIウィジェットテスト — SaitenSamuraiGUI (Mark2GUI) の自動化可能なGUI検証
+GUIウィジェットテスト — MarunosukeGUI の自動化可能なGUI検証
 ======================================================
 
-記述式のみモード専用の SaitenSamuraiGUI インスタンスを生成して以下を自動テスト:
+記述式のみモード専用の MarunosukeGUI インスタンスを生成して以下を自動テスト:
 
 1. 初期ウィジェット生成: ボタン・ラベル・入力欄が存在するか
 2. 初期状態: テキスト・state 属性が期待通りか
@@ -46,16 +46,16 @@ pytestmark = pytest.mark.skipif(not HAS_TK, reason="Tkinter not available")
 # ================================================================
 
 def _make_gui():
-    """Mark2GUI を Toplevel 上に生成して (top, app) を返す
+    """MarunosukeGUI を Toplevel 上に生成して (top, app) を返す
 
     共有 Tk ルート上に Toplevel を作成し、テスト終了時に
     Toplevel のみ destroy する（Tcl インタプリタは残る）。
     """
     from conftest import get_shared_tk_root
-    from main_gui import Mark2GUI
+    from main_gui import MarunosukeGUI
     root = get_shared_tk_root()
     top = tk.Toplevel(root)
-    app = Mark2GUI(top)
+    app = MarunosukeGUI(top)
     top.update_idletasks()
     return top, app
 
@@ -73,7 +73,7 @@ def _destroy_gui(top):
 # ================================================================
 
 class TestInitialState:
-    """SaitenSamuraiGUI の初期生成直後の状態を検証"""
+    """MarunosukeGUI の初期生成直後の状態を検証"""
 
     def setup_method(self):
         self.root, self.app = _make_gui()

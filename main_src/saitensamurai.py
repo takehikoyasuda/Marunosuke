@@ -49,12 +49,22 @@ if getattr(_sys, 'frozen', False):
 # ========================================
 # ビルド検証用スモークテスト（CI専用・通常起動には影響しない）
 # ========================================
-# 環境変数 SAITENSAMURAI_SMOKE_TEST=1 が設定されている場合のみ実行。
+# 環境変数 MARUNOSUKE_SMOKE_TEST=1 が設定されている場合のみ実行。
+# 旧 SAITENSAMURAI_SMOKE_TEST も後方互換のため受け付ける。
 # sklearn/joblib が exe に正しく同梱されているかを GUI を開かずに検証し、
 # 結果を smoke_test_result.txt に書き出して終了する。
 # console=False の GUI exe では stdout が devnull になるため、
 # 結果はファイル経由で外部（CI）に伝える。
-if _os.environ.get('SAITENSAMURAI_SMOKE_TEST') == '1':
+def _smoke_test_requested(environ=None):
+    """新旧どちらかのスモークテスト環境変数が有効なら True。"""
+    environ = _os.environ if environ is None else environ
+    return (
+        environ.get('MARUNOSUKE_SMOKE_TEST') == '1'
+        or environ.get('SAITENSAMURAI_SMOKE_TEST') == '1'
+    )
+
+
+if _smoke_test_requested():
     if getattr(_sys, 'frozen', False):
         _result_dir = _os.path.dirname(_sys.executable)
     else:
@@ -140,10 +150,10 @@ from r_export import (
 )
 
 # メインGUI
-from main_gui import SaitenSamuraiGUI
+from main_gui import MarunosukeGUI, SaitenSamuraiGUI
 
 # 後方互換エイリアス
-Mark2GUI = SaitenSamuraiGUI
+Mark2GUI = MarunosukeGUI
 
 
 # ========================================
@@ -166,14 +176,14 @@ def _get_crash_log_path():
         base = os.path.dirname(sys.executable)
     else:
         base = os.getcwd()
-    return os.path.join(base, "saitensamurai_crash.log")
+    return os.path.join(base, "marunosuke_crash.log")
 
 
 def main():
     """メイン関数 — メインGUIを直接起動"""
     setup_logging()
     root = tk.Tk()
-    app = SaitenSamuraiGUI(root)
+    app = MarunosukeGUI(root)
     root.mainloop()
 
 

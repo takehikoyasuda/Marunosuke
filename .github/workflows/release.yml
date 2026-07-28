@@ -50,7 +50,7 @@ jobs:
             "pyinstaller>=6.0.0"
 
       - name: Build exe
-        run: pyinstaller saitensamurai.spec --noconfirm --clean
+        run: pyinstaller marunosuke.spec --noconfirm --clean
 
       - name: Detect exe name
         id: exe-name

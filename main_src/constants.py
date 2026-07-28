@@ -176,7 +176,7 @@ def get_app_temp_dir(image_folder_path=None):
     else:
         # フォールバック: システムの TEMP
         import tempfile
-        temp_dir = Path(tempfile.gettempdir()) / "saitensamurai_temp"
+        temp_dir = Path(tempfile.gettempdir()) / "marunosuke_temp"
     temp_dir.mkdir(parents=True, exist_ok=True)
     return str(temp_dir)
 
@@ -384,14 +384,14 @@ def setup_japanese_matplotlib_font():
 def setup_logging(log_dir=None, level=logging.INFO):
     """標準 logging 基盤を初期化する。
 
-    - ファイルハンドラ: DEBUG 以上を ``saitensamurai.log`` に記録
+    - ファイルハンドラ: DEBUG 以上を ``marunosuke.log`` に記録
     - コンソールハンドラ: *level* (既定 INFO) 以上を stdout に出力
 
     戻り値はログファイルの Path。
     """
     if log_dir is None:
         log_dir = get_app_temp_dir()
-    log_path = Path(log_dir) / "saitensamurai.log"
+    log_path = Path(log_dir) / "marunosuke.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     root_logger = logging.getLogger()

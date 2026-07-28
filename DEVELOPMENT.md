@@ -1,6 +1,6 @@
 # 開発ガイド
 
-採点侍 (SaitenSamurai) の開発に参加する方向けの技術情報です。
+マル之助 (Marunosuke) の開発に参加する方向けの技術情報です。
 
 ---
 
@@ -72,8 +72,8 @@ pyenvでビルドしたPythonは、ビルド時にHomebrewの`tcl-tk`が入っ�
 
 ```bash
 brew install tcl-tk python-tk@3.12   # 使うPythonのバージョンに合わせて python-tk@X.Y を選ぶ
-python3.12 -m venv ~/.venvs/saitensamurai-tk   # /opt/homebrew/bin/python3.12 を使うこと(pyenv経由のpython3.12ではない)
-source ~/.venvs/saitensamurai-tk/bin/activate
+python3.12 -m venv ~/.venvs/marunosuke-tk   # /opt/homebrew/bin/python3.12 を使うこと(pyenv経由のpython3.12ではない)
+source ~/.venvs/marunosuke-tk/bin/activate
 pip install -r requirements.txt
 python -c "import tkinter; print(tkinter.Tk().tk.call('info','patchlevel'))"   # エラーが出ず、Tkのバージョンが表示されればOK
 ```
@@ -81,7 +81,7 @@ python -c "import tkinter; print(tkinter.Tk().tk.call('info','patchlevel'))"   #
 このプロジェクトで`python3`と打つたびに毎回`source .../activate`するのが面倒な場合は、`~/.zshrc`に以下を追記して`python3`コマンド自体をこのvenvに向けてしまうのが手軽（別プロジェクトでpyenvのバージョン切り替えを使う場合は一時的にコメントアウトすること）:
 
 ```bash
-alias python3="$HOME/.venvs/saitensamurai-tk/bin/python3"
+alias python3="$HOME/.venvs/marunosuke-tk/bin/python3"
 ```
 
 **症状2: ボタンの枠線が消える・フラットに潰れて見える（Tk 8.5特有の描画バグ）**
@@ -124,7 +124,7 @@ Appleが`/Library/Developer/CommandLineTools/`等に同梱している古いTcl/
 │   ├── marunosuke-icon.icns     # macOS配布用アイコン
 │   └── marunosuke-logo.png      # README・広報用ロゴ
 ├── .github/workflows/test.yml   # GitHub Actions CI
-├── saitensamurai.spec           # PyInstaller 設定
+├── marunosuke.spec              # PyInstaller 設定
 ├── build_exe.bat                # exe ビルドスクリプト
 ├── requirements.txt             # 依存パッケージ定義
 ├── pyrightconfig.json           # 型チェック設定（basic モード）
@@ -259,7 +259,7 @@ flowchart TD
 ## 採点モードのアーキテクチャ
 
 現在は記述式採点専用のため、起動時のモード選択は行わず、
-`SaitenSamuraiGUI` のメイン画面を直接表示します。
+`MarunosukeGUI` のメイン画面を直接表示します。
 
 ### モード定数（`constants.py`）
 
@@ -277,7 +277,7 @@ MARK_FORMAT_MULTI_DIGIT = "multi_digit"
 
 ```
 marunosuke.run() → saitensamurai.run() → main()
-                 → Tk() → SaitenSamuraiGUI(root) → mainloop()
+                 → Tk() → MarunosukeGUI(root) → mainloop()
 ```
 
 ### 複数桁設問モード（mark_format=multi_digit）
@@ -540,9 +540,9 @@ build_exe.bat
 
 1. `venv_build/` にビルド専用仮想環境を作成
 2. requirements.txt + pyinstaller をインストール
-3. `saitensamurai.spec` に従って PyInstaller でビルド
+3. `marunosuke.spec` に従って PyInstaller でビルド
 
-### spec ファイルの構成 (`saitensamurai.spec`)
+### spec ファイルの構成 (`marunosuke.spec`)
 
 - **エントリポイント**: `main_src/marunosuke.py`
 - **同梱データ**: `resources/marunosuke-icon.*`, `resources/marunosuke-logo.png`
@@ -566,7 +566,7 @@ build_exe.bat
 パッケージは **`requirements.txt` と手動で同期**させる必要がある。
 
 過去に `scikit-learn` がこのリストから漏れていたことがあり、
-`saitensamurai.spec` の `collect_all('sklearn')` が「パッケージが
+`marunosuke.spec` の `collect_all('sklearn')` が「パッケージが
 インストールされていない」ため全て `not found` を返しているにも関わらず
 **PyInstaller のビルド自体は正常終了してしまい**、K-means クラスタリング
 機能が同梱されない壊れた exe がそのまま GitHub Release として公開される
@@ -578,11 +578,12 @@ sklearn 関連の不具合を疑うときは、以下の手順で **exe を実�
 
 **1. `main_src/saitensamurai.py` に組み込み済みの自己診断フック**
 
-環境変数 `SAITENSAMURAI_SMOKE_TEST=1` を設定して exe を起動すると、
+環境変数 `MARUNOSUKE_SMOKE_TEST=1` を設定して exe を起動すると、
 GUI を開かずに `sklearn.cluster.KMeans` を実際に fit し、結果を
 exe と同じフォルダの `smoke_test_result.txt` に書き出して終了する
 （`OK` または `FAIL: <例外内容>`）。console=False ビルドのため
 標準出力ではなくファイル経由で結果を返す。
+旧 `SAITENSAMURAI_SMOKE_TEST=1` も後方互換のため引き続き受け付ける。
 
 **2. release.yml に一時的に追加して使う検証ステップ（v4.5.2 で実際に使用・動作確認済み）**
 
@@ -593,7 +594,7 @@ exe と同じフォルダの `smoke_test_result.txt` に書き出して終了す
     $resultPath = Join-Path (Split-Path $exePath) "smoke_test_result.txt"
     if (Test-Path $resultPath) { Remove-Item $resultPath -Force }
 
-    $env:SAITENSAMURAI_SMOKE_TEST = "1"
+    $env:MARUNOSUKE_SMOKE_TEST = "1"
     $proc = Start-Process -FilePath $exePath -PassThru
 
     $waited = 0

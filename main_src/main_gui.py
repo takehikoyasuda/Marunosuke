@@ -3,10 +3,9 @@
 """
 マル之助 (Marunosuke) メインGUIモジュール
 
-SaitenSamuraiGUI クラスを提供する。マークシート解析・採点・チェックの
+MarunosukeGUI クラスを提供する。記述式答案の準備・採点・集計を行う
 統合GUIウィンドウを構築し、各処理パイプラインを制御する。
-
-saitensamurai.py から分離されたモジュール。
+旧 SaitenSamuraiGUI / Mark2GUI 名は後方互換エイリアスとして提供する。
 """
 
 from __future__ import annotations
@@ -123,11 +122,11 @@ class _ToolTip:
 
 
 # ========================================
-# SaitenSamuraiGUIクラス（メイン統合GUI）
+# MarunosukeGUIクラス（メイン統合GUI）
 # ========================================
 
-class SaitenSamuraiGUI:
-    """マル之助 統合GUIクラス（クラス名は後方互換のため維持）。"""
+class MarunosukeGUI:
+    """マル之助のメイン統合GUIクラス。"""
     def __init__(self, root, restore_session_path=None):
         self.root = root
         self._restore_session_path = restore_session_path  # 起動時復元用
@@ -2215,5 +2214,6 @@ class SaitenSamuraiGUI:
 
 
 
-# 後方互換エイリアス
-Mark2GUI = SaitenSamuraiGUI
+# 旧名称を利用する外部コード・テスト向けの後方互換エイリアス。
+SaitenSamuraiGUI = MarunosukeGUI
+Mark2GUI = MarunosukeGUI
