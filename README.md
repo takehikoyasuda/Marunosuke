@@ -81,7 +81,7 @@
 | **実行方法** | Python 3.9 以上のソースから実行（単体アプリの配布は未対応） |
 
 > [!IMPORTANT]
-> pyenv などで Python をソースビルドした環境では、ビルド時に Tcl/Tk が見つからず `_tkinter` モジュールが無効なままインストールされることがあります。その場合 `python main_src/saitensamurai.py` は次のようなエラーで起動に失敗します。
+> pyenv などで Python をソースビルドした環境では、ビルド時に Tcl/Tk が見つからず `_tkinter` モジュールが無効なままインストールされることがあります。その場合 `python main_src/marunosuke.py` は次のようなエラーで起動に失敗します。
 >
 > ```
 > ModuleNotFoundError: No module named '_tkinter'
@@ -110,10 +110,10 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 # 起動
-python main_src/saitensamurai.py
+python main_src/marunosuke.py
 ```
 
-2 回目以降に起動する際も、`source .venv/bin/activate` で仮想環境を有効化してから `python main_src/saitensamurai.py` を実行してください。
+2 回目以降に起動する際も、`source .venv/bin/activate` で仮想環境を有効化してから `python main_src/marunosuke.py` を実行してください。
 
 #### 補足: macOSでTkinterが使えない場合（pyenv環境など）
 
@@ -126,7 +126,7 @@ brew install python@3.12 python-tk@3.12   # 使うバージョンに合わせて
 /opt/homebrew/bin/python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python main_src/saitensamurai.py
+python main_src/marunosuke.py
 ```
 
 `python3` コマンド自体を毎回打つのが面倒な場合は、`~/.zshrc` に以下を追記すると通常の `python3` コマンドがこの仮想環境を指すようになります（他のプロジェクトでpyenvのバージョン切り替えを使う場合は該当行を一時的にコメントアウトしてください）。

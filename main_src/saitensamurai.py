@@ -17,7 +17,8 @@
   gui_components.py     : サブウィンドウGUI
   main_gui.py           : メインGUI
 
-このファイルはエントリポイントを提供する。
+このファイルは後方互換 API と旧エントリーポイントを提供する。
+新しい正式な起動入口は marunosuke.py。
 """
 
 # ========================================
@@ -176,7 +177,8 @@ def main():
     root.mainloop()
 
 
-if __name__ == '__main__':
+def run():
+    """クラッシュレポート処理を含めてアプリを起動する。"""
     # freeze_support はファイル冒頭で既に呼び出し済み
     try:
         main()
@@ -222,3 +224,7 @@ if __name__ == '__main__':
             pass
 
         sys.exit(1)
+
+
+if __name__ == '__main__':
+    run()

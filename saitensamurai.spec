@@ -29,7 +29,7 @@ with open(_version_file, 'r', encoding='utf-8') as _f:
 EXE_NAME = f'Marunosuke_v{_version}'
 
 a = Analysis(
-    ['main_src/saitensamurai.py'],
+    ['main_src/marunosuke.py'],
     pathex=[MAIN_SRC],
     binaries=[] + _sklearn_binaries + _joblib_binaries,
     datas=[
@@ -39,6 +39,7 @@ a = Analysis(
     ] + _sklearn_datas + _joblib_datas,
     hiddenimports=[
         # エントリポイント (遅延インポートで使われる)
+        'marunosuke',
         'saitensamurai',
         # main_src 内の全モジュール
         'constants',

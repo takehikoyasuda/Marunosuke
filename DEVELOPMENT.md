@@ -55,11 +55,10 @@ warning は段階的に解消中です。
 ### 起動確認
 
 ```bash
-python main_src/saitensamurai.py
+python main_src/marunosuke.py
 ```
 
-起動するとモード選択ダイアログが表示されます。
-3 つの採点モード（マーク採点 / マーク＋記述 / 記述採点）から選択できます。
+起動すると、記述式採点専用のメイン画面が表示されます。
 
 ### macOSでの注意点: tkinter / Tcl-Tk
 
@@ -99,7 +98,8 @@ Appleが`/Library/Developer/CommandLineTools/`等に同梱している古いTcl/
 
 ```
 ├── main_src/                    # アプリケーション本体（16 モジュール）
-│   ├── saitensamurai.py         # エントリポイント
+│   ├── marunosuke.py            # 正式な起動エントリーポイント
+│   ├── saitensamurai.py         # 後方互換 API・旧エントリーポイント
 │   ├── constants.py             # 共通定数・ユーティリティ
 │   ├── omr_engine.py            # OMR 認識エンジン
 │   ├── threshold_calibrator.py  # 閾値自動推定
@@ -158,6 +158,7 @@ gui_components.py         ← constants, mark_checker, threshold_calibrator
                                                    [lazy: scoring_engine, omr_engine]
 main_gui.py               ← 全モジュール
                                                    [lazy: descriptive_gui, name_trimmer]
+marunosuke.py             ← saitensamurai（起動処理）
 saitensamurai.py          ← main_gui（+ 後方互換 re-export）
 ```
 
@@ -255,8 +256,8 @@ flowchart TD
 
 ## 採点モードのアーキテクチャ
 
-起動時にモード選択ダイアログ (`StartupModeDialog`) を表示し、
-選ばれたモードに応じて `SaitenSamuraiGUI` の UI を切り替えます。
+現在は記述式採点専用のため、起動時のモード選択は行わず、
+`SaitenSamuraiGUI` のメイン画面を直接表示します。
 
 ### モード定数（`constants.py`）
 
@@ -270,12 +271,11 @@ MARK_FORMAT_STANDARD = "standard"
 MARK_FORMAT_MULTI_DIGIT = "multi_digit"
 ```
 
-### 起動フロー（`saitensamurai.py`）
+### 起動フロー（`marunosuke.py`）
 
 ```
-main() → StartupModeDialog(root) → mode, mark_format, session_path を取得
-       → SaitenSamuraiGUI(root, mode=mode, mark_format=mark_format,
-                          restore_session_path=session_path)
+marunosuke.run() → saitensamurai.run() → main()
+                 → Tk() → SaitenSamuraiGUI(root) → mainloop()
 ```
 
 ### 複数桁設問モード（mark_format=multi_digit）
@@ -524,7 +524,7 @@ PyMuPDF, matplotlib, reportlab はオプション扱いです。
 
 ## exe ビルド（Windows 向け）
 
-> **macOS 向けパッケージについて**: 以下は Windows 版 exe のビルド手順です。macOS 向けの単体アプリ配布は現状未対応で、`python main_src/saitensamurai.py` でのソース実行のみとなります。
+> **macOS 向けパッケージについて**: 以下は Windows 版 exe のビルド手順です。macOS 向けの単体アプリ配布は現状未対応で、`python main_src/marunosuke.py` でのソース実行のみとなります。
 
 ### ビルド手順
 
@@ -542,7 +542,7 @@ build_exe.bat
 
 ### spec ファイルの構成 (`saitensamurai.spec`)
 
-- **エントリポイント**: `main_src/saitensamurai.py`
+- **エントリポイント**: `main_src/marunosuke.py`
 - **同梱データ**: `resources/icon.ico`, `resources/samurai.png`
 - **hiddenimports**: main_src の全モジュール + オプション依存
 - **excludes**: 不要なバックエンド (GTK/Qt/Wx)、テスト、開発ツール等
