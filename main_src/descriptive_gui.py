@@ -12,7 +12,7 @@ import os
 import shutil
 import tempfile
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 from pathlib import Path
 from typing import Optional, Dict, List, Tuple, Callable
 
@@ -33,7 +33,7 @@ from descriptive_scorer import (
     load_descriptive_config, save_descriptive_config,
     load_descriptive_scores, save_descriptive_scores,
     load_descriptive_annotations, save_descriptive_annotations,
-    normalize_annotation_tags, update_comment_history,
+    update_comment_history,
     save_total_display_config,
     _calculate_marker_default_region,
     trim_descriptive_regions,
@@ -1578,6 +1578,44 @@ class DescriptiveScorerGUI:
         rubric_text.pack(fill=tk.X)
         rubric_text.insert("1.0", q_config.get("rubric_memo", ""))
 
+        tk.Label(frame, text="解答例画像（採点中に参照）:",
+                 font=(UI_FONT, get_ui_font_size(9))).pack(anchor=tk.W, pady=(8, 2))
+        example_path_var = tk.StringVar(value=q_config.get("answer_example_path", ""))
+        example_label = tk.Label(
+            frame, text=(Path(example_path_var.get()).name if example_path_var.get() else "未登録"),
+            fg="#666", anchor=tk.W,
+        )
+        example_label.pack(fill=tk.X)
+        example_buttons = tk.Frame(frame)
+        example_buttons.pack(anchor=tk.W, pady=(2, 0))
+
+        def _choose_example():
+            selected = filedialog.askopenfilename(
+                parent=dialog, title="解答例画像を選択",
+                filetypes=[("画像", "*.png *.jpg *.jpeg *.bmp *.gif"), ("すべて", "*.*")],
+            )
+            if selected:
+                try:
+                    example_dir = Path(self.scores_save_path).parent / "answer_examples"
+                    example_dir.mkdir(parents=True, exist_ok=True)
+                    stored = example_dir / f"{question_id}{Path(selected).suffix.lower()}"
+                    shutil.copy2(selected, stored)
+                    q_config["answer_example_path"] = str(stored)
+                    example_path_var.set(str(stored))
+                    example_label.config(text=stored.name)
+                except OSError as exc:
+                    messagebox.showerror("解答例画像", f"画像を保存できませんでした:\n{exc}", parent=dialog)
+
+        def _clear_example():
+            q_config.pop("answer_example_path", None)
+            example_path_var.set("")
+            example_label.config(text="未登録")
+
+        tk.Button(example_buttons, text="画像を登録", command=_choose_example,
+                  font=(UI_FONT, get_ui_font_size(8))).pack(side=tk.LEFT)
+        tk.Button(example_buttons, text="削除", command=_clear_example,
+                  font=(UI_FONT, get_ui_font_size(8))).pack(side=tk.LEFT, padx=(4, 0))
+
         # 採点リセットボタン
         tk.Label(frame, text="─" * 30, fg="#ccc").pack(pady=(10, 5))
         tk.Button(
@@ -2154,6 +2192,29 @@ class _SingleQuestionScorer:
         )
         self._rubric_status.pack(fill=tk.X, pady=(3, 0))
 
+        example_row = tk.Frame(rubric_panel, bg="#FFF8E1")
+        example_row.pack(fill=tk.X, pady=(4, 0))
+        tk.Label(example_row, text="解答例", bg="#FFF8E1", fg="#795548",
+                 font=(UI_FONT, get_ui_font_size(8), "bold")).pack(anchor=tk.W)
+        preview_frame = tk.Frame(example_row, bg="#FFFDF5", width=270, height=155,
+                                 relief=tk.SOLID, bd=1)
+        preview_frame.pack(fill=tk.X, pady=(2, 2))
+        preview_frame.pack_propagate(False)
+        self._example_image_label = tk.Label(
+            preview_frame, text="未登録", bg="#FFFDF5", fg="#795548",
+            font=(UI_FONT, get_ui_font_size(8)), anchor=tk.CENTER,
+        )
+        self._example_image_label.pack(fill=tk.BOTH, expand=True)
+        example_buttons = tk.Frame(example_row, bg="#FFF8E1")
+        example_buttons.pack(fill=tk.X)
+        tk.Button(example_buttons, text="ファイルから登録", command=self._choose_answer_example,
+                  font=(UI_FONT, get_ui_font_size(7))).pack(side=tk.LEFT)
+        tk.Button(example_buttons, text="答案から切り抜く", command=self._crop_answer_example,
+                  font=(UI_FONT, get_ui_font_size(7))).pack(side=tk.LEFT, padx=(3, 0))
+        tk.Button(example_buttons, text="削除", command=self._clear_answer_example,
+                  font=(UI_FONT, get_ui_font_size(7))).pack(side=tk.LEFT, padx=(3, 0))
+        self._refresh_answer_example_preview()
+
         tk.Frame(rubric_panel, height=1, bg="#BCAAA4").pack(fill=tk.X, pady=7)
         tk.Label(
             rubric_panel, text="🗒 この回答の注釈",
@@ -2172,6 +2233,20 @@ class _SingleQuestionScorer:
             highlightcolor="#1976D2",
         )
         self._answer_memo_text.pack(fill=tk.X)
+        memo_history_row = tk.Frame(rubric_panel, bg="#FFF8E1")
+        memo_history_row.pack(fill=tk.X, pady=(2, 0))
+        self._memo_history_var = tk.StringVar()
+        self._memo_history_combo = ttk.Combobox(
+            memo_history_row, textvariable=self._memo_history_var,
+            values=self.annotations.get("memo_history", {}).get(self.q_id, []),
+            state="readonly", width=20,
+        )
+        self._memo_history_combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self._memo_history_combo.bind("<<ComboboxSelected>>", self._select_memo_history)
+        tk.Button(memo_history_row, text="挿入", command=self._insert_memo_history,
+                  font=(UI_FONT, get_ui_font_size(7))).pack(side=tk.LEFT, padx=(3, 0))
+        tk.Button(memo_history_row, text="削除", command=self._delete_memo_history,
+                  font=(UI_FONT, get_ui_font_size(7))).pack(side=tk.LEFT, padx=(2, 0))
 
         tk.Label(rubric_panel, text="生徒へのコメント",
                  bg="#FFF8E1", fg="#5D4037",
@@ -2206,27 +2281,6 @@ class _SingleQuestionScorer:
             font=(UI_FONT, get_ui_font_size(7)),
         ).pack(side=tk.RIGHT)
 
-        tag_row = tk.Frame(rubric_panel, bg="#FFF8E1")
-        tag_row.pack(fill=tk.X)
-        self._tag_entry = tk.Entry(
-            tag_row, font=(UI_FONT, get_ui_font_size(8)), bg="#FFFFFF",
-            fg="#222222", insertbackground="#222222", relief=tk.SOLID, bd=1,
-            highlightthickness=1, highlightbackground="#9E9E9E",
-            highlightcolor="#1976D2",
-        )
-        self._tag_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self._tag_entry.bind("<Return>", self._add_tags_from_entry)
-        tk.Button(tag_row, text="タグ追加", command=self._add_tags_from_entry,
-                  font=(UI_FONT, get_ui_font_size(7))).pack(side=tk.LEFT, padx=(3, 0))
-        self._tags_listbox = tk.Listbox(
-            rubric_panel, height=2, exportselection=False,
-            font=(UI_FONT, get_ui_font_size(8)), bg="#FFFFFF", fg="#222222",
-            relief=tk.SOLID, bd=1,
-        )
-        self._tags_listbox.pack(fill=tk.X, pady=(3, 2))
-        tk.Button(rubric_panel, text="選択したタグを削除",
-                  command=self._remove_selected_tag,
-                  font=(UI_FONT, get_ui_font_size(7))).pack(anchor=tk.E)
         self._annotation_status = tk.Label(
             rubric_panel, text="", bg="#FFF8E1", fg="#2E7D32",
             font=(UI_FONT, get_ui_font_size(7)), anchor=tk.E,
@@ -2235,7 +2289,7 @@ class _SingleQuestionScorer:
 
         for widget in (self._answer_memo_text, self._answer_comment_text):
             widget.bind("<KeyRelease>", self._schedule_annotation_save)
-        self._answer_memo_text.bind("<FocusOut>", lambda _e: self._commit_current_annotation())
+        self._answer_memo_text.bind("<FocusOut>", lambda _e: self._commit_current_annotation(add_memo_history=True))
         self._answer_comment_text.bind(
             "<FocusOut>", lambda _e: self._commit_current_annotation(add_comment_history=True)
         )
@@ -2375,6 +2429,133 @@ class _SingleQuestionScorer:
         if hasattr(self, "_rubric_status"):
             self._rubric_status.config(text="保存済み")
 
+    def _refresh_answer_example_preview(self):
+        path = self.q_config.get("answer_example_path", "")
+        if not path or not Path(path).is_file():
+            self._example_image_label.config(image="", text="未登録")
+            self._example_image_label.image = None
+            return
+        try:
+            image = Image.open(path).convert("RGB")
+            # プレビュー枠の内寸いっぱいに拡大表示する。解答例の視認性を優先し、
+            # 枠に合わせてリサイズする（元画像ファイルは変更しない）。
+            image = image.resize((260, 150), Image.Resampling.LANCZOS)
+            photo = ImageTk.PhotoImage(image)
+            self._example_image_label.config(image=photo, text="")
+            self._example_image_label.image = photo
+        except Exception:
+            self._example_image_label.config(image="", text="画像を読み込めません")
+
+    def _choose_answer_example(self):
+        selected = filedialog.askopenfilename(
+            parent=self._win, title="解答例画像を選択",
+            filetypes=[("画像", "*.png *.jpg *.jpeg *.bmp *.gif"), ("すべて", "*.*")],
+        )
+        if not selected:
+            return
+        try:
+            example_dir = Path(self.annotations_save_callback.__self__.scores_save_path).parent / "answer_examples" if hasattr(self.annotations_save_callback, "__self__") else Path(selected).parent
+            example_dir.mkdir(parents=True, exist_ok=True)
+            stored = example_dir / f"{self.q_id}{Path(selected).suffix.lower()}"
+            shutil.copy2(selected, stored)
+            self.q_config["answer_example_path"] = str(stored)
+            if self.rubric_save_callback:
+                self.rubric_save_callback()
+            self._refresh_answer_example_preview()
+        except OSError as exc:
+            messagebox.showerror("解答例画像", f"画像を保存できませんでした:\n{exc}", parent=self._win)
+
+    def _clear_answer_example(self):
+        self.q_config.pop("answer_example_path", None)
+        if self.rubric_save_callback:
+            self.rubric_save_callback()
+        self._refresh_answer_example_preview()
+
+    def _crop_answer_example(self):
+        if not self.filenames:
+            return
+        filename = self.filenames[self.current_idx]
+        source = self.image_paths.get(filename)
+        if not source or not Path(source).is_file():
+            messagebox.showwarning("解答例画像", "現在の答案画像が見つかりません。", parent=self._win)
+            return
+        try:
+            image = Image.open(source).convert("RGB")
+        except Exception as exc:
+            messagebox.showerror("解答例画像", f"答案画像を開けませんでした:\n{exc}", parent=self._win)
+            return
+        dialog = tk.Toplevel(self._win)
+        dialog.title("答案から解答例を切り抜く")
+        dialog.transient(self._win)
+        max_w, max_h = 900, 650
+        scale = min(1.0, max_w / image.width, max_h / image.height)
+        display = image.resize((max(1, int(image.width * scale)), max(1, int(image.height * scale))))
+        photo = ImageTk.PhotoImage(display)
+        canvas = tk.Canvas(dialog, width=display.width, height=display.height, cursor="crosshair")
+        canvas.pack(padx=8, pady=8)
+        canvas.create_image(0, 0, image=photo, anchor="nw")
+        canvas.image = photo
+        state = {"start": None, "rect": None}
+
+        def press(event):
+            state["start"] = (event.x, event.y)
+            if state["rect"]:
+                canvas.delete(state["rect"])
+            state["rect"] = canvas.create_rectangle(event.x, event.y, event.x, event.y, outline="#1976D2", width=2)
+
+        def drag(event):
+            if state["start"] and state["rect"]:
+                canvas.coords(state["rect"], state["start"][0], state["start"][1], event.x, event.y)
+
+        canvas.bind("<Button-1>", press)
+        canvas.bind("<B1-Motion>", drag)
+
+        def save_crop():
+            if not state["start"]:
+                return
+            x1, y1 = state["start"]
+            x2, y2 = canvas.coords(state["rect"])[2:]
+            left, right = sorted((max(0, x1), min(display.width, x2)))
+            top, bottom = sorted((max(0, y1), min(display.height, y2)))
+            if right - left < 3 or bottom - top < 3:
+                return
+            crop = image.crop((int(left / scale), int(top / scale), int(right / scale), int(bottom / scale)))
+            example_dir = Path(self.annotations_save_callback.__self__.scores_save_path).parent / "answer_examples"
+            example_dir.mkdir(parents=True, exist_ok=True)
+            stored = example_dir / f"{self.q_id}.png"
+            crop.save(stored, "PNG")
+            self.q_config["answer_example_path"] = str(stored)
+            if self.rubric_save_callback:
+                self.rubric_save_callback()
+            self._refresh_answer_example_preview()
+            dialog.destroy()
+
+        tk.Button(dialog, text="この範囲を登録", command=save_crop).pack(pady=(0, 8))
+        dialog.grab_set()
+
+    def _show_answer_example(self):
+        """互換用: 現在は同じ画面のプレビューを更新する。"""
+        path = self.q_config.get("answer_example_path", "")
+        if not path or not Path(path).is_file():
+            messagebox.showinfo("解答例画像", "この設問には解答例画像が登録されていません。",
+                                parent=self._win)
+            return
+        try:
+            image = Image.open(path).convert("RGB")
+            image.thumbnail((900, 700), Image.Resampling.LANCZOS)
+            photo = ImageTk.PhotoImage(image)
+        except Exception as exc:
+            messagebox.showerror("解答例画像", f"画像を表示できませんでした:\n{exc}", parent=self._win)
+            return
+        dialog = tk.Toplevel(self._win)
+        dialog.title(f"{self.q_config['name']} — 解答例")
+        dialog.transient(self._win)
+        label = tk.Label(dialog, image=photo, bg="white")
+        label.image = photo
+        label.pack(padx=8, pady=8)
+        tk.Button(dialog, text="閉じる", command=dialog.destroy).pack(pady=(0, 8))
+        dialog.grab_set()
+
     def _schedule_annotation_save(self, _event=None):
         """回答注釈を入力停止後に自動保存する。"""
         if self._annotation_save_after_id and self._win:
@@ -2396,10 +2577,11 @@ class _SingleQuestionScorer:
             return answers.get(filename, {}).get(self.q_id, {})
         question_map = answers.setdefault(filename, {})
         return question_map.setdefault(self.q_id, {
-            "memo": "", "comment": "", "held": False, "tags": [],
+            "memo": "", "comment": "", "held": False,
         })
 
-    def _commit_current_annotation(self, add_comment_history: bool = False):
+    def _commit_current_annotation(self, add_comment_history: bool = False,
+                                   add_memo_history: bool = False):
         """画面上の回答注釈をモデルへ反映し保存する。"""
         filename = self._annotation_loaded_filename
         if not filename or not hasattr(self, "_answer_memo_text"):
@@ -2414,7 +2596,13 @@ class _SingleQuestionScorer:
         annotation["memo"] = self._answer_memo_text.get("1.0", "end-1c")
         annotation["comment"] = self._answer_comment_text.get("1.0", "end-1c").strip()
         annotation["held"] = bool(self._answer_held_var.get())
-        annotation["tags"] = list(self._tags_listbox.get(0, tk.END))
+        # 旧データの tags は読み込み互換のため保持するが、新規編集は行わない。
+
+        if add_memo_history and annotation["memo"].strip():
+            histories = self.annotations.setdefault("memo_history", {})
+            history = update_comment_history(histories.get(self.q_id, []), annotation["memo"])
+            histories[self.q_id] = history
+            self._memo_history_combo.configure(values=history)
 
         if add_comment_history and annotation["comment"]:
             histories = self.annotations.setdefault("comment_history", {})
@@ -2439,9 +2627,7 @@ class _SingleQuestionScorer:
         self._answer_comment_text.insert("1.0", annotation.get("comment", ""))
         self._answer_held_var.set(bool(annotation.get("held", False)))
         self._update_held_status()
-        self._tags_listbox.delete(0, tk.END)
-        for tag in annotation.get("tags", []):
-            self._tags_listbox.insert(tk.END, tag)
+        self._memo_history_var.set("")
         self._comment_history_var.set("")
         self._annotation_loaded_filename = filename
         self._annotation_status.config(text="")
@@ -2454,23 +2640,34 @@ class _SingleQuestionScorer:
         self._answer_comment_text.insert("1.0", comment)
         self._schedule_annotation_save()
 
-    def _add_tags_from_entry(self, _event=None):
-        raw = self._tag_entry.get().replace("、", ",")
-        existing = list(self._tags_listbox.get(0, tk.END))
-        updated = normalize_annotation_tags(existing + raw.split(","))
-        self._tags_listbox.delete(0, tk.END)
-        for tag in updated:
-            self._tags_listbox.insert(tk.END, tag)
-        self._tag_entry.delete(0, tk.END)
-        self._schedule_annotation_save()
+    def _select_memo_history(self, _event=None):
+        """選択した履歴を挿入対象として保持する。"""
         return "break"
 
-    def _remove_selected_tag(self):
-        selected = self._tags_listbox.curselection()
-        if not selected:
+    def _insert_memo_history(self):
+        memo = self._memo_history_var.get()
+        if not memo:
             return
-        self._tags_listbox.delete(selected[0])
+        index = self._answer_memo_text.index(tk.INSERT)
+        current = self._answer_memo_text.get("1.0", "end-1c")
+        prefix = "\n" if current and not current.endswith("\n") else ""
+        self._answer_memo_text.insert(index, prefix + memo)
         self._schedule_annotation_save()
+
+    def _delete_memo_history(self):
+        memo = self._memo_history_var.get()
+        if not memo:
+            return
+        histories = self.annotations.setdefault("memo_history", {})
+        history = [item for item in histories.get(self.q_id, []) if item != memo]
+        if history:
+            histories[self.q_id] = history
+        else:
+            histories.pop(self.q_id, None)
+        self._memo_history_var.set("")
+        self._memo_history_combo.configure(values=history)
+        if self.annotations_save_callback:
+            self.annotations_save_callback()
 
     def _update_held_status(self):
         if hasattr(self, "_held_status_label"):

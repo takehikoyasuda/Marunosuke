@@ -46,6 +46,8 @@ DESCRIPTIVE_SCORES_FILE = "descriptive_scores.json"
 DESCRIPTIVE_ANNOTATIONS_FILE = "descriptive_annotations.json"
 TOTAL_DISPLAY_CONFIG_FILE = "total_display_config.json"
 COMMENT_HISTORY_LIMIT = 50
+# 教員用メモもコメントと同じ履歴上限・最近使用順で管理する。
+MEMO_HISTORY_LIMIT = COMMENT_HISTORY_LIMIT
 ANNOTATION_TAG_LIMIT = 10
 ANNOTATION_TAG_MAX_LENGTH = 30
 
@@ -124,6 +126,26 @@ def normalize_descriptive_annotations(data: Optional[dict]) -> dict:
             if clean_comments:
                 history[question_id] = clean_comments
     normalized["comment_history"] = history
+    memo_history = {}
+    raw_memo_history = source.get("memo_history", {})
+    if isinstance(raw_memo_history, dict):
+        for question_id, memos in raw_memo_history.items():
+            if not isinstance(question_id, str) or not isinstance(memos, list):
+                continue
+            clean_memos = []
+            for memo in memos:
+                if not isinstance(memo, str):
+                    continue
+                memo = memo.strip()
+                if memo and memo not in clean_memos:
+                    clean_memos.append(memo)
+                if len(clean_memos) >= MEMO_HISTORY_LIMIT:
+                    break
+            if clean_memos:
+                memo_history[question_id] = clean_memos
+    # 旧ファイルの形を不要に変えないため、履歴キーは存在した場合だけ出力する。
+    if "memo_history" in source or memo_history:
+        normalized["memo_history"] = memo_history
     return normalized
 
 
