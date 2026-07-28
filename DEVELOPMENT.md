@@ -116,6 +116,7 @@ Appleが`/Library/Developer/CommandLineTools/`等に同梱している古いTcl/
 ├── requirements.txt             # 依存パッケージ定義
 ├── pyrightconfig.json           # 型チェック設定（basic モード）
 ├── LICENSE                      # GPL-3.0
+├── CREDITS.md                   # 原作・派生版の権利表示とクレジット
 └── THIRDPARTYLICENSES.md        # サードパーティライセンス
 ```
 

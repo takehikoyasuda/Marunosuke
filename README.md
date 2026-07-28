@@ -157,17 +157,19 @@ alias python3="$HOME/.venvs/<venvの場所>/bin/python3"
 
 **GPL-3.0** — 詳細は [LICENSE](LICENSE) を参照してください。
 
-サードパーティライブラリのライセンスは [THIRDPARTYLICENSES.md](THIRDPARTYLICENSES.md) に記載しています。
+本プロジェクトは、phys-ken 氏による「採点侍 SaitenSamurai」を基にした派生版です。
+原作と派生版の権利関係、変更版である旨の表示、および謝辞は
+**[CREDITS.md](CREDITS.md)** に記載しています。
+
+サードパーティライブラリのライセンスは
+[THIRDPARTYLICENSES.md](THIRDPARTYLICENSES.md) に記載しています。
 
 ---
 
 ## クレジット
 
-- **[phys-ken/SaitenSamurai](https://github.com/phys-ken/SaitenSamurai)** — phys-ken 氏（GPL-3.0）— 本フォークの元になったオリジナル版（Windows 向け）
-- **[採点斬り 2021](https://phys-ken.github.io/saitenGiri2021/)** — phys-ken（GPL-3.0）— 記述式採点の設計参考
-- **採点斬り** — 島守睦美 氏 — デジタル採点のコンセプトの元祖
-- **採点革命** — 竹内俊彦 氏 — デジタル採点の草分け
-- **[デジタル採点 All in One](https://coding-tips-memoranda.com/%E3%83%87%E3%82%B8%E3%82%BF%E3%83%AB%E6%8E%A1%E7%82%B9-all-in-one/)** — 模範解答表示方法の参考
+- **[phys-ken/SaitenSamurai](https://github.com/phys-ken/SaitenSamurai)** — phys-ken 氏（GPL-3.0）。本派生版のオリジナル作品
+- 詳細な権利表示、派生版である旨、および謝辞は **[CREDITS.md](CREDITS.md)** を参照してください。
 
 ---
 
