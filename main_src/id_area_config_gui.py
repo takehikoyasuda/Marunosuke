@@ -33,6 +33,10 @@ MAX_DISPLAY_WIDTH = 600
 MAX_DISPLAY_HEIGHT = 750
 MIN_DRAG_SIZE = 6  # 表示座標でこの値未満のドラッグは無視する
 
+# 白い答案・赤い印刷枠のどちらからも見分けやすく、色覚差にも比較的強い組合せ。
+DIGIT_BOX_COLOR = "#0067C0"  # 青: 数字マス
+ALPHA_BOX_COLOR = "#C2185B"  # マゼンタ: 英字マス
+
 
 class IdAreaConfigDialog:
     """学籍番号欄の位置(自動検出結果、または手動指定)を確定させるモーダルダイアログ。"""
@@ -93,7 +97,8 @@ class IdAreaConfigDialog:
         ).pack(padx=6, pady=(6, 2), anchor=tk.W)
         tk.Label(
             alpha_hint_frame,
-            text="（未指定なら全桁を数字として認識）",
+            text="青の実線＝数字 ／ マゼンタの破線＝英字\n"
+                 "（未指定なら全桁を数字として認識）",
             justify=tk.LEFT, bg="#FFF3CD", fg="#8A6D00",
             font=(UI_FONT, get_ui_font_size(8)), wraplength=210,
         ).pack(padx=6, pady=(0, 6), anchor=tk.W)
@@ -127,7 +132,7 @@ class IdAreaConfigDialog:
         self._manual_guide_label.pack(pady=(10, 0), anchor=tk.W)
 
         self._alpha_guide_label = tk.Label(
-            form_frame, text="", fg="#EF6C00", font=(UI_FONT, get_ui_font_size(9), "bold"),
+            form_frame, text="", fg=ALPHA_BOX_COLOR, font=(UI_FONT, get_ui_font_size(9), "bold"),
             wraplength=200, justify=tk.LEFT,
         )
         self._alpha_guide_label.pack(pady=(4, 0), anchor=tk.W)
@@ -374,39 +379,22 @@ class IdAreaConfigDialog:
     def _redraw_final_overlay(self):
         """確定済みマスを描き直す。
 
-        色(緑/橙)だけでは区別しにくいとの指摘を踏まえ、線種(実線/破線)と
-        マス内のテキストラベル(「数」/「英」+桁番号)でも英字/数字を明示する。
+        数字マスは青の実線、英字マスはマゼンタの破線で示す。
+        記入内容を隠さないよう、マス上には文字ラベルを描かない。
         """
         if not self._final_rects:
             return
         self._clear_overlay()
         for i, rect in enumerate(self._final_rects):
             is_alpha = i in self._alpha_positions
-            color = "#EF6C00" if is_alpha else "#2E7D32"
+            color = ALPHA_BOX_COLOR if is_alpha else DIGIT_BOX_COLOR
             x0, y0, x1, y1 = rect
             dx0, dy0 = x0 * self._display_ratio, y0 * self._display_ratio
             dx1, dy1 = x1 * self._display_ratio, y1 * self._display_ratio
-            rect_kwargs = {"outline": color, "width": 3, "tag": "id_box_preview"}
+            rect_kwargs = {"outline": color, "width": 4, "tag": "id_box_preview"}
             if is_alpha:
                 rect_kwargs["dash"] = (5, 3)
             self.canvas.create_rectangle(dx0, dy0, dx1, dy1, **rect_kwargs)
-            label_text = f"{i + 1}:A" if is_alpha else f"{i + 1}:数"
-
-            # ラベルは枠の内側左上に描くと記入済みの数字を隠してしまうため、
-            # 枠の上に描く。枠がキャンバス上端に近すぎて収まらない場合のみ
-            # 従来通り枠内側にフォールバックする。
-            label_gap = 4
-            label_y = dy0 - label_gap
-            font_size_px = get_ui_font_size(8) + 4  # ラベル高さの概算
-            if label_y - font_size_px < 0:
-                label_anchor, label_y = "n", dy0 + 2
-            else:
-                label_anchor = "s"
-
-            self.canvas.create_text(
-                dx0, label_y, text=label_text, fill=color, anchor=label_anchor,
-                font=(UI_FONT, get_ui_font_size(8), "bold"), tag="id_box_preview",
-            )
         if self._alpha_positions:
             pos_str = "、".join(str(i + 1) for i in sorted(self._alpha_positions))
             self._alpha_guide_label.config(text=f"英字マスに指定: {pos_str}桁目")

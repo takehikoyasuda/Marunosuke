@@ -50,6 +50,38 @@ python main_src/saitensamurai.py
 起動するとモード選択ダイアログが表示されます。
 3 つの採点モード（マーク採点 / マーク＋記述 / 記述採点）から選択できます。
 
+### macOSでの注意点: tkinter / Tcl-Tk
+
+**症状1: `ModuleNotFoundError: No module named '_tkinter'`**
+
+pyenvでビルドしたPythonは、ビルド時にHomebrewの`tcl-tk`が入っていないと`_tkinter`が同梱されないままインストールされてしまう。これはこのリポジトリ固有の問題ではなく、**pyenv環境自体の問題**なので、複数のMacを行き来している場合はマシンごとに同じ現象が起きる。
+
+**`pyenv install -f`での再ビルドでは直らないことを確認済み**: 2025年時点のHomebrewの`tcl-tk`はバージョン9.0系で、ライブラリ名が`libtcl9tk9.0.dylib`のように変わっているが、pyenvの`python-build`スクリプトの自動検出ロジック（`use_homebrew_tcltk`/`use_custom_tcltk`関数、pyenv自身のコード内に`# FIXME: this function is a workaround for #1125`とある通り既知の脆さがある）がこの新しい命名規則・文字列処理にバグがあり、`--with-tcltk-libs`の指定をどう工夫しても`_tkinter`が正しくビルドされない（`PYTHON_BUILD_TCLTK_USE_PKGCONFIG=1`を使ったpkg-config経由の検出も同様に失敗した）。pyenv側の既知の不具合のため、直るまで通常のpyenv経由での運用は諦め、以下のHomebrew版Pythonを使う方法で回避する。
+
+直し方（マシンごとに1回でよい）: Homebrew版Python + Tkで専用venvを作り、`python3`エイリアスで上書きする。
+
+```bash
+brew install tcl-tk python-tk@3.12   # 使うPythonのバージョンに合わせて python-tk@X.Y を選ぶ
+python3.12 -m venv ~/.venvs/saitensamurai-tk   # /opt/homebrew/bin/python3.12 を使うこと(pyenv経由のpython3.12ではない)
+source ~/.venvs/saitensamurai-tk/bin/activate
+pip install -r requirements.txt
+python -c "import tkinter; print(tkinter.Tk().tk.call('info','patchlevel'))"   # エラーが出ず、Tkのバージョンが表示されればOK
+```
+
+このプロジェクトで`python3`と打つたびに毎回`source .../activate`するのが面倒な場合は、`~/.zshrc`に以下を追記して`python3`コマンド自体をこのvenvに向けてしまうのが手軽（別プロジェクトでpyenvのバージョン切り替えを使う場合は一時的にコメントアウトすること）:
+
+```bash
+alias python3="$HOME/.venvs/saitensamurai-tk/bin/python3"
+```
+
+**症状2: ボタンの枠線が消える・フラットに潰れて見える（Tk 8.5特有の描画バグ）**
+
+Appleが`/Library/Developer/CommandLineTools/`等に同梱している古いTcl/Tk 8.5系は、macOS Big Sur以降でttkウィジェットの描画バグ（ボタンの枠線・背景色がネイティブ描画に反映されない等）を起こすことがある。上記の`brew install tcl-tk`でビルドしたPythonはTcl/Tk 9.0系にリンクされるため、この症状も併せて解消される。`python -c "import tkinter; r=tkinter.Tk(); print(r.tk.call('info','patchlevel'))"`で使用中のTcl/Tkバージョンを確認できる（8.6以上を推奨、8.5系は非推奨）。
+
+**症状3: グリッド採点の得点ボタン等、`tk.Button`のクリック後に色が変化しない**
+
+これはTcl/Tkのバージョンとは無関係の、macOS Aquaテーマ自体の仕様（`tk.Button`はネイティブ描画のため`bg`変更が反映されない）。アプリ側で`tk.Label`による自作ボタンに置き換えて対応済み（`main_src/descriptive_gui.py`のグリッド得点ボタン等）。新しくボタンに「選択状態」を持たせたい場合は、`tk.Button`の`bg`/`relief`変更に頼らず、この方式を踏襲すること。
+
 ---
 
 ## リポジトリ構成

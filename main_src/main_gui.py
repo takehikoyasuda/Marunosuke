@@ -262,13 +262,20 @@ class SaitenSamuraiGUI:
 
         # 左側: ファイル入力
         input_group = tk.LabelFrame(top_section, text="1. データソース", padx=10, pady=5, font=FONT_BOLD, bg=SECTION_BG, fg=HEADER_TEXT, relief=tk.FLAT)
-        input_group.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+        input_group.pack(fill=tk.BOTH, expand=True)
 
         # 画像フォルダ
         row1 = tk.Frame(input_group, bg=SECTION_BG)
         row1.pack(fill=tk.X, pady=2)
         tk.Label(row1, text="画像フォルダ", width=10, anchor=tk.W, font=FONT_NORMAL, bg=SECTION_BG).pack(side=tk.LEFT)
-        tk.Entry(row1, textvariable=self.image_folder_path, font=(UI_FONT, get_ui_font_size(8)), bg="#F9F9F9", relief=tk.FLAT, state="readonly").pack(side=tk.LEFT, fill=tk.X, expand=True)
+        tk.Entry(
+            row1, textvariable=self.image_folder_path,
+            font=(UI_FONT, get_ui_font_size(8)),
+            bg="#FFFFFF", readonlybackground="#FFFFFF", fg="#222222",
+            relief=tk.SOLID, bd=1, highlightthickness=1,
+            highlightbackground="#9E9E9E", highlightcolor="#1976D2",
+            state="readonly",
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3), ipady=2)
         self._btn_select_folder = tk.Button(row1, text="フォルダ選択", command=self.select_folder, width=10, bg=BTN_GRAY, relief=tk.FLAT, font=FONT_NORMAL)
         self._btn_select_folder.pack(side=tk.LEFT)
         self._btn_select_pdf = tk.Button(row1, text="PDF選択", command=self.select_pdf, width=8, bg=BTN_GRAY, relief=tk.FLAT, font=FONT_NORMAL)
@@ -282,16 +289,6 @@ class SaitenSamuraiGUI:
             "印刷されたページ番号の数字を1回だけ矩形選択すると、\n"
             "全画像の同じ位置をOCRして多数決と異なるものを警告表示します。",
         )
-
-        # 右側: オプション
-        option_group = tk.LabelFrame(top_section, text="2. オプション", padx=10, pady=5, font=FONT_BOLD, bg=SECTION_BG, fg=HEADER_TEXT, relief=tk.FLAT)
-        option_group.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0))
-
-        opt_row1 = tk.Frame(option_group, bg=SECTION_BG)
-        opt_row1.pack(fill=tk.X)
-
-        tk.Label(opt_row1, text="📝 記述採点モード",
-                 font=(UI_FONT, get_ui_font_size(9), "bold"), fg="#7B1FA2", bg=SECTION_BG).pack(side=tk.LEFT)
 
         # ---------------------------------------------------------
         # 2. アクションパイプライン (3カラム)
@@ -328,9 +325,9 @@ class SaitenSamuraiGUI:
         self.open_boxed_btn = tk.Button(step1_run_row, text="📁", command=self.open_boxed_folder, bg=BTN_GRAY, relief=tk.FLAT, state=tk.DISABLED, width=3, font=(UI_FONT, get_ui_font_size(10)))
         self.open_boxed_btn.pack(side=tk.LEFT, padx=(3, 0), fill=tk.Y)
 
-        # 記述問題設定
+        # 初期設定
         self.desc_setup_btn = tk.Button(
-            step1, text="⚙ 記述問題設定（まとめて実行）",
+            step1, text="⚙ 初期設定",
             command=self._run_step1_setup_wizard,
             bg="#CE93D8", font=FONT_BOLD, height=2, relief=tk.FLAT, cursor="hand2",
         )
@@ -593,17 +590,23 @@ class SaitenSamuraiGUI:
         """画像フォルダを選択"""
         folder = filedialog.askdirectory(title="画像フォルダを選択")
         if folder:
-            self.image_folder_path.set(folder)
-            self.log_message(f"✓ 画像フォルダを選択: {folder}")
-            self._try_auto_restore()
-            self._update_step1_availability()
-            self._update_step_availability()
+            self._start_setup_for_image_source(folder)
+
+    def _start_setup_for_image_source(self, folder):
+        """画像ソースを反映し、画像準備から初期設定まで連続実行する。"""
+        self._set_processing_state(False)
+        self.image_folder_path.set(str(folder))
+        self.log_message(f"✓ 画像フォルダを選択: {folder}")
+        self._try_auto_restore()
+        self._update_step1_availability()
+        self._update_step_availability()
+        self._prepare_images_for_descriptive(auto_start_setup=True)
 
     # ---------------------------------------------------------
     # 記述のみモード: 画像準備
     # ---------------------------------------------------------
 
-    def _prepare_images_for_descriptive(self):
+    def _prepare_images_for_descriptive(self, auto_start_setup=False):
         """記述のみモード: 画像を 00_Processing にコピーして準備する"""
         if self._processing:
             return
@@ -627,12 +630,13 @@ class SaitenSamuraiGUI:
 
         self._set_processing_state(True)
         thread = threading.Thread(
-            target=self._run_prepare_images_thread, args=(img_folder, image_files),
+            target=self._run_prepare_images_thread,
+            args=(img_folder, image_files, auto_start_setup),
             daemon=True,
         )
         thread.start()
 
-    def _run_prepare_images_thread(self, img_folder, image_files):
+    def _run_prepare_images_thread(self, img_folder, image_files, auto_start_setup=False):
         """画像準備の実行（別スレッド）"""
         try:
             import shutil
@@ -660,13 +664,14 @@ class SaitenSamuraiGUI:
             self.root.after(0, self._update_descriptive_status)
             self.root.after(0, self._update_step_availability)
 
-            self.root.after(0, lambda: messagebox.showinfo(
-                "完了",
-                f"画像準備が完了しました！\n\n"
-                f"・画像数: {copied}枚\n\n"
-                f"次のステップ:\n"
-                f"「⚙ 記述問題設定」で採点領域を設定してください。"
-            ))
+            if auto_start_setup:
+                self.root.after(0, self._continue_setup_after_prepare)
+            else:
+                self.root.after(0, lambda: messagebox.showinfo(
+                    "完了",
+                    f"画像準備が完了しました！\n\n"
+                    f"・画像数: {copied}枚"
+                ))
         except Exception as e:
             self.log_message(f"画像準備エラー: {e}")
             import traceback
@@ -675,6 +680,11 @@ class SaitenSamuraiGUI:
             self.root.after(0, lambda: messagebox.showerror("エラー", friendly))
         finally:
             self.root.after(0, self._set_processing_state, False)
+
+    def _continue_setup_after_prepare(self):
+        """画像準備の完了後、そのまま初期設定ウィザードを開始する。"""
+        self._set_processing_state(False)
+        self._run_step1_setup_wizard()
     
     def select_pdf(self):
         """PDFファイルを選択し、画像に展開する"""
@@ -731,10 +741,8 @@ class SaitenSamuraiGUI:
                 for pdf_file in pdf_files:
                     extract_pdf_to_images(pdf_file, output_folder=output_folder)
                     self.log_message(f"  ✓ 展開: {Path(pdf_file).name}")
-            self.root.after(0, lambda: self.image_folder_path.set(str(output_folder)))
             self.log_message(f"✓ PDF展開完了 ({len(pdf_files)}ファイル) → {output_folder}")
-            self.root.after(0, self._try_auto_restore)
-            self.root.after(0, self._update_step1_availability)
+            self.root.after(0, lambda: self._start_setup_for_image_source(output_folder))
         except Exception as e:
             self.log_message(f"✗ PDF展開エラー: {e}")
             self.root.after(0, lambda: messagebox.showerror("PDF展開エラー", str(e)))
@@ -896,8 +904,8 @@ class SaitenSamuraiGUI:
         if not desc_config_path.exists():
             messagebox.showerror(
                 "エラー",
-                "記述問題の設定が見つかりません。\n"
-                "先に「⚙ 記述問題設定」を実行してください。"
+                "採点領域の設定が見つかりません。\n"
+                "先に「⚙ 初期設定」を実行してください。"
             )
             return
         if not desc_scores_path.exists():
@@ -958,7 +966,7 @@ class SaitenSamuraiGUI:
 
             if not config or not scores_data:
                 self.root.after(0, lambda: messagebox.showerror(
-                    "エラー", "記述設定またはスコアの読み込みに失敗しました。"
+                    "エラー", "初期設定またはスコアの読み込みに失敗しました。"
                 ))
                 return
 
@@ -1021,7 +1029,7 @@ class SaitenSamuraiGUI:
         boxed_folder = Path(self.image_folder_path.get()) / RESULTS_FOLDER / BOXED_FOLDER
 
         if not config_path.exists():
-            messagebox.showerror("エラー", "記述問題の設定が見つかりません。\n先に「⚙ 記述問題設定」を実行してください。")
+            messagebox.showerror("エラー", "採点領域の設定が見つかりません。\n先に「⚙ 初期設定」を実行してください。")
             return
         if not scores_path.exists():
             messagebox.showinfo("情報", "採点データがまだありません。\n先に「✏ 記述採点」を実行してください。")
@@ -1073,7 +1081,7 @@ class SaitenSamuraiGUI:
         boxed_folder = Path(img_folder) / RESULTS_FOLDER / BOXED_FOLDER
 
         if not config_path.exists():
-            self._set_desc_status("📋 記述ステータス: ⚠ 未設定\n  → 「⚙ 記述問題設定」を実行してください")
+            self._set_desc_status("📋 採点ステータス: ⚠ 未設定\n  → 「⚙ 初期設定」を実行してください")
             return
 
         try:
@@ -1190,7 +1198,7 @@ class SaitenSamuraiGUI:
         return (len(unscored_images) == 0, len(unscored_images), total_images, detail)
 
     def _reset_descriptive_data(self):
-        """記述問題の設定・採点結果と、学籍番号欄の位置設定をすべて削除して初期状態に戻す。
+        """初期設定・採点結果と、学籍番号欄の位置設定をすべて削除して初期状態に戻す。
 
         同じテスト用データ(PDF/フォルダ)を使い回して設定をやり直す際、
         学籍番号欄の位置設定だけが残っていて英字マス指定・桁数確認の画面が
@@ -1199,6 +1207,7 @@ class SaitenSamuraiGUI:
         削除対象:
             - descriptive_config.json（問題設定）
             - descriptive_scores.json（採点結果）
+            - descriptive_annotations.json（採点メモ・注釈）
             - total_display_config.json（合計点表示位置設定）
             - student_id_area_config.json（学籍番号欄の位置設定）
             - roster_config.json（名簿）
@@ -1212,6 +1221,7 @@ class SaitenSamuraiGUI:
         results_data = Path(img_folder) / RESULTS_FOLDER / RESULTS_DATA_FOLDER
         config_path = results_data / "descriptive_config.json"
         scores_path = results_data / "descriptive_scores.json"
+        annotations_path = results_data / "descriptive_annotations.json"
 
         from descriptive_scorer import TOTAL_DISPLAY_CONFIG_FILE
         total_pos_path = results_data / TOTAL_DISPLAY_CONFIG_FILE
@@ -1228,9 +1238,11 @@ class SaitenSamuraiGUI:
         # 削除対象ファイルの存在チェック
         existing = []
         if config_path.exists():
-            existing.append(f"・記述問題設定（{config_path.name}）")
+            existing.append(f"・採点領域の初期設定（{config_path.name}）")
         if scores_path.exists():
             existing.append(f"・記述採点結果（{scores_path.name}）")
+        if annotations_path.exists():
+            existing.append(f"・採点メモ・注釈（{annotations_path.name}）")
         if total_pos_path.exists():
             existing.append(f"・合計点位置設定（{total_pos_path.name}）")
         if id_area_path.exists():
@@ -1246,7 +1258,7 @@ class SaitenSamuraiGUI:
 
         # 確認ダイアログ — 既存の採点データが消えることを明示
         answer = messagebox.askokcancel(
-            "⚠ 記述設定・学籍番号欄設定の初期化",
+            "⚠ 初期設定と採点データの初期化",
             "以下のファイルを削除し、初期状態に戻します。\n\n"
             + "\n".join(existing) + "\n\n"
             "この操作は取り消せません。\n"
@@ -1263,7 +1275,7 @@ class SaitenSamuraiGUI:
         backup_suffix = datetime.datetime.now().strftime("_%Y%m%d_%H%M%S.bak")
         backed_up = []
         backup_failed = []
-        for path in [config_path, scores_path, total_pos_path, id_area_path, roster_path, name_area_path]:
+        for path in [config_path, scores_path, annotations_path, total_pos_path, id_area_path, roster_path, name_area_path]:
             if path.exists():
                 try:
                     bak_path = path.with_suffix(path.suffix + backup_suffix)
@@ -1287,7 +1299,7 @@ class SaitenSamuraiGUI:
 
         # ファイル削除
         deleted = []
-        for path in [config_path, scores_path, total_pos_path, id_area_path, roster_path, name_area_path]:
+        for path in [config_path, scores_path, annotations_path, total_pos_path, id_area_path, roster_path, name_area_path]:
             if path.exists():
                 try:
                     path.unlink()
@@ -1304,7 +1316,7 @@ class SaitenSamuraiGUI:
                 except Exception as e:
                     self.log_message(f"削除エラー: {bak_atomic.name} — {e}")
 
-        self.log_message(f"✓ 記述設定・学籍番号欄設定を初期化しました（{', '.join(deleted)}）")
+        self.log_message(f"✓ 初期設定と採点データを初期化しました（{', '.join(deleted)}）")
         self._update_descriptive_status()
 
     # ---------------------------------------------------------
@@ -1551,7 +1563,7 @@ class SaitenSamuraiGUI:
         """Step1「採点準備」の統合セットアップウィザード。
 
         名簿・ページ設定・氏名欄・学籍番号欄の4項目を順番にまとめて
-        設定してから、最後に既存の記述問題設定(setup_descriptive)を呼ぶ。
+        設定してから、最後に採点領域の初期設定(setup_descriptive)を呼ぶ。
         各項目は「既存ファイルがあれば自動スキップ」「キャンセル/スキップは
         次のステップへ進むだけ(全体を中断しない)」というルールで動く
         (解答欄指定=setup_descriptiveだけは実質必須のためスキップ不可)。
@@ -1571,11 +1583,23 @@ class SaitenSamuraiGUI:
         results_data_folder = Path(self.image_folder_path.get()) / RESULTS_FOLDER / RESULTS_DATA_FOLDER
         results_data_folder.mkdir(parents=True, exist_ok=True)
 
+        # 既存設定をどう扱うかは、名簿や各領域を設定する前に必ず決める。
+        descriptive_config_path = results_data_folder / "descriptive_config.json"
+        if descriptive_config_path.exists():
+            choice = self._ask_descriptive_setup_action()
+            if choice == "cancel":
+                return
+            if choice == "reset":
+                self._reset_descriptive_data()
+                # 初期化がキャンセル／失敗した場合は既存ファイルが残る。
+                if descriptive_config_path.exists():
+                    return
+
         self._wizard_step_roster(results_data_folder)
         self._wizard_step_page_check()
         self._wizard_step_name_area(boxed_folder, results_data_folder)
         self._wizard_step_id_area(boxed_folder, results_data_folder)
-        self.setup_descriptive()
+        self.setup_descriptive(skip_existing_prompt=True)
 
     def _wizard_step_roster(self, results_data_folder):
         """ウィザードStep: 名簿の読込(保存済みなら自動スキップ)"""
@@ -1648,8 +1672,8 @@ class SaitenSamuraiGUI:
         else:
             self.log_message("学籍番号欄指定: 該当なし（スキップ）")
 
-    def setup_descriptive(self):
-        """記述問題の領域設定
+    def setup_descriptive(self, skip_existing_prompt=False):
+        """採点領域の初期設定
 
         既存設定がある場合は「設定を続行 / 初期化 / キャンセル」の
         3択ダイアログを表示する。初期化を選ぶと _reset_descriptive_data
@@ -1672,7 +1696,7 @@ class SaitenSamuraiGUI:
         config_path = str(results_data_folder / "descriptive_config.json")
 
         # --- 既存設定がある場合: 続行 / 初期化 / キャンセル ---
-        if Path(config_path).exists():
+        if Path(config_path).exists() and not skip_existing_prompt:
             choice = self._ask_descriptive_setup_action()
             if choice == "reset":
                 self._reset_descriptive_data()
@@ -1687,19 +1711,19 @@ class SaitenSamuraiGUI:
                 str(boxed_folder), config_path, parent=self.root
             )
             if config:
-                self.log_message(f"✓ 記述問題設定完了: {len(config['questions'])}問")
+                self.log_message(f"✓ 初期設定完了: {len(config['questions'])}問")
                 self._update_descriptive_status()
                 self._save_session_state()
             else:
-                self.log_message("記述問題設定がキャンセルされました。")
+                self.log_message("初期設定がキャンセルされました。")
         except Exception as e:
-            self.log_message(f"記述問題設定エラー: {e}")
+            self.log_message(f"初期設定エラー: {e}")
             import traceback
             self.log_message(traceback.format_exc())
-            messagebox.showerror("エラー", f"記述問題設定中にエラーが発生しました:\n{e}")
+            messagebox.showerror("エラー", f"初期設定中にエラーが発生しました:\n{e}")
 
     def _ask_descriptive_setup_action(self):
-        """記述問題設定ボタン押下時の3択ダイアログ。
+        """初期設定開始時の3択ダイアログ。
 
         Returns:
             "continue": 設定を続行（問題を追加）
@@ -1707,7 +1731,7 @@ class SaitenSamuraiGUI:
             "cancel": 何もしない
         """
         dialog = tk.Toplevel(self.root)
-        dialog.title("記述問題設定")
+        dialog.title("初期設定")
         dialog.transient(self.root)
         dialog.grab_set()
         dialog.resizable(False, False)
@@ -1716,7 +1740,7 @@ class SaitenSamuraiGUI:
 
         tk.Label(
             dialog,
-            text="既に記述問題の設定が存在します。\nどの操作を行いますか？",
+            text="既に初期設定が存在します。\n最初に、どの操作を行うか選んでください。",
             font=(UI_FONT, get_ui_font_size(10)),
             justify=tk.LEFT, padx=20, pady=15,
         ).pack(fill=tk.X)
@@ -1729,7 +1753,7 @@ class SaitenSamuraiGUI:
             dialog.destroy()
 
         tk.Button(
-            btn_frame, text="設定を続行（問題を追加）",
+            btn_frame, text="既存の設定を使って続ける",
             command=lambda: choose("continue"),
             bg="#A5D6A7", font=(UI_FONT, get_ui_font_size(9), "bold"),
             relief=tk.FLAT, cursor="hand2", height=2,
@@ -1773,8 +1797,8 @@ class SaitenSamuraiGUI:
         if not config_path.exists():
             messagebox.showerror(
                 "エラー",
-                "記述問題の設定が見つかりません。\n"
-                "先に「記述設定」を実行してください。"
+                "採点領域の設定が見つかりません。\n"
+                "先に「初期設定」を実行してください。"
             )
             return
 
@@ -1790,7 +1814,7 @@ class SaitenSamuraiGUI:
             from descriptive_scorer import load_descriptive_config, DescriptiveScorerGUI
             config = load_descriptive_config(str(config_path))
             if not config:
-                messagebox.showerror("エラー", "記述問題設定ファイルの読み込みに失敗しました。")
+                messagebox.showerror("エラー", "初期設定ファイルの読み込みに失敗しました。")
                 return
 
             # 00_Processing が元画像そのものなので高解像度パス不要
@@ -2007,14 +2031,14 @@ class SaitenSamuraiGUI:
         if not desc_config_path.exists() or not desc_scores_path.exists():
             missing = []
             if not desc_config_path.exists():
-                missing.append("・記述問題設定（descriptive_config.json）")
+                missing.append("・採点領域の初期設定（descriptive_config.json）")
             if not desc_scores_path.exists():
                 missing.append("・記述採点結果（descriptive_scores.json）")
             messagebox.showerror(
                 "エラー",
                 "以下のデータが見つかりません:\n\n"
                 + "\n".join(missing) + "\n\n"
-                "先に「⚙ 記述問題設定」と「✏ 記述採点」を実行してください。"
+                "先に「⚙ 初期設定」と「✏ 記述採点」を実行してください。"
             )
             return
 

@@ -108,7 +108,7 @@ class TestInitialState:
     def test_button_labels(self):
         """ボタンのテキストが期待通り"""
         assert "画像準備" in self.app._btn_run_box["text"]
-        assert "記述問題設定" in self.app.desc_setup_btn["text"]
+        assert "初期設定" in self.app.desc_setup_btn["text"]
         assert "記述採点" in self.app.desc_scoring_btn["text"]
         assert "合計点位置" in self.app._btn_total_pos["text"]
         assert "採点済み答案" in self.app._btn_run_scoring["text"]
@@ -544,9 +544,11 @@ class TestSelectFolderChain:
         tmpdir = tempfile.mkdtemp()
         try:
             mock_fd.askdirectory.return_value = tmpdir
-            with patch.object(self.app, '_try_auto_restore') as mock_restore:
+            with patch.object(self.app, '_try_auto_restore') as mock_restore, \
+                 patch.object(self.app, '_prepare_images_for_descriptive') as mock_prepare:
                 self.app.select_folder()
                 assert self.app.image_folder_path.get() == tmpdir
                 mock_restore.assert_called_once()
+                mock_prepare.assert_called_once_with(auto_start_setup=True)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)

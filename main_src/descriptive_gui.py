@@ -14,7 +14,7 @@ import tempfile
 import tkinter as tk
 from tkinter import messagebox, ttk
 from pathlib import Path
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Callable
 
 import cv2
 import numpy as np
@@ -29,9 +29,11 @@ from constants import (
 # 日本語UIフォント（Windows: Yu Gothic UI, Mac: Hiragino Sans）
 UI_FONT = get_ui_font_family()
 from descriptive_scorer import (
-    DESCRIPTIVE_CONFIG_FILE, DESCRIPTIVE_SCORES_FILE,
+    DESCRIPTIVE_CONFIG_FILE, DESCRIPTIVE_SCORES_FILE, DESCRIPTIVE_ANNOTATIONS_FILE,
     load_descriptive_config, save_descriptive_config,
     load_descriptive_scores, save_descriptive_scores,
+    load_descriptive_annotations, save_descriptive_annotations,
+    normalize_annotation_tags, update_comment_history,
     save_total_display_config,
     _calculate_marker_default_region,
     trim_descriptive_regions,
@@ -98,7 +100,7 @@ def setup_descriptive_regions(
         # total_display_region が無い場合は補完
         config.setdefault("total_display_region", None)
     else:
-        config = {"version": 1, "questions": [], "total_display_region": None}
+        config = {"version": 2, "questions": [], "total_display_region": None}
 
     question_count = len(config["questions"])
 
@@ -153,6 +155,7 @@ def setup_descriptive_regions(
             "max_score": q_info["max_score"],
             "aspect": q_info["aspect"],
             "region": list(region),
+            "rubric_memo": q_info.get("rubric_memo", ""),
         })
 
         # --- 次の問題を追加するか? ---
@@ -168,6 +171,7 @@ def setup_descriptive_regions(
     # ここでは聞かない。
 
     # --- 保存 ---
+    config["version"] = 2
     save_descriptive_config(config_save_path, config)
     return config
 
@@ -508,6 +512,10 @@ class IntegratedDescriptiveSetup:
                   font=(UI_FONT, get_ui_font_size(9)), bg="#FFCDD2", relief=tk.FLAT,
                   cursor="hand2").pack(side=tk.LEFT, padx=(0, 5))
 
+        tk.Button(btn_frame, text="📋 採点基準メモ", command=self._edit_selected_rubric,
+                  font=(UI_FONT, get_ui_font_size(9)), bg="#FFF3E0", relief=tk.FLAT,
+                  cursor="hand2").pack(side=tk.LEFT, padx=(0, 5))
+
         tk.Label(btn_frame, text="", bg=BG).pack(side=tk.LEFT, expand=True)  # spacer
 
         tk.Button(btn_frame, text="キャンセル", command=self._on_cancel,
@@ -613,6 +621,7 @@ class IntegratedDescriptiveSetup:
             "max_score": 5,
             "aspect": 1,
             "region": region,
+            "rubric_memo": "",
         }
         self._questions.append(q)
 
@@ -764,6 +773,46 @@ class IntegratedDescriptiveSetup:
         self._refresh_table()
         self._update_status()
 
+    def _edit_selected_rubric(self):
+        """選択中の設問の採点基準メモを編集する。"""
+        sel = self._tree.selection()
+        if not sel:
+            messagebox.showinfo("選択なし", "設問を選択してください。", parent=self.win)
+            return
+        q = next((item for item in self._questions if item["id"] == sel[0]), None)
+        if q is None:
+            return
+        dialog = tk.Toplevel(self.win)
+        dialog.title(f"{q['name']} — 採点基準メモ")
+        dialog.transient(self.win)
+        frame = tk.Frame(dialog, padx=15, pady=12)
+        frame.pack(fill=tk.BOTH, expand=True)
+        tk.Label(frame, text="採点中に参照する教員用メモ（答案には印字されません）",
+                 font=(UI_FONT, get_ui_font_size(9))).pack(anchor=tk.W, pady=(0, 6))
+        memo = tk.Text(
+            frame, width=55, height=8, wrap=tk.WORD,
+            font=(UI_FONT, get_ui_font_size(9)),
+            bg="#FFFFFF", fg="#222222", insertbackground="#222222",
+            relief=tk.SOLID, bd=1, highlightthickness=1,
+            highlightbackground="#9E9E9E", highlightcolor="#1976D2",
+        )
+        memo.pack(fill=tk.BOTH, expand=True)
+        memo.insert("1.0", q.get("rubric_memo", ""))
+
+        def _save():
+            q["rubric_memo"] = memo.get("1.0", "end-1c")
+            dialog.destroy()
+
+        buttons = tk.Frame(frame)
+        buttons.pack(pady=(10, 0))
+        tk.Button(buttons, text="保存", command=_save, width=10, bg="#4CAF50",
+                  font=(UI_FONT, get_ui_font_size(9), "bold")).pack(side=tk.LEFT, padx=4)
+        tk.Button(buttons, text="キャンセル", command=dialog.destroy,
+                  width=10).pack(side=tk.LEFT, padx=4)
+        fit_window_to_content(dialog, min_width=520, min_height=280)
+        dialog.grab_set()
+        memo.focus_set()
+
     def _update_status(self):
         n = len(self._questions)
         total_score = sum(q.get("max_score", 0) for q in self._questions)
@@ -777,7 +826,7 @@ class IntegratedDescriptiveSetup:
             return
 
         config = {
-            "version": 1,
+            "version": 2,
             "questions": self._questions,
             "total_display_region": None,
         }
@@ -1138,6 +1187,17 @@ def _ask_question_info(
     tk.Entry(row3, textvariable=aspect_var, width=5, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT)
     tk.Label(row3, text="(1以上の整数)", font=(UI_FONT, get_ui_font_size(8)), fg="gray").pack(side=tk.LEFT, padx=5)
 
+    tk.Label(frame, text="採点基準メモ（教員用）:",
+             font=(UI_FONT, get_ui_font_size(9))).pack(anchor=tk.W, pady=(8, 2))
+    rubric_text = tk.Text(
+        frame, width=45, height=4, wrap=tk.WORD,
+        font=(UI_FONT, get_ui_font_size(9)),
+        bg="#FFFFFF", fg="#222222", insertbackground="#222222",
+        relief=tk.SOLID, bd=1, highlightthickness=1,
+        highlightbackground="#9E9E9E", highlightcolor="#1976D2",
+    )
+    rubric_text.pack(fill=tk.X)
+
     # 注意書き
     tk.Label(
         frame,
@@ -1164,6 +1224,7 @@ def _ask_question_info(
             "name": name_var.get().strip() or f"記述{question_number}",
             "max_score": ms,
             "aspect": asp,
+            "rubric_memo": rubric_text.get("1.0", "end-1c"),
         }
         dialog.destroy()
 
@@ -1183,7 +1244,7 @@ def _ask_question_info(
     ).pack(side=tk.LEFT, padx=5)
 
     dialog.protocol("WM_DELETE_WINDOW", _cancel)
-    fit_window_to_content(dialog, min_width=350, min_height=280)
+    fit_window_to_content(dialog, min_width=480, min_height=390)
     dialog.grab_set()
     dialog.focus_force()
     dialog.wait_window()
@@ -1225,6 +1286,11 @@ class DescriptiveScorerGUI:
             self.scores: Dict[str, Dict[str, int]] = existing["scores"]
         else:
             self.scores = {}
+
+        self.annotations_path = str(
+            Path(scores_save_path).parent / DESCRIPTIVE_ANNOTATIONS_FILE
+        )
+        self.annotations = load_descriptive_annotations(self.annotations_path)
 
         self._temp_dir: Optional[str] = None
         self._trimmed: Optional[Dict[str, Dict[str, str]]] = None
@@ -1356,7 +1422,7 @@ class DescriptiveScorerGUI:
             status = self._get_question_status(q_id)
             status_label = tk.Label(
                 q_row, text=status,
-                font=(UI_FONT, get_ui_font_size(8)), width=14,
+                font=(UI_FONT, get_ui_font_size(8)), width=22,
                 fg="green" if "完了" in status else "gray",
             )
             status_label.pack(side=tk.LEFT, padx=5)
@@ -1418,12 +1484,19 @@ class DescriptiveScorerGUI:
             if img_name in self.scores and question_id in self.scores[img_name]:
                 scored_count += 1
 
+        held_count = sum(
+            1 for img_name in trimmed_for_q
+            if self.annotations.get("answers", {}).get(img_name, {})
+            .get(question_id, {}).get("held", False)
+        )
+        held_suffix = f" / 保留:{held_count}" if held_count else ""
+
         if scored_count == 0:
-            return "未採点"
+            return f"未採点{held_suffix}"
         elif scored_count >= total_images:
-            return f"完了 ({scored_count}枚)"
+            return f"完了 ({scored_count}枚){held_suffix}"
         else:
-            return f"{scored_count}/{total_images}枚"
+            return f"{scored_count}/{total_images}枚{held_suffix}"
 
     def _update_status_labels(self):
         """ステータスラベルを更新"""
@@ -1493,6 +1566,18 @@ class DescriptiveScorerGUI:
         aspect_var = tk.StringVar(value=str(q_config["aspect"]))
         tk.Entry(row3, textvariable=aspect_var, width=5, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT)
 
+        tk.Label(frame, text="採点基準メモ（教員用）:",
+                 font=(UI_FONT, get_ui_font_size(9))).pack(anchor=tk.W, pady=(8, 2))
+        rubric_text = tk.Text(
+            frame, width=48, height=5, wrap=tk.WORD,
+            font=(UI_FONT, get_ui_font_size(9)),
+            bg="#FFFFFF", fg="#222222", insertbackground="#222222",
+            relief=tk.SOLID, bd=1, highlightthickness=1,
+            highlightbackground="#9E9E9E", highlightcolor="#1976D2",
+        )
+        rubric_text.pack(fill=tk.X)
+        rubric_text.insert("1.0", q_config.get("rubric_memo", ""))
+
         # 採点リセットボタン
         tk.Label(frame, text="─" * 30, fg="#ccc").pack(pady=(10, 5))
         tk.Button(
@@ -1544,8 +1629,10 @@ class DescriptiveScorerGUI:
             q_config["name"] = name_var.get().strip() or q_config["name"]
             q_config["max_score"] = new_max
             q_config["aspect"] = new_asp
+            q_config["rubric_memo"] = rubric_text.get("1.0", "end-1c")
 
             # config を保存
+            self.config["version"] = 2
             save_descriptive_config(
                 str(Path(self.scores_save_path).parent / DESCRIPTIVE_CONFIG_FILE),
                 self.config,
@@ -1574,7 +1661,7 @@ class DescriptiveScorerGUI:
         ).pack(side=tk.LEFT, padx=5)
 
         dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
-        fit_window_to_content(dialog, min_width=380, min_height=320)
+        fit_window_to_content(dialog, min_width=480, min_height=430)
         dialog.grab_set()
         dialog.focus_force()
         dialog.wait_window()
@@ -1673,6 +1760,9 @@ class DescriptiveScorerGUI:
             initial_mode=current_mode,
             image_folder=self.image_folder,
             original_image_folder=self.original_image_folder,
+            rubric_save_callback=self._save_rubric_config,
+            annotations=self.annotations,
+            annotations_save_callback=self._save_annotations,
         )
         updated = scorer.run()
 
@@ -1690,6 +1780,18 @@ class DescriptiveScorerGUI:
             )
 
         self._update_status_labels()
+
+    def _save_rubric_config(self):
+        """採点中に編集された採点基準メモを設定ファイルへ保存する。"""
+        self.config["version"] = 2
+        save_descriptive_config(
+            str(Path(self.scores_save_path).parent / DESCRIPTIVE_CONFIG_FILE),
+            self.config,
+        )
+
+    def _save_annotations(self):
+        """採点中の回答注釈をアトミックに保存する。"""
+        save_descriptive_annotations(self.annotations_path, self.annotations)
 
     def _finish(self, win: tk.Toplevel):
         """採点完了・保存"""
@@ -1748,6 +1850,9 @@ class _SingleQuestionScorer:
         initial_mode: str = "1枚ずつ",
         image_folder: Optional[str] = None,
         original_image_folder: Optional[str] = None,
+        rubric_save_callback: Optional[Callable[[], None]] = None,
+        annotations: Optional[dict] = None,
+        annotations_save_callback: Optional[Callable[[], None]] = None,
     ):
         self.parent = parent
         self.q_config = question_config
@@ -1760,6 +1865,14 @@ class _SingleQuestionScorer:
         self.image_folder = image_folder  # 補正済み画像フォルダ (00_Processing)
         # 元画像フォルダ（マーク描画なしの純粋スキャン画像）
         self.original_image_folder = original_image_folder
+        self.rubric_save_callback = rubric_save_callback
+        self._rubric_save_after_id: Optional[str] = None
+        self.annotations = annotations if annotations is not None else {
+            "version": 1, "answers": {}, "comment_history": {},
+        }
+        self.annotations_save_callback = annotations_save_callback
+        self._annotation_save_after_id: Optional[str] = None
+        self._annotation_loaded_filename: Optional[str] = None
 
         self.filenames = sorted(image_paths.keys())
         self.current_idx = 0
@@ -1894,6 +2007,16 @@ class _SingleQuestionScorer:
         )
         self._btn_batsu.pack(side=tk.LEFT, padx=2)
 
+        self._btn_hold = tk.Button(
+            top_bar, text="⏸ 保留して次へ",
+            command=self._on_hold,
+            bg="#FFF3E0", fg="#AD1457",
+            font=(UI_FONT, get_ui_font_size(9), "bold"),
+            relief=tk.RAISED, cursor="hand2",
+            activebackground="#FFE0B2", padx=6, pady=1,
+        )
+        self._btn_hold.pack(side=tk.LEFT, padx=2)
+
         # 右端（採点完了・キャンセル）
         tk.Button(
             top_bar, text="キャンセル",
@@ -1989,9 +2112,138 @@ class _SingleQuestionScorer:
         canvas_frame = tk.Frame(self._single_frame)
         canvas_frame.pack(fill=tk.BOTH, expand=True, padx=4, pady=2)
 
+        # 答案を見ながら随時追記できる、設問共通の採点基準メモ。
+        rubric_panel = tk.Frame(
+            canvas_frame, bg="#FFF8E1", padx=8, pady=8,
+            highlightthickness=1, highlightbackground="#D6B656",
+        )
+        rubric_panel.pack(side=tk.RIGHT, fill=tk.Y, padx=(8, 0))
+        tk.Label(
+            rubric_panel, text="📋 採点基準メモ",
+            bg="#FFF8E1", fg="#5D4037",
+            font=(UI_FONT, get_ui_font_size(10), "bold"),
+        ).pack(anchor=tk.W)
+        tk.Button(
+            rubric_panel, text="採点に戻る（Esc）",
+            command=self._focus_scoring_canvas,
+            bg="#E3F2FD", fg="#1565C0", relief=tk.FLAT, cursor="hand2",
+            font=(UI_FONT, get_ui_font_size(8), "bold"),
+        ).pack(anchor=tk.E, pady=(0, 3))
+        tk.Label(
+            rubric_panel,
+            text="答案を見ながら随時追記できます\n"
+                 "（この設問の全回答で共有）\n"
+                 "※答案画像をクリックすると数字キー採点に戻ります",
+            bg="#FFF8E1", fg="#795548", justify=tk.LEFT,
+            font=(UI_FONT, get_ui_font_size(8)),
+        ).pack(anchor=tk.W, pady=(2, 6))
+        self._rubric_text = tk.Text(
+            rubric_panel, width=30, height=7, wrap=tk.WORD,
+            font=(UI_FONT, get_ui_font_size(9)),
+            bg="#FFFFFF", fg="#222222", insertbackground="#222222",
+            relief=tk.SOLID, bd=1, highlightthickness=1,
+            highlightbackground="#BCAAA4", highlightcolor="#1976D2",
+        )
+        self._rubric_text.pack(fill=tk.BOTH, expand=True)
+        self._rubric_text.insert("1.0", self.q_config.get("rubric_memo", ""))
+        self._rubric_text.bind("<KeyRelease>", self._schedule_rubric_save)
+        self._rubric_text.bind("<FocusOut>", lambda _e: self._save_rubric_now())
+        self._rubric_status = tk.Label(
+            rubric_panel, text="", bg="#FFF8E1", fg="#2E7D32",
+            font=(UI_FONT, get_ui_font_size(7)), anchor=tk.E,
+        )
+        self._rubric_status.pack(fill=tk.X, pady=(3, 0))
+
+        tk.Frame(rubric_panel, height=1, bg="#BCAAA4").pack(fill=tk.X, pady=7)
+        tk.Label(
+            rubric_panel, text="🗒 この回答の注釈",
+            bg="#FFF8E1", fg="#5D4037",
+            font=(UI_FONT, get_ui_font_size(10), "bold"),
+        ).pack(anchor=tk.W)
+
+        tk.Label(rubric_panel, text="教員用メモ（答案には印字しません）",
+                 bg="#FFF8E1", fg="#5D4037",
+                 font=(UI_FONT, get_ui_font_size(8))).pack(anchor=tk.W, pady=(4, 2))
+        self._answer_memo_text = tk.Text(
+            rubric_panel, width=30, height=4, wrap=tk.WORD,
+            font=(UI_FONT, get_ui_font_size(8)), bg="#FFFFFF", fg="#222222",
+            insertbackground="#222222", relief=tk.SOLID, bd=1,
+            highlightthickness=1, highlightbackground="#9E9E9E",
+            highlightcolor="#1976D2",
+        )
+        self._answer_memo_text.pack(fill=tk.X)
+
+        tk.Label(rubric_panel, text="生徒へのコメント",
+                 bg="#FFF8E1", fg="#5D4037",
+                 font=(UI_FONT, get_ui_font_size(8))).pack(anchor=tk.W, pady=(5, 2))
+        self._comment_history_var = tk.StringVar()
+        self._comment_history_combo = ttk.Combobox(
+            rubric_panel, textvariable=self._comment_history_var,
+            values=self.annotations.get("comment_history", {}).get(self.q_id, []),
+            state="readonly", width=28,
+        )
+        self._comment_history_combo.pack(fill=tk.X, pady=(0, 2))
+        self._comment_history_combo.bind("<<ComboboxSelected>>", self._select_comment_history)
+        self._answer_comment_text = tk.Text(
+            rubric_panel, width=30, height=3, wrap=tk.WORD,
+            font=(UI_FONT, get_ui_font_size(8)), bg="#FFFFFF", fg="#222222",
+            insertbackground="#222222", relief=tk.SOLID, bd=1,
+            highlightthickness=1, highlightbackground="#9E9E9E",
+            highlightcolor="#1976D2",
+        )
+        self._answer_comment_text.pack(fill=tk.X)
+
+        self._answer_held_var = tk.BooleanVar(value=False)
+        hold_row = tk.Frame(rubric_panel, bg="#FFF8E1")
+        hold_row.pack(fill=tk.X, pady=(5, 2))
+        self._held_status_label = tk.Label(
+            hold_row, text="", bg="#FFF8E1", fg="#AD1457",
+            font=(UI_FONT, get_ui_font_size(9), "bold"),
+        )
+        self._held_status_label.pack(side=tk.LEFT)
+        tk.Button(
+            hold_row, text="保留解除", command=self._clear_hold,
+            font=(UI_FONT, get_ui_font_size(7)),
+        ).pack(side=tk.RIGHT)
+
+        tag_row = tk.Frame(rubric_panel, bg="#FFF8E1")
+        tag_row.pack(fill=tk.X)
+        self._tag_entry = tk.Entry(
+            tag_row, font=(UI_FONT, get_ui_font_size(8)), bg="#FFFFFF",
+            fg="#222222", insertbackground="#222222", relief=tk.SOLID, bd=1,
+            highlightthickness=1, highlightbackground="#9E9E9E",
+            highlightcolor="#1976D2",
+        )
+        self._tag_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self._tag_entry.bind("<Return>", self._add_tags_from_entry)
+        tk.Button(tag_row, text="タグ追加", command=self._add_tags_from_entry,
+                  font=(UI_FONT, get_ui_font_size(7))).pack(side=tk.LEFT, padx=(3, 0))
+        self._tags_listbox = tk.Listbox(
+            rubric_panel, height=2, exportselection=False,
+            font=(UI_FONT, get_ui_font_size(8)), bg="#FFFFFF", fg="#222222",
+            relief=tk.SOLID, bd=1,
+        )
+        self._tags_listbox.pack(fill=tk.X, pady=(3, 2))
+        tk.Button(rubric_panel, text="選択したタグを削除",
+                  command=self._remove_selected_tag,
+                  font=(UI_FONT, get_ui_font_size(7))).pack(anchor=tk.E)
+        self._annotation_status = tk.Label(
+            rubric_panel, text="", bg="#FFF8E1", fg="#2E7D32",
+            font=(UI_FONT, get_ui_font_size(7)), anchor=tk.E,
+        )
+        self._annotation_status.pack(fill=tk.X, pady=(2, 0))
+
+        for widget in (self._answer_memo_text, self._answer_comment_text):
+            widget.bind("<KeyRelease>", self._schedule_annotation_save)
+        self._answer_memo_text.bind("<FocusOut>", lambda _e: self._commit_current_annotation())
+        self._answer_comment_text.bind(
+            "<FocusOut>", lambda _e: self._commit_current_annotation(add_comment_history=True)
+        )
+
         self.canvas = tk.Canvas(
             canvas_frame, bg="white",
             highlightthickness=1, highlightbackground="#ccc",
+            takefocus=1,
         )
         self._canvas_xscroll = tk.Scrollbar(canvas_frame, orient=tk.HORIZONTAL,
                                              command=self.canvas.xview)
@@ -2007,6 +2259,7 @@ class _SingleQuestionScorer:
                          lambda e: self.canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
                          if self._mode_var.get() == "1枚ずつ" and self._single_zoom_factor > 100
                          else None)
+        self.canvas.bind("<Button-1>", self._focus_scoring_canvas, add="+")
 
         # フィルタ済みインデックスリスト（初期は全件）
         self._filtered_indices: List[int] = list(range(len(self.filenames)))
@@ -2016,6 +2269,7 @@ class _SingleQuestionScorer:
         win.bind("<Left>", self._prev)
         win.bind("<Right>", self._next)
         win.bind("<Tab>", self._jump_to_unscored)
+        win.bind("<Escape>", self._focus_scoring_canvas)
 
         # ===== 一覧 (グリッド) パネル =====
         self._grid_frame = tk.Frame(self._container, bg="#F5F7FA")
@@ -2033,6 +2287,11 @@ class _SingleQuestionScorer:
             win.after(50, self._refresh_grid)
         else:
             win.after(50, self._show_current)
+
+        # Textウィジェットへ初期フォーカスが移ると数字キー採点が効かないため、
+        # 起動直後は必ず答案キャンバスをフォーカスする。
+        win.after_idle(self.canvas.focus_force)
+        win.after(250, self.canvas.focus_force)
 
         win.protocol("WM_DELETE_WINDOW", self._cancel)
         win.grab_set()
@@ -2064,6 +2323,7 @@ class _SingleQuestionScorer:
                 ("← →", "前後の画像に移動"),
                 ("Tab", "次の未採点へジャンプ"),
                 ("Del", "得点をクリア"),
+                ("Esc", "メモ編集を終えて採点に戻る"),
             ]
         else:
             lines = [
@@ -2074,6 +2334,7 @@ class _SingleQuestionScorer:
                 ("Tab", "次の未採点へジャンプ"),
                 ("Space", "スキップ"),
                 ("Del", "得点をクリア"),
+                ("Esc", "メモ編集を終えて採点に戻る"),
             ]
 
         for key, desc in lines:
@@ -2091,12 +2352,191 @@ class _SingleQuestionScorer:
 
         fit_window_to_content(hw, min_width=320, min_height=280)
 
+    def _schedule_rubric_save(self, _event=None):
+        """採点基準メモを入力停止後に保存する。"""
+        if self._rubric_save_after_id and self._win:
+            self._win.after_cancel(self._rubric_save_after_id)
+        self._rubric_status.config(text="入力中…")
+        self._rubric_save_after_id = self._win.after(400, self._save_rubric_now)
+
+    def _save_rubric_now(self):
+        """編集内容を問題設定へ反映して即時保存する。"""
+        if not hasattr(self, "_rubric_text"):
+            return
+        if self._rubric_save_after_id and self._win:
+            try:
+                self._win.after_cancel(self._rubric_save_after_id)
+            except tk.TclError:
+                pass
+        self._rubric_save_after_id = None
+        self.q_config["rubric_memo"] = self._rubric_text.get("1.0", "end-1c")
+        if self.rubric_save_callback:
+            self.rubric_save_callback()
+        if hasattr(self, "_rubric_status"):
+            self._rubric_status.config(text="保存済み")
+
+    def _schedule_annotation_save(self, _event=None):
+        """回答注釈を入力停止後に自動保存する。"""
+        if self._annotation_save_after_id and self._win:
+            self._win.after_cancel(self._annotation_save_after_id)
+        self._annotation_status.config(text="入力中…")
+        self._annotation_save_after_id = self._win.after(
+            400, self._commit_current_annotation
+        )
+
+    def _focus_scoring_canvas(self, _event=None):
+        """注釈編集を保存し、数字キー採点を受け付ける状態へ戻す。"""
+        self._commit_current_annotation(add_comment_history=True)
+        self.canvas.focus_force()
+        return "break"
+
+    def _current_annotation(self, filename: str, create: bool = True) -> dict:
+        answers = self.annotations.setdefault("answers", {})
+        if not create:
+            return answers.get(filename, {}).get(self.q_id, {})
+        question_map = answers.setdefault(filename, {})
+        return question_map.setdefault(self.q_id, {
+            "memo": "", "comment": "", "held": False, "tags": [],
+        })
+
+    def _commit_current_annotation(self, add_comment_history: bool = False):
+        """画面上の回答注釈をモデルへ反映し保存する。"""
+        filename = self._annotation_loaded_filename
+        if not filename or not hasattr(self, "_answer_memo_text"):
+            return
+        if self._annotation_save_after_id and self._win:
+            try:
+                self._win.after_cancel(self._annotation_save_after_id)
+            except tk.TclError:
+                pass
+        self._annotation_save_after_id = None
+        annotation = self._current_annotation(filename)
+        annotation["memo"] = self._answer_memo_text.get("1.0", "end-1c")
+        annotation["comment"] = self._answer_comment_text.get("1.0", "end-1c").strip()
+        annotation["held"] = bool(self._answer_held_var.get())
+        annotation["tags"] = list(self._tags_listbox.get(0, tk.END))
+
+        if add_comment_history and annotation["comment"]:
+            histories = self.annotations.setdefault("comment_history", {})
+            comment = annotation["comment"]
+            history = update_comment_history(histories.get(self.q_id, []), comment)
+            histories[self.q_id] = history
+            self._comment_history_combo.configure(values=history)
+
+        if self.annotations_save_callback:
+            self.annotations_save_callback()
+        self._annotation_status.config(text="保存済み")
+
+    def _load_annotation_for(self, filename: str):
+        """答案切替時に回答注釈をエディタへ読み込む。"""
+        if self._annotation_loaded_filename == filename:
+            return
+        self._commit_current_annotation(add_comment_history=True)
+        annotation = self._current_annotation(filename, create=False)
+        self._answer_memo_text.delete("1.0", tk.END)
+        self._answer_memo_text.insert("1.0", annotation.get("memo", ""))
+        self._answer_comment_text.delete("1.0", tk.END)
+        self._answer_comment_text.insert("1.0", annotation.get("comment", ""))
+        self._answer_held_var.set(bool(annotation.get("held", False)))
+        self._update_held_status()
+        self._tags_listbox.delete(0, tk.END)
+        for tag in annotation.get("tags", []):
+            self._tags_listbox.insert(tk.END, tag)
+        self._comment_history_var.set("")
+        self._annotation_loaded_filename = filename
+        self._annotation_status.config(text="")
+
+    def _select_comment_history(self, _event=None):
+        comment = self._comment_history_var.get()
+        if not comment:
+            return
+        self._answer_comment_text.delete("1.0", tk.END)
+        self._answer_comment_text.insert("1.0", comment)
+        self._schedule_annotation_save()
+
+    def _add_tags_from_entry(self, _event=None):
+        raw = self._tag_entry.get().replace("、", ",")
+        existing = list(self._tags_listbox.get(0, tk.END))
+        updated = normalize_annotation_tags(existing + raw.split(","))
+        self._tags_listbox.delete(0, tk.END)
+        for tag in updated:
+            self._tags_listbox.insert(tk.END, tag)
+        self._tag_entry.delete(0, tk.END)
+        self._schedule_annotation_save()
+        return "break"
+
+    def _remove_selected_tag(self):
+        selected = self._tags_listbox.curselection()
+        if not selected:
+            return
+        self._tags_listbox.delete(selected[0])
+        self._schedule_annotation_save()
+
+    def _update_held_status(self):
+        if hasattr(self, "_held_status_label"):
+            self._held_status_label.config(
+                text="⏸ 保留中" if self._answer_held_var.get() else ""
+            )
+
+    def _on_hold(self):
+        """現在の答案を保留にして、得点を付けず次の答案へ進む。"""
+        if not self.filenames:
+            return
+        self._answer_held_var.set(True)
+        self._update_held_status()
+        self._commit_current_annotation()
+        self.canvas.focus_set()
+        self._next_auto()
+
+    def _clear_hold(self):
+        self._answer_held_var.set(False)
+        self._update_held_status()
+        self._commit_current_annotation()
+        self.canvas.focus_set()
+
     def _open_current_original(self):
         """現在表示中の画像の元画像をビューアで開く"""
         if not self.filenames:
             return
         fn = self.filenames[self.current_idx]
         self._open_original_image(fn)
+
+    def _edit_rubric_dialog(self):
+        """一覧モードから採点基準メモを編集する。"""
+        dialog = tk.Toplevel(self._win)
+        dialog.title(f"{self.q_config['name']} — 採点基準メモ")
+        dialog.transient(self._win)
+        frame = tk.Frame(dialog, padx=15, pady=12)
+        frame.pack(fill=tk.BOTH, expand=True)
+        memo = tk.Text(
+            frame, width=55, height=10, wrap=tk.WORD,
+            font=(UI_FONT, get_ui_font_size(9)), bg="#FFFFFF", fg="#222222",
+            insertbackground="#222222", relief=tk.SOLID, bd=1,
+            highlightthickness=1, highlightbackground="#9E9E9E",
+            highlightcolor="#1976D2",
+        )
+        memo.pack(fill=tk.BOTH, expand=True)
+        memo.insert("1.0", self.q_config.get("rubric_memo", ""))
+
+        def _save():
+            value = memo.get("1.0", "end-1c")
+            self.q_config["rubric_memo"] = value
+            if hasattr(self, "_rubric_text"):
+                self._rubric_text.delete("1.0", tk.END)
+                self._rubric_text.insert("1.0", value)
+            if self.rubric_save_callback:
+                self.rubric_save_callback()
+            dialog.destroy()
+
+        buttons = tk.Frame(frame)
+        buttons.pack(pady=(10, 0))
+        tk.Button(buttons, text="保存", command=_save, width=10,
+                  bg="#4CAF50").pack(side=tk.LEFT, padx=4)
+        tk.Button(buttons, text="キャンセル", command=dialog.destroy,
+                  width=10).pack(side=tk.LEFT, padx=4)
+        fit_window_to_content(dialog, min_width=520, min_height=320)
+        dialog.grab_set()
+        memo.focus_set()
 
     # ─── グリッドパネル構築 ───
 
@@ -2123,6 +2563,10 @@ class _SingleQuestionScorer:
                  font=(UI_FONT, get_ui_font_size(9), "bold"), bg=BG, fg="#555").pack(side=tk.LEFT, padx=(10, 0))
 
         tk.Label(top_bar, text="", bg=BG).pack(side=tk.LEFT, expand=True)  # spacer
+
+        tk.Button(top_bar, text="📋 採点基準メモ", command=self._edit_rubric_dialog,
+                  bg="#FFF3E0", font=(UI_FONT, get_ui_font_size(8)),
+                  relief=tk.FLAT, cursor="hand2").pack(side=tk.RIGHT, padx=(0, 6))
 
         tk.Button(top_bar, text="✔ この問題の採点完了", command=self._finish,
                   bg="#4CAF50", fg="black", font=(UI_FONT, get_ui_font_size(9), "bold"),
@@ -2573,6 +3017,9 @@ class _SingleQuestionScorer:
         fn = self.filenames[self.current_idx]
         img_path = self.image_paths.get(fn)
 
+        if hasattr(self, "_answer_memo_text"):
+            self._load_annotation_for(fn)
+
         self.progress_var.set(f"{self.current_idx + 1} / {len(self.filenames)}")
         self.filename_var.set(fn)
 
@@ -2678,6 +3125,10 @@ class _SingleQuestionScorer:
         if not self.filenames:
             return
 
+        # メモや得点入力欄への文字入力を採点ショートカットとして扱わない。
+        if isinstance(event.widget, (tk.Entry, tk.Text, ttk.Entry, tk.Listbox)):
+            return
+
         key = event.keysym
 
         # p / P: 元画像をビューアで開く
@@ -2757,6 +3208,7 @@ class _SingleQuestionScorer:
 
     def _on_filter_change(self):
         """未採点のみ表示チェックボックスの変更時"""
+        self._commit_current_annotation(add_comment_history=True)
         self._update_filter_list()
         if self._filter_unscored_var.get() and not self._filtered_indices:
             # 全件採点済みでフィルタON → キャンバスにメッセージ表示
@@ -2928,6 +3380,8 @@ class _SingleQuestionScorer:
 
     def _finish(self):
         """この問題の採点完了"""
+        self._save_rubric_now()
+        self._commit_current_annotation(add_comment_history=True)
         scored = len(self.local_scores)
         total = len(self.filenames)
 
@@ -2949,6 +3403,8 @@ class _SingleQuestionScorer:
 
     def _cancel(self):
         """キャンセル — 入力済みのデータがある場合は保存するか確認する。"""
+        self._save_rubric_now()
+        self._commit_current_annotation(add_comment_history=True)
         if self.local_scores:
             answer = messagebox.askyesnocancel(
                 "採点の中断",

@@ -95,7 +95,7 @@
 > ModuleNotFoundError: No module named '_tkinter'
 > ```
 >
-> 事前に `brew install tcl-tk` してから Python を入れ直す（pyenv なら `pyenv install` をやり直す）ことで解決します。`python3 -c "import tkinter"` がエラーなく通ることを事前に確認してください。
+> **pyenv を使っている場合、`brew install tcl-tk` してから `pyenv install -f` でビルドし直しても直らないことがあります**（2025年時点の Homebrew 版 tcl-tk は 9.0 系だが、pyenv 付属のビルドスクリプトがこの新しいライブラリ名に対応しておらず `_tkinter` が組み込まれないまま失敗する既知の不具合があるため）。その場合は pyenv を諦め、下記の「ソースから実行」の手順どおり **Homebrew 版 Python**（`python3.11`/`python3.12` など、`brew install python@3.12` で入るもの）と `brew install python-tk@3.12`（使う Python のバージョンに合わせる）を使って仮想環境を作ってください。`python3 -c "import tkinter"` がエラーなく通ることを事前に確認してください。
 
 ---
 
@@ -109,7 +109,7 @@
 git clone https://github.com/takehikoyasuda/SaitenSamurai-mac.git
 cd SaitenSamurai-mac
 
-# Tkinter が有効な Python であることを確認
+# Tkinter が有効な Python であることを確認（エラーが出たら下の「補足」を参照）
 python3 -c "import tkinter"
 
 # 仮想環境を作成して依存パッケージをインストール
@@ -122,6 +122,28 @@ python main_src/saitensamurai.py
 ```
 
 2 回目以降に起動する際も、`source .venv/bin/activate` で仮想環境を有効化してから `python main_src/saitensamurai.py` を実行してください。
+
+#### 補足: macOSでTkinterが使えない場合（pyenv環境など）
+
+`python3 -c "import tkinter"` が `ModuleNotFoundError: No module named '_tkinter'` で失敗する場合、上の手順の `python3` を **Homebrew版Python** に置き換えてください（pyenv版Pythonの再ビルドでは直らないことが多いため）。
+
+```bash
+brew install python@3.12 python-tk@3.12   # 使うバージョンに合わせて@3.12を変える
+
+# .venv作成時、pyenv/system の python3 ではなく Homebrew の python3.12 を明示的に指定する
+/opt/homebrew/bin/python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python main_src/saitensamurai.py
+```
+
+`python3` コマンド自体を毎回打つのが面倒な場合は、`~/.zshrc` に以下を追記すると通常の `python3` コマンドがこの仮想環境を指すようになります（他のプロジェクトでpyenvのバージョン切り替えを使う場合は該当行を一時的にコメントアウトしてください）。
+
+```bash
+alias python3="$HOME/.venvs/<venvの場所>/bin/python3"
+```
+
+より詳しい原因（pyenv付属ビルドスクリプトのTcl/Tk 9.0未対応の既知の不具合）は [DEVELOPMENT.md](DEVELOPMENT.md) を参照してください。
 
 ---
 

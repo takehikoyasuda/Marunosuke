@@ -43,7 +43,11 @@ logger = logging.getLogger(__name__)
 
 DESCRIPTIVE_CONFIG_FILE = "descriptive_config.json"
 DESCRIPTIVE_SCORES_FILE = "descriptive_scores.json"
+DESCRIPTIVE_ANNOTATIONS_FILE = "descriptive_annotations.json"
 TOTAL_DISPLAY_CONFIG_FILE = "total_display_config.json"
+COMMENT_HISTORY_LIMIT = 50
+ANNOTATION_TAG_LIMIT = 10
+ANNOTATION_TAG_MAX_LENGTH = 30
 
 
 # ============================================================
@@ -68,6 +72,98 @@ def load_descriptive_scores(scores_path: str) -> Optional[dict]:
 def save_descriptive_scores(scores_path: str, scores: dict):
     """descriptive_scores.json をアトミックに保存する。"""
     atomic_json_save(scores_path, scores)
+
+
+def normalize_descriptive_annotations(data: Optional[dict]) -> dict:
+    """注釈データを安全な正規形へ変換する。"""
+    source = data if isinstance(data, dict) else {}
+    normalized = dict(source)
+    normalized["version"] = source.get("version", 1)
+
+    answers = {}
+    raw_answers = source.get("answers", {})
+    if isinstance(raw_answers, dict):
+        for filename, question_map in raw_answers.items():
+            if not isinstance(filename, str) or not isinstance(question_map, dict):
+                continue
+            clean_questions = {}
+            for question_id, annotation in question_map.items():
+                if not isinstance(question_id, str) or not isinstance(annotation, dict):
+                    continue
+                memo = annotation.get("memo", "")
+                comment = annotation.get("comment", "")
+                memo = memo if isinstance(memo, str) else str(memo)
+                comment = comment if isinstance(comment, str) else str(comment)
+                held = annotation.get("held", False) is True
+                raw_tags = annotation.get("tags", [])
+                tags = normalize_annotation_tags(raw_tags if isinstance(raw_tags, list) else [])
+                if memo or comment or held or tags:
+                    clean_questions[question_id] = {
+                        "memo": memo, "comment": comment,
+                        "held": held, "tags": tags,
+                    }
+            if clean_questions:
+                answers[filename] = clean_questions
+    normalized["answers"] = answers
+
+    history = {}
+    raw_history = source.get("comment_history", {})
+    if isinstance(raw_history, dict):
+        for question_id, comments in raw_history.items():
+            if not isinstance(question_id, str) or not isinstance(comments, list):
+                continue
+            clean_comments = []
+            for comment in comments:
+                if not isinstance(comment, str):
+                    continue
+                comment = comment.strip()
+                if comment and comment not in clean_comments:
+                    clean_comments.append(comment)
+                if len(clean_comments) >= COMMENT_HISTORY_LIMIT:
+                    break
+            if clean_comments:
+                history[question_id] = clean_comments
+    normalized["comment_history"] = history
+    return normalized
+
+
+def normalize_annotation_tags(tags) -> list:
+    """タグをトリム・重複排除し、長さと件数の上限を適用する。"""
+    result = []
+    for tag in tags:
+        if not isinstance(tag, str):
+            continue
+        tag = tag.strip()[:ANNOTATION_TAG_MAX_LENGTH]
+        if tag and tag not in result:
+            result.append(tag)
+        if len(result) >= ANNOTATION_TAG_LIMIT:
+            break
+    return result
+
+
+def update_comment_history(history, comment: str) -> list:
+    """コメントを重複なしの最近使用順で履歴へ追加する。"""
+    comment = comment.strip()
+    existing = history if isinstance(history, list) else []
+    result = [comment] if comment else []
+    for item in existing:
+        if isinstance(item, str):
+            item = item.strip()
+            if item and item not in result:
+                result.append(item)
+        if len(result) >= COMMENT_HISTORY_LIMIT:
+            break
+    return result
+
+
+def load_descriptive_annotations(annotations_path: str) -> dict:
+    """回答注釈を読み込む。未作成・破損時は空の正規形を返す。"""
+    return normalize_descriptive_annotations(load_json_safe(annotations_path))
+
+
+def save_descriptive_annotations(annotations_path: str, annotations: dict):
+    """回答注釈を正規化してアトミックに保存する。"""
+    atomic_json_save(annotations_path, normalize_descriptive_annotations(annotations))
 
 
 def load_total_display_config(config_path: str) -> Optional[dict]:

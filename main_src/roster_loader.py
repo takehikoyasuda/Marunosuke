@@ -260,7 +260,13 @@ def select_roster_gui(parent: Optional[tk.Tk] = None) -> Optional[Dict[str, str]
         font=(UI_FONT, get_ui_font_size(8)), fg="#555", justify=tk.LEFT,
     ).pack(anchor=tk.W, pady=(0, 6))
 
-    paste_text = tk.Text(paste_frame, width=40, height=14, font=(UI_FONT, get_ui_font_size(9)))
+    paste_text = tk.Text(
+        paste_frame, width=40, height=14,
+        font=(UI_FONT, get_ui_font_size(9)),
+        bg="#FFFFFF", fg="#222222", insertbackground="#222222",
+        relief=tk.SOLID, bd=1, highlightthickness=1,
+        highlightbackground="#9E9E9E", highlightcolor="#1976D2",
+    )
     paste_text.pack(fill=tk.BOTH, expand=True)
 
     def _confirm_paste():

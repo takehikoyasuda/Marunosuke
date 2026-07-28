@@ -86,11 +86,45 @@ class TestStep1SetupWizard(unittest.TestCase):
         app._wizard_step_page_check = MagicMock(side_effect=lambda *a: calls.append('page'))
         app._wizard_step_name_area = MagicMock(side_effect=lambda *a: calls.append('name'))
         app._wizard_step_id_area = MagicMock(side_effect=lambda *a: calls.append('id'))
-        app.setup_descriptive = MagicMock(side_effect=lambda: calls.append('desc'))
+        app.setup_descriptive = MagicMock(side_effect=lambda **_kwargs: calls.append('desc'))
 
         app._run_step1_setup_wizard()
 
         self.assertEqual(calls, ['roster', 'page', 'name', 'id', 'desc'])
+        app.setup_descriptive.assert_called_once_with(skip_existing_prompt=True)
+
+    def test_existing_config_is_asked_before_any_substep(self):
+        self.results_data.mkdir(parents=True, exist_ok=True)
+        (self.results_data / "descriptive_config.json").write_text(
+            '{"version": 2, "questions": []}', encoding="utf-8"
+        )
+        app = _make_stub_app(str(self.img_folder))
+        calls = []
+        app._ask_descriptive_setup_action = MagicMock(
+            side_effect=lambda: calls.append("ask") or "continue"
+        )
+        app._wizard_step_roster = MagicMock(side_effect=lambda *_: calls.append("roster"))
+        app._wizard_step_page_check = MagicMock(side_effect=lambda: calls.append("page"))
+        app._wizard_step_name_area = MagicMock(side_effect=lambda *_: calls.append("name"))
+        app._wizard_step_id_area = MagicMock(side_effect=lambda *_: calls.append("id"))
+        app.setup_descriptive = MagicMock(side_effect=lambda **_: calls.append("setup"))
+
+        app._run_step1_setup_wizard()
+
+        self.assertEqual(calls, ["ask", "roster", "page", "name", "id", "setup"])
+
+    def test_cancel_existing_config_stops_before_substeps(self):
+        self.results_data.mkdir(parents=True, exist_ok=True)
+        (self.results_data / "descriptive_config.json").write_text(
+            '{"version": 2, "questions": []}', encoding="utf-8"
+        )
+        app = _make_stub_app(str(self.img_folder))
+        app._ask_descriptive_setup_action = MagicMock(return_value="cancel")
+        app._wizard_step_roster = MagicMock()
+
+        app._run_step1_setup_wizard()
+
+        app._wizard_step_roster.assert_not_called()
 
     # ------------------------------------------------------------
     # 名簿ステップ
