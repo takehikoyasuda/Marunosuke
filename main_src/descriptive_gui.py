@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import shutil
+import sys
 import tempfile
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -56,6 +57,18 @@ _OVERLAY_COLORS_RGB = [
 ]
 
 
+def is_grading_space_key(event, platform_name: Optional[str] = None) -> bool:
+    """答案送りとして扱う、実際のスペースキーイベントか判定する。"""
+    if event.keysym != "space":
+        return False
+    platform_name = platform_name or sys.platform
+    if platform_name == "darwin":
+        # macOS virtual key code: Space=49, JIS Eisu=102, JIS Kana=104。
+        # Aqua Tk がJISキーを keysym/char とも space として通知しても区別できる。
+        return getattr(event, "keycode", None) == 49
+    return getattr(event, "char", "") == " "
+
+
 def _ask_three_way_japanese(
     title: str,
     message: str,
@@ -87,15 +100,17 @@ def _ask_three_way_japanese(
     tk.Button(
         buttons, text=yes_text, command=lambda: _choose(True),
         font=(UI_FONT, get_ui_font_size(9), "bold"),
-        bg="#1976D2", fg="white", width=14,
+        bg="#1976D2", fg="black", activeforeground="black", width=14,
     ).pack(fill=tk.X, pady=2)
     tk.Button(
         buttons, text=no_text, command=lambda: _choose(False),
-        font=(UI_FONT, get_ui_font_size(9)), width=14,
+        font=(UI_FONT, get_ui_font_size(9)),
+        fg="black", activeforeground="black", width=14,
     ).pack(fill=tk.X, pady=2)
     tk.Button(
         buttons, text=cancel_text, command=lambda: _choose(None),
-        font=(UI_FONT, get_ui_font_size(9)), width=14,
+        font=(UI_FONT, get_ui_font_size(9)),
+        fg="black", activeforeground="black", width=14,
     ).pack(fill=tk.X, pady=2)
 
     dialog.protocol("WM_DELETE_WINDOW", lambda: _choose(None))
@@ -3552,7 +3567,9 @@ class _SingleQuestionScorer:
             fn = self.filenames[self.current_idx]
             self._assign_score(fn, score)
 
-        elif key == "space":
+        # macOSのJIS「英数」「かな」はspace相当として通知される場合があるため、
+        # 物理キーコードを含めて通常のスペースキーだけを受け付ける。
+        elif is_grading_space_key(event):
             self._next_auto()
 
         elif key in ("Delete", "BackSpace"):
@@ -3858,6 +3875,39 @@ class _SingleQuestionScorer:
 #   α: 記述採点の確認・修正 GUI
 # ============================================================
 
+def filter_descriptive_review_answers(
+    image_files: List[str],
+    scores: dict,
+    annotations: dict,
+    question_id: str,
+    max_score: int,
+    filter_value: str,
+) -> List[Tuple[str, Optional[int]]]:
+    """確認画面の状態フィルタを適用する（GUIに依存しない純粋関数）。"""
+    filtered: List[Tuple[str, Optional[int]]] = []
+    answers = annotations.get("answers", {})
+    for filename in image_files:
+        score = scores.get(filename, {}).get(question_id)
+        annotation = answers.get(filename, {}).get(question_id, {})
+        include = (
+            filter_value == "全て"
+            or (filter_value == "未採点" and score is None)
+            or (filter_value == "採点済み" and score is not None)
+            or (filter_value == "保留" and bool(annotation.get("held", False)))
+            or (filter_value == "コメントあり" and bool(str(annotation.get("comment", "")).strip()))
+            or (filter_value == "○ 満点" and score is not None and score >= max_score)
+            or (filter_value == "× 0点" and score is not None and score == 0)
+            or (filter_value == "△ 中間点" and score is not None and 0 < score < max_score)
+        )
+        if not include:
+            try:
+                include = score is not None and score == int(filter_value)
+            except (TypeError, ValueError):
+                include = False
+        if include:
+            filtered.append((filename, score))
+    return filtered
+
 class DescriptiveReviewGUI:
     """記述採点結果を一覧・確認・修正するための GUI。
 
@@ -4156,7 +4206,8 @@ class DescriptiveReviewGUI:
         q = self.questions[self._current_q_idx]
         # フィルタ更新: セマンティックフィルタ + 数値フィルタ
         vals = [
-            "全て", "○ 満点", "× 0点", "△ 中間点", "未採点", "保留", "コメントあり",
+            "全て", "未採点", "採点済み", "保留", "○ 満点", "× 0点",
+            "△ 中間点", "コメントあり",
         ] + [str(s) for s in range(q["max_score"] + 1)]
         self._filter_combo.config(values=vals)
         self._filter_var.set("全て")
@@ -4177,8 +4228,7 @@ class DescriptiveReviewGUI:
         max_score = q["max_score"]
         filter_val = self._filter_var.get()
 
-        # フィルタリング
-        filtered = []
+        # 集計とフィルタリング
         scored_count = 0
         total_score_sum = 0.0
         for fname in self._image_files:
@@ -4186,33 +4236,9 @@ class DescriptiveReviewGUI:
             if sc is not None:
                 scored_count += 1
                 total_score_sum += sc
-            if filter_val == "全て":
-                filtered.append((fname, sc))
-            elif filter_val == "未採点":
-                if sc is None:
-                    filtered.append((fname, sc))
-            elif filter_val == "保留":
-                if self.annotations.get("answers", {}).get(fname, {}).get(qid, {}).get("held", False):
-                    filtered.append((fname, sc))
-            elif filter_val == "コメントあり":
-                comment = self.annotations.get("answers", {}).get(fname, {}).get(qid, {}).get("comment", "")
-                if str(comment).strip():
-                    filtered.append((fname, sc))
-            elif filter_val == "○ 満点":
-                if sc is not None and sc >= max_score:
-                    filtered.append((fname, sc))
-            elif filter_val == "× 0点":
-                if sc is not None and sc == 0:
-                    filtered.append((fname, sc))
-            elif filter_val == "△ 中間点":
-                if sc is not None and 0 < sc < max_score:
-                    filtered.append((fname, sc))
-            else:
-                try:
-                    if sc is not None and sc == int(filter_val):
-                        filtered.append((fname, sc))
-                except ValueError:
-                    pass
+        filtered = filter_descriptive_review_answers(
+            self._image_files, self.scores, self.annotations, qid, max_score, filter_val,
+        )
 
         # ソート
         sort_mode = self._sort_var.get() if hasattr(self, '_sort_var') else "ファイル名順"
@@ -4228,7 +4254,7 @@ class DescriptiveReviewGUI:
         self._stats_label.config(
             text=f"採点済: {scored_count}/{len(self._image_files)}\n"
                  f"平均: {avg:.2f} / {max_score}\n"
-                 f"表示: {len(filtered)}件"
+                 f"表示: {filter_val} {len(filtered)} / 全{len(self._image_files)}件"
         )
 
         # 列数を現在のキャンバス幅から動的に決定

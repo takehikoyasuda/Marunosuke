@@ -563,4 +563,6 @@ from descriptive_gui import (  # noqa: F401, E402
     DescriptiveScorerGUI,
     _SingleQuestionScorer,
     DescriptiveReviewGUI,
+    filter_descriptive_review_answers,
+    is_grading_space_key,
 )

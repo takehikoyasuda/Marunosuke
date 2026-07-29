@@ -1323,19 +1323,21 @@ class MarunosukeGUI:
         if not config_path.exists():
             messagebox.showerror("エラー", "採点領域の設定が見つかりません。\n先に「⚙ 初期設定」を実行してください。")
             return
-        if not scores_path.exists():
-            messagebox.showinfo("情報", "採点データがまだありません。\n先に「✏ 採点を開始」を実行してください。")
-            return
-
         try:
             from descriptive_scorer import (
                 load_descriptive_config, load_descriptive_scores,
                 DescriptiveReviewGUI,
             )
             config = load_descriptive_config(str(config_path))
-            scores_data = load_descriptive_scores(str(scores_path))
+            # 採点開始前は得点ファイルがまだ存在しない。設定済みの答案領域を
+            # レビューできるよう、空の得点データとして確認画面を開く。
+            scores_data = (
+                load_descriptive_scores(str(scores_path))
+                if scores_path.exists()
+                else {"version": 1, "scores": {}}
+            )
 
-            if not config or not scores_data:
+            if not config or scores_data is None:
                 messagebox.showerror("エラー", "設定またはスコアの読み込みに失敗しました。")
                 return
 

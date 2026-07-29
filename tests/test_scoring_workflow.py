@@ -34,6 +34,8 @@ from descriptive_scorer import (
     load_descriptive_scores,
     DescriptiveScorerGUI,
     DescriptiveReviewGUI,
+    filter_descriptive_review_answers,
+    is_grading_space_key,
     _SingleQuestionScorer,
     DESCRIPTIVE_CONFIG_FILE,
 )
@@ -92,6 +94,30 @@ def config_path(tmp_path):
 
 class TestReviewGUIFilters:
     """DescriptiveReviewGUI のセマンティックフィルタのテスト"""
+
+    @pytest.mark.parametrize(
+        ("scores", "expected_unscored", "expected_scored"),
+        [
+            ({}, 3, 0),
+            ({"a.jpg": {"D1": 5}}, 2, 1),
+            ({name: {"D1": score} for name, score in
+              (("a.jpg", 5), ("b.jpg", 0), ("c.jpg", 3))}, 0, 3),
+        ],
+        ids=["before-scoring", "during-scoring", "after-scoring"],
+    )
+    def test_unscored_and_scored_filters_across_scoring_states(
+        self, scores, expected_unscored, expected_scored,
+    ):
+        """採点前・途中・完了後で未採点／採点済みを正しく抽出する。"""
+        images = ["a.jpg", "b.jpg", "c.jpg"]
+        unscored = filter_descriptive_review_answers(
+            images, scores, {}, "D1", 5, "未採点",
+        )
+        scored = filter_descriptive_review_answers(
+            images, scores, {}, "D1", 5, "採点済み",
+        )
+        assert len(unscored) == expected_unscored
+        assert len(scored) == expected_scored
 
     def test_filter_values_include_semantic_labels(self, sample_config):
         """フィルタドロップダウンに ○満点、×0点、△中間点 が含まれる"""
@@ -519,10 +545,11 @@ class TestCodeStructure:
     def test_review_gui_refresh_handles_filters(self):
         """DescriptiveReviewGUI._refresh_grid がセマンティックフィルタを処理する"""
         import inspect
-        source = inspect.getsource(DescriptiveReviewGUI._refresh_grid)
+        source = inspect.getsource(filter_descriptive_review_answers)
         assert "○ 満点" in source
         assert "× 0点" in source
         assert "△ 中間点" in source
+        assert "採点済み" in source
 
     def test_scorer_help_text_includes_tab(self):
         """採点画面のヘルプテキストに Tab 説明がある"""
@@ -537,6 +564,14 @@ class TestCodeStructure:
         source = inspect.getsource(_SingleQuestionScorer.run)
         assert "<Tab>" in source
         assert "_jump_to_unscored" in source
+
+    def test_three_way_dialog_buttons_use_black_text(self):
+        """macOSでも3択ダイアログの全ボタンを黒文字で表示する。"""
+        import inspect
+        from descriptive_gui import _ask_three_way_japanese
+        source = inspect.getsource(_ask_three_way_japanese)
+        assert 'fg="white"' not in source
+        assert source.count('activeforeground="black"') == 3
 
     def test_question_list_has_edit_button(self):
         """問題一覧に設定ボタンが含まれる"""
@@ -772,6 +807,28 @@ class TestMaruBatsuLogic:
         # b キーで _on_batsu を呼ぶ
         assert "\"b\"" in source or "'b'" in source
         assert "_on_batsu" in source
+
+    @pytest.mark.parametrize("keycode", [102, 104])
+    def test_jis_input_mode_keys_are_not_grading_space(self, keycode):
+        """macOSの英数・かなキーはspace相当の文字情報でも除外する。"""
+        event = type("KeyEvent", (), {
+            "keysym": "space", "char": " ", "keycode": keycode,
+        })()
+        assert is_grading_space_key(event, "darwin") is False
+
+    def test_macos_physical_space_is_grading_space(self):
+        """macOSの通常のスペースキー（keycode 49）は答案送りに使える。"""
+        event = type("KeyEvent", (), {
+            "keysym": "space", "char": " ", "keycode": 49,
+        })()
+        assert is_grading_space_key(event, "darwin") is True
+
+    def test_non_macos_space_uses_character(self):
+        """他OSでは従来どおり入力文字でスペースを判定する。"""
+        event = type("KeyEvent", (), {
+            "keysym": "space", "char": " ", "keycode": 65,
+        })()
+        assert is_grading_space_key(event, "linux") is True
 
     def test_initial_mode_parsing(self):
         """initial_mode の文字列から正しくモードを判定する"""
