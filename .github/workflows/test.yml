@@ -45,7 +45,10 @@ jobs:
         run: |
           python -c "
           import os
+          import sys
           import pytest
           code = pytest.main(['tests/', '-q', '--timeout=60', '-p', 'no:warnings', '-rf'])
+          sys.stdout.flush()
+          sys.stderr.flush()
           os._exit(code)
           "
