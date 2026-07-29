@@ -105,6 +105,7 @@ def test_hold_marks_current_answer_and_moves_next():
     scorer._answer_held_var = MagicMock()
     scorer._update_held_status = MagicMock()
     scorer._commit_current_annotation = MagicMock()
+    scorer._update_filter_list = MagicMock()
     scorer.canvas = MagicMock()
     scorer._next_auto = MagicMock()
 
@@ -112,6 +113,7 @@ def test_hold_marks_current_answer_and_moves_next():
 
     scorer._answer_held_var.set.assert_called_once_with(True)
     scorer._commit_current_annotation.assert_called_once_with()
+    scorer._update_filter_list.assert_called_once_with()
     scorer.canvas.focus_set.assert_called_once_with()
     scorer._next_auto.assert_called_once_with()
 

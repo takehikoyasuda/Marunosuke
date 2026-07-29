@@ -56,6 +56,56 @@ _OVERLAY_COLORS_RGB = [
 ]
 
 
+def _ask_three_way_japanese(
+    title: str,
+    message: str,
+    parent,
+    yes_text: str = "はい",
+    no_text: str = "いいえ",
+    cancel_text: str = "キャンセル",
+):
+    """OSロケールに依存しない日本語3択ダイアログを表示する。"""
+    dialog = tk.Toplevel(parent)
+    dialog.title(title)
+    dialog.transient(parent)
+    dialog.resizable(False, False)
+    result = {"value": None}
+
+    body = tk.Frame(dialog, padx=20, pady=16)
+    body.pack(fill=tk.BOTH, expand=True)
+    tk.Label(
+        body, text=message, justify=tk.LEFT, wraplength=460,
+        font=(UI_FONT, get_ui_font_size(9)),
+    ).pack(fill=tk.X, pady=(0, 14))
+
+    def _choose(value):
+        result["value"] = value
+        dialog.destroy()
+
+    buttons = tk.Frame(body)
+    buttons.pack(fill=tk.X)
+    tk.Button(
+        buttons, text=yes_text, command=lambda: _choose(True),
+        font=(UI_FONT, get_ui_font_size(9), "bold"),
+        bg="#1976D2", fg="white", width=14,
+    ).pack(fill=tk.X, pady=2)
+    tk.Button(
+        buttons, text=no_text, command=lambda: _choose(False),
+        font=(UI_FONT, get_ui_font_size(9)), width=14,
+    ).pack(fill=tk.X, pady=2)
+    tk.Button(
+        buttons, text=cancel_text, command=lambda: _choose(None),
+        font=(UI_FONT, get_ui_font_size(9)), width=14,
+    ).pack(fill=tk.X, pady=2)
+
+    dialog.protocol("WM_DELETE_WINDOW", lambda: _choose(None))
+    dialog.bind("<Escape>", lambda _event: _choose(None))
+    fit_window_to_content(dialog, min_width=400, min_height=230)
+    dialog.grab_set()
+    dialog.wait_window()
+    return result["value"]
+
+
 # ============================================================
 # 領域設定GUI
 # ============================================================
@@ -2097,13 +2147,18 @@ class _SingleQuestionScorer:
         self._single_zoom_label.pack(side=tk.LEFT, padx=(0, 8))
 
         # フィルタ
-        self._filter_unscored_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(
-            mid_bar, text="未採点のみ",
-            variable=self._filter_unscored_var,
-            font=(UI_FONT, get_ui_font_size(8)), bg="#ECEFF1",
-            command=self._on_filter_change,
-        ).pack(side=tk.LEFT, padx=(0, 5))
+        tk.Label(mid_bar, text="表示:", bg="#ECEFF1",
+                 font=(UI_FONT, get_ui_font_size(8))).pack(side=tk.LEFT)
+        self._single_filter_var = tk.StringVar(value="全件")
+        self._single_filter_combo = ttk.Combobox(
+            mid_bar, textvariable=self._single_filter_var,
+            values=("全件", "未採点", "保留"), state="readonly", width=7,
+            font=(UI_FONT, get_ui_font_size(8)),
+        )
+        self._single_filter_combo.pack(side=tk.LEFT, padx=(2, 5))
+        self._single_filter_combo.bind(
+            "<<ComboboxSelected>>", lambda _event: self._on_filter_change()
+        )
 
         # 未採点カウント
         self._unscored_var = tk.StringVar()
@@ -2152,38 +2207,70 @@ class _SingleQuestionScorer:
         canvas_frame.pack(fill=tk.BOTH, expand=True, padx=4, pady=2)
 
         # 答案を見ながら随時追記できる、設問共通の採点基準メモ。
-        rubric_panel = tk.Frame(
-            canvas_frame, bg="#FFF8E1", padx=8, pady=8,
+        # 右パネルは小さい画面でも下端の注釈まで到達できるよう、独立して
+        # 縦スクロールさせる。内容フレームを直接 pack すると、上段の内容が
+        # 下段のメモ／コメントを画面外へ押し出してしまう。
+        rubric_shell = tk.Frame(
+            canvas_frame, bg="#FFF8E1",
             highlightthickness=1, highlightbackground="#D6B656",
         )
-        rubric_panel.pack(side=tk.RIGHT, fill=tk.Y, padx=(8, 0))
+        rubric_shell.pack(side=tk.RIGHT, fill=tk.Y, padx=(8, 0))
+        rubric_canvas = tk.Canvas(
+            rubric_shell, width=300, bg="#FFF8E1", highlightthickness=0,
+        )
+        rubric_scrollbar = tk.Scrollbar(
+            rubric_shell, orient=tk.VERTICAL, command=rubric_canvas.yview,
+        )
+        rubric_canvas.configure(yscrollcommand=rubric_scrollbar.set)
+        rubric_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        rubric_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        rubric_panel = tk.Frame(rubric_canvas, bg="#FFF8E1", padx=6, pady=5)
+        rubric_window = rubric_canvas.create_window(
+            (0, 0), window=rubric_panel, anchor=tk.NW,
+        )
+
+        def _resize_rubric_panel(event):
+            rubric_canvas.itemconfigure(rubric_window, width=event.width)
+
+        rubric_canvas.bind("<Configure>", _resize_rubric_panel)
+        rubric_panel.bind(
+            "<Configure>",
+            lambda _event: rubric_canvas.configure(scrollregion=rubric_canvas.bbox("all")),
+        )
+        rubric_canvas.bind(
+            "<MouseWheel>",
+            lambda event: rubric_canvas.yview_scroll(
+                int(-1 * (event.delta / 120)), "units"
+            ),
+        )
+
+        rubric_header = tk.Frame(rubric_panel, bg="#FFF8E1")
+        rubric_header.pack(fill=tk.X)
         tk.Label(
-            rubric_panel, text="📋 採点基準メモ",
+            rubric_header, text="📋 採点基準メモ",
             bg="#FFF8E1", fg="#5D4037",
-            font=(UI_FONT, get_ui_font_size(10), "bold"),
-        ).pack(anchor=tk.W)
+            font=(UI_FONT, get_ui_font_size(9), "bold"),
+        ).pack(side=tk.LEFT)
         tk.Button(
-            rubric_panel, text="採点に戻る（Esc）",
+            rubric_header, text="採点に戻る（Esc）",
             command=self._focus_scoring_canvas,
             bg="#E3F2FD", fg="#1565C0", relief=tk.FLAT, cursor="hand2",
-            font=(UI_FONT, get_ui_font_size(8), "bold"),
-        ).pack(anchor=tk.E, pady=(0, 3))
+            font=(UI_FONT, get_ui_font_size(7), "bold"),
+        ).pack(side=tk.RIGHT)
         tk.Label(
             rubric_panel,
-            text="答案を見ながら随時追記できます\n"
-                 "（この設問の全回答で共有）\n"
-                 "※答案画像をクリックすると数字キー採点に戻ります",
+            text="設問内で共有・自動保存（答案クリックで採点へ）",
             bg="#FFF8E1", fg="#795548", justify=tk.LEFT,
-            font=(UI_FONT, get_ui_font_size(8)),
-        ).pack(anchor=tk.W, pady=(2, 6))
+            font=(UI_FONT, get_ui_font_size(7)),
+        ).pack(anchor=tk.W, pady=(2, 3))
         self._rubric_text = tk.Text(
-            rubric_panel, width=30, height=7, wrap=tk.WORD,
-            font=(UI_FONT, get_ui_font_size(9)),
+            rubric_panel, width=28, height=4, wrap=tk.WORD,
+            font=(UI_FONT, get_ui_font_size(8)),
             bg="#FFFFFF", fg="#222222", insertbackground="#222222",
             relief=tk.SOLID, bd=1, highlightthickness=1,
             highlightbackground="#BCAAA4", highlightcolor="#1976D2",
         )
-        self._rubric_text.pack(fill=tk.BOTH, expand=True)
+        self._rubric_text.pack(fill=tk.X)
         self._rubric_text.insert("1.0", self.q_config.get("rubric_memo", ""))
         self._rubric_text.bind("<KeyRelease>", self._schedule_rubric_save)
         self._rubric_text.bind("<FocusOut>", lambda _e: self._save_rubric_now())
@@ -2194,10 +2281,10 @@ class _SingleQuestionScorer:
         self._rubric_status.pack(fill=tk.X, pady=(3, 0))
 
         example_row = tk.Frame(rubric_panel, bg="#FFF8E1")
-        example_row.pack(fill=tk.X, pady=(4, 0))
+        example_row.pack(fill=tk.X, pady=(2, 0))
         tk.Label(example_row, text="解答例", bg="#FFF8E1", fg="#795548",
                  font=(UI_FONT, get_ui_font_size(8), "bold")).pack(anchor=tk.W)
-        preview_frame = tk.Frame(example_row, bg="#FFFDF5", width=270, height=155,
+        preview_frame = tk.Frame(example_row, bg="#FFFDF5", width=270, height=90,
                                  relief=tk.SOLID, bd=1)
         preview_frame.pack(fill=tk.X, pady=(2, 2))
         preview_frame.pack_propagate(False)
@@ -2216,19 +2303,19 @@ class _SingleQuestionScorer:
                   font=(UI_FONT, get_ui_font_size(7))).pack(side=tk.LEFT, padx=(3, 0))
         self._refresh_answer_example_preview()
 
-        tk.Frame(rubric_panel, height=1, bg="#BCAAA4").pack(fill=tk.X, pady=7)
+        tk.Frame(rubric_panel, height=1, bg="#BCAAA4").pack(fill=tk.X, pady=4)
         tk.Label(
             rubric_panel, text="🗒 この回答の注釈",
             bg="#FFF8E1", fg="#5D4037",
-            font=(UI_FONT, get_ui_font_size(10), "bold"),
+            font=(UI_FONT, get_ui_font_size(9), "bold"),
         ).pack(anchor=tk.W)
 
         tk.Label(rubric_panel, text="教員用メモ（答案には印字しません）",
                  bg="#FFF8E1", fg="#5D4037",
-                 font=(UI_FONT, get_ui_font_size(8))).pack(anchor=tk.W, pady=(4, 2))
+                 font=(UI_FONT, get_ui_font_size(7))).pack(anchor=tk.W, pady=(2, 1))
         self._answer_memo_text = tk.Text(
-            rubric_panel, width=30, height=4, wrap=tk.WORD,
-            font=(UI_FONT, get_ui_font_size(8)), bg="#FFFFFF", fg="#222222",
+            rubric_panel, width=28, height=3, wrap=tk.WORD,
+            font=(UI_FONT, get_ui_font_size(7)), bg="#FFFFFF", fg="#222222",
             insertbackground="#222222", relief=tk.SOLID, bd=1,
             highlightthickness=1, highlightbackground="#9E9E9E",
             highlightcolor="#1976D2",
@@ -2251,27 +2338,33 @@ class _SingleQuestionScorer:
 
         tk.Label(rubric_panel, text="生徒へのコメント",
                  bg="#FFF8E1", fg="#5D4037",
-                 font=(UI_FONT, get_ui_font_size(8))).pack(anchor=tk.W, pady=(5, 2))
-        self._comment_history_var = tk.StringVar()
-        self._comment_history_combo = ttk.Combobox(
-            rubric_panel, textvariable=self._comment_history_var,
-            values=self.annotations.get("comment_history", {}).get(self.q_id, []),
-            state="readonly", width=28,
-        )
-        self._comment_history_combo.pack(fill=tk.X, pady=(0, 2))
-        self._comment_history_combo.bind("<<ComboboxSelected>>", self._select_comment_history)
+                 font=(UI_FONT, get_ui_font_size(7))).pack(anchor=tk.W, pady=(3, 1))
         self._answer_comment_text = tk.Text(
-            rubric_panel, width=30, height=3, wrap=tk.WORD,
-            font=(UI_FONT, get_ui_font_size(8)), bg="#FFFFFF", fg="#222222",
+            rubric_panel, width=28, height=3, wrap=tk.WORD,
+            font=(UI_FONT, get_ui_font_size(7)), bg="#FFFFFF", fg="#222222",
             insertbackground="#222222", relief=tk.SOLID, bd=1,
             highlightthickness=1, highlightbackground="#9E9E9E",
             highlightcolor="#1976D2",
         )
         self._answer_comment_text.pack(fill=tk.X)
+        comment_history_row = tk.Frame(rubric_panel, bg="#FFF8E1")
+        comment_history_row.pack(fill=tk.X, pady=(2, 0))
+        self._comment_history_var = tk.StringVar()
+        self._comment_history_combo = ttk.Combobox(
+            comment_history_row, textvariable=self._comment_history_var,
+            values=self.annotations.get("comment_history", {}).get(self.q_id, []),
+            state="readonly", width=20,
+        )
+        self._comment_history_combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self._comment_history_combo.bind("<<ComboboxSelected>>", self._select_comment_history)
+        tk.Button(comment_history_row, text="挿入", command=self._insert_comment_history,
+                  font=(UI_FONT, get_ui_font_size(7))).pack(side=tk.LEFT, padx=(3, 0))
+        tk.Button(comment_history_row, text="削除", command=self._delete_comment_history,
+                  font=(UI_FONT, get_ui_font_size(7))).pack(side=tk.LEFT, padx=(2, 0))
 
         self._answer_held_var = tk.BooleanVar(value=False)
         hold_row = tk.Frame(rubric_panel, bg="#FFF8E1")
-        hold_row.pack(fill=tk.X, pady=(5, 2))
+        hold_row.pack(fill=tk.X, pady=(3, 1))
         self._held_status_label = tk.Label(
             hold_row, text="", bg="#FFF8E1", fg="#AD1457",
             font=(UI_FONT, get_ui_font_size(9), "bold"),
@@ -2294,6 +2387,19 @@ class _SingleQuestionScorer:
         self._answer_comment_text.bind(
             "<FocusOut>", lambda _e: self._commit_current_annotation(add_comment_history=True)
         )
+
+        def _scroll_rubric(event):
+            rubric_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            return "break"
+
+        def _bind_rubric_scroll(widget):
+            # Text と Combobox はそれぞれ固有のスクロール／選択操作を優先する。
+            if not isinstance(widget, (tk.Text, ttk.Combobox)):
+                widget.bind("<MouseWheel>", _scroll_rubric, add="+")
+            for child in widget.winfo_children():
+                _bind_rubric_scroll(child)
+
+        _bind_rubric_scroll(rubric_panel)
 
         self.canvas = tk.Canvas(
             canvas_frame, bg="white",
@@ -2445,7 +2551,7 @@ class _SingleQuestionScorer:
             image = Image.open(path).convert("RGB")
             # プレビュー枠の内寸いっぱいに拡大表示する。解答例の視認性を優先し、
             # 枠に合わせてリサイズする（元画像ファイルは変更しない）。
-            image = image.resize((260, 150), Image.Resampling.LANCZOS)
+            image.thumbnail((276, 84), Image.Resampling.LANCZOS)
             photo = ImageTk.PhotoImage(image)
             self._example_image_label.config(image=photo, text="")
             self._example_image_label.image = photo
@@ -2639,12 +2745,32 @@ class _SingleQuestionScorer:
         self._annotation_status.config(text="")
 
     def _select_comment_history(self, _event=None):
+        """選択した履歴を挿入対象として保持する。"""
+        return "break"
+
+    def _insert_comment_history(self):
+        """選択した履歴で、1回答1件のコメント欄を置き換える。"""
         comment = self._comment_history_var.get()
         if not comment:
             return
         self._answer_comment_text.delete("1.0", tk.END)
         self._answer_comment_text.insert("1.0", comment)
         self._schedule_annotation_save()
+
+    def _delete_comment_history(self):
+        comment = self._comment_history_var.get()
+        if not comment:
+            return
+        histories = self.annotations.setdefault("comment_history", {})
+        history = [item for item in histories.get(self.q_id, []) if item != comment]
+        if history:
+            histories[self.q_id] = history
+        else:
+            histories.pop(self.q_id, None)
+        self._comment_history_var.set("")
+        self._comment_history_combo.configure(values=history)
+        if self.annotations_save_callback:
+            self.annotations_save_callback()
 
     def _select_memo_history(self, _event=None):
         """選択した履歴を挿入対象として保持する。"""
@@ -2688,14 +2814,26 @@ class _SingleQuestionScorer:
         self._answer_held_var.set(True)
         self._update_held_status()
         self._commit_current_annotation()
+        self._update_filter_list()
         self.canvas.focus_set()
         self._next_auto()
 
     def _clear_hold(self):
+        old_index = self.current_idx
         self._answer_held_var.set(False)
         self._update_held_status()
         self._commit_current_annotation()
+        self._update_filter_list()
         self.canvas.focus_set()
+        if self._get_single_filter_mode() == "保留":
+            if not self._filtered_indices:
+                self._on_filter_change()
+                return
+            self.current_idx = next(
+                (idx for idx in self._filtered_indices if idx > old_index),
+                self._filtered_indices[0],
+            )
+            self._show_current()
 
     def _open_current_original(self):
         """現在表示中の画像の元画像をビューアで開く"""
@@ -3284,7 +3422,8 @@ class _SingleQuestionScorer:
         unscored = sum(1 for f in self.filenames if f not in self.local_scores)
         if hasattr(self, '_unscored_var'):
             if unscored > 0:
-                filt_text = " (フィルタ中)" if hasattr(self, '_filter_unscored_var') and self._filter_unscored_var.get() else ""
+                filter_mode = self._get_single_filter_mode()
+                filt_text = f" ({filter_mode}表示中)" if filter_mode != "全件" else ""
                 self._unscored_var.set(f"未採点: {unscored}件{filt_text}")
             else:
                 self._unscored_var.set("✅ 全件採点済み")
@@ -3465,18 +3604,24 @@ class _SingleQuestionScorer:
     # ─── フィルタ ───
 
     def _on_filter_change(self):
-        """未採点のみ表示チェックボックスの変更時"""
+        """1枚ずつ採点の表示フィルタ変更時。"""
         self._commit_current_annotation(add_comment_history=True)
         self._update_filter_list()
-        if self._filter_unscored_var.get() and not self._filtered_indices:
-            # 全件採点済みでフィルタON → キャンバスにメッセージ表示
+        filter_mode = self._get_single_filter_mode()
+        if filter_mode != "全件" and not self._filtered_indices:
             self.canvas.delete("all")
             self.canvas.configure(scrollregion=(0, 0, 600, 400))
+            if filter_mode == "保留":
+                message = "保留中の答案はありません"
+                progress = f"全 {len(self.filenames)} 枚 / 保留 0 枚"
+            else:
+                message = "✅ すべての答案に得点が登録されています"
+                progress = f"全 {len(self.filenames)} 枚 採点済み"
             self.canvas.create_text(
-                300, 180, text="✅ すべての答案に得点が登録されています",
+                300, 180, text=message,
                 font=(UI_FONT, get_ui_font_size(13), "bold"), fill="#388E3C",
             )
-            self.progress_var.set(f"全 {len(self.filenames)} 枚 採点済み")
+            self.progress_var.set(progress)
             self.score_var.set("—")
             return
         # フィルタ後のリストで先頭を表示
@@ -3486,13 +3631,30 @@ class _SingleQuestionScorer:
 
     def _update_filter_list(self):
         """フィルタ済みインデックスリストを更新する。"""
-        if hasattr(self, '_filter_unscored_var') and self._filter_unscored_var.get():
+        filter_mode = self._get_single_filter_mode()
+        if filter_mode == "未採点":
             self._filtered_indices = [
                 i for i, fn in enumerate(self.filenames)
                 if fn not in self.local_scores
             ]
+        elif filter_mode == "保留":
+            answers = self.annotations.get("answers", {})
+            self._filtered_indices = [
+                i for i, fn in enumerate(self.filenames)
+                if answers.get(fn, {}).get(self.q_id, {}).get("held", False)
+            ]
         else:
             self._filtered_indices = list(range(len(self.filenames)))
+
+    def _get_single_filter_mode(self) -> str:
+        """現在の1枚ずつ採点フィルタを返す（旧テスト用変数にも対応）。"""
+        if hasattr(self, "_single_filter_var"):
+            mode = self._single_filter_var.get()
+            if mode in ("全件", "未採点", "保留"):
+                return mode
+        if hasattr(self, "_filter_unscored_var") and self._filter_unscored_var.get():
+            return "未採点"
+        return "全件"
 
     def _submit_entry_score(self):
         """数値入力欄からの得点確定（配点>9の場合用）"""
@@ -3529,6 +3691,9 @@ class _SingleQuestionScorer:
             self.current_idx = next_idx
             self._show_current()
         else:
+            # 保留レビューの末尾では採点完了ダイアログを出さない。
+            if self._get_single_filter_mode() == "保留":
+                return
             # 次がない → 全件採点済みか確認
             unscored = sum(1 for f in self.filenames if f not in self.local_scores)
             if unscored == 0:
@@ -3664,13 +3829,13 @@ class _SingleQuestionScorer:
         self._save_rubric_now()
         self._commit_current_annotation(add_comment_history=True)
         if self.local_scores:
-            answer = messagebox.askyesnocancel(
+            answer = _ask_three_way_japanese(
                 "採点の中断",
-                "ここまでの採点結果を保存しますか？\n\n"
-                "「はい」→ 保存して戻る\n"
-                "「いいえ」→ 保存せず破棄\n"
-                "「キャンセル」→ 採点を続ける",
+                "ここまでの採点結果を保存しますか？",
                 parent=self._win,
+                yes_text="保存して戻る",
+                no_text="保存せず破棄",
+                cancel_text="採点を続ける",
             )
             if answer is None:
                 # キャンセル → 採点続行
@@ -4444,11 +4609,13 @@ class DescriptiveReviewGUI:
     def _on_close(self):
         """ウィンドウを閉じる（保存失敗時は閉じない）"""
         if self.modified:
-            answer = messagebox.askyesnocancel(
+            answer = _ask_three_way_japanese(
                 "確認",
-                "変更が保存されていません。\n保存してから閉じますか？\n\n"
-                "「はい」＝保存して閉じる\n「いいえ」＝保存せず閉じる\n「キャンセル」＝戻る",
+                "変更が保存されていません。\n保存してから閉じますか？",
                 parent=self.win,
+                yes_text="保存して閉じる",
+                no_text="保存せず閉じる",
+                cancel_text="確認画面に戻る",
             )
             if answer is None:
                 # キャンセル → 何もしない

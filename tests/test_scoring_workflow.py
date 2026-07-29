@@ -590,12 +590,33 @@ class TestCodeStructure:
         assert "m" in source
         assert "b" in source
 
-    def test_scorer_has_unscored_filter_checkbox(self):
-        """採点画面のソースに未採点フィルタチェックボックスが含まれる"""
+    def test_scorer_has_single_answer_filters(self):
+        """採点画面に全件・未採点・保留フィルタが含まれる"""
         import inspect
         source = inspect.getsource(_SingleQuestionScorer.run)
-        assert "未採点のみ" in source
-        assert "_filter_unscored_var" in source
+        assert '("全件", "未採点", "保留")' in source
+        assert "_single_filter_var" in source
+
+    def test_single_answer_annotation_panel_is_compact_and_scrollable(self):
+        """小さい画面でも右パネル下段へスクロールできる"""
+        import inspect
+        source = inspect.getsource(_SingleQuestionScorer.run)
+        assert "rubric_canvas" in source
+        assert "rubric_scrollbar" in source
+        assert 'height=4, wrap=tk.WORD' in source
+        assert 'height=90' in source
+        assert "_bind_rubric_scroll" in source
+
+    def test_memo_and_comment_history_controls_are_consistent(self):
+        """メモとコメントの履歴欄に挿入・削除操作が揃っている"""
+        import inspect
+        source = inspect.getsource(_SingleQuestionScorer.run)
+        assert "memo_history_row" in source
+        assert "comment_history_row" in source
+        assert "command=self._insert_memo_history" in source
+        assert "command=self._insert_comment_history" in source
+        assert "command=self._delete_memo_history" in source
+        assert "command=self._delete_comment_history" in source
 
 
 # ============================================================
@@ -614,8 +635,9 @@ class TestMaruBatsuLogic:
         scorer.local_scores = dict(local_scores or {})
         scorer.current_idx = 0
         scorer.q_id = "D1"
+        scorer.annotations = {"answers": {}}
         scorer._filtered_indices = list(range(len(filenames)))
-        scorer._filter_unscored_var = type("MockVar", (), {"get": lambda s: False})()
+        scorer._single_filter_var = type("MockVar", (), {"get": lambda s: "全件"})()
         return scorer
 
     def test_assign_score_sets_value(self):
@@ -631,7 +653,7 @@ class TestMaruBatsuLogic:
         filenames = ["a.jpg", "b.jpg", "c.jpg", "d.jpg", "e.jpg"]
         scored = {"a.jpg": 5, "c.jpg": 3}
         scorer = self._make_scorer(filenames, local_scores=scored)
-        scorer._filter_unscored_var = type("MockVar", (), {"get": lambda s: True})()
+        scorer._single_filter_var = type("MockVar", (), {"get": lambda s: "未採点"})()
         scorer._update_filter_list()
         assert scorer._filtered_indices == [1, 3, 4]  # b, d, e
 
@@ -640,9 +662,26 @@ class TestMaruBatsuLogic:
         filenames = ["a.jpg", "b.jpg", "c.jpg"]
         scored = {"a.jpg": 5}
         scorer = self._make_scorer(filenames, local_scores=scored)
-        scorer._filter_unscored_var = type("MockVar", (), {"get": lambda s: False})()
+        scorer._single_filter_var = type("MockVar", (), {"get": lambda s: "全件"})()
         scorer._update_filter_list()
         assert scorer._filtered_indices == [0, 1, 2]
+
+    def test_filter_held_only(self):
+        """保留は得点の有無と独立して抽出される"""
+        scorer = self._make_scorer(
+            ["a.jpg", "b.jpg", "c.jpg", "d.jpg"],
+            local_scores={"a.jpg": 5, "b.jpg": 2, "d.jpg": 0},
+        )
+        scorer.annotations = {"answers": {
+            "b.jpg": {"D1": {"held": True}},
+            "c.jpg": {"D1": {"held": True}},
+            "d.jpg": {"D1": {"held": False}},
+        }}
+        scorer._single_filter_var = type("MockVar", (), {"get": lambda s: "保留"})()
+
+        scorer._update_filter_list()
+
+        assert scorer._filtered_indices == [1, 2]
 
     def test_find_next_filtered(self):
         """_find_next_filtered がフィルタ済みリストから次を返す"""
@@ -662,11 +701,24 @@ class TestMaruBatsuLogic:
         assert scorer._find_prev_filtered(1) is None
         assert scorer._find_prev_filtered(0) is None
 
+    def test_held_filter_end_does_not_show_scoring_complete_dialog(self):
+        """保留レビュー末尾への移動で採点完了扱いにしない"""
+        from unittest.mock import MagicMock
+
+        scorer = self._make_scorer(["a.jpg"], local_scores={"a.jpg": 5})
+        scorer._single_filter_var = type("MockVar", (), {"get": lambda s: "保留"})()
+        scorer._filtered_indices = [0]
+        scorer._show_all_scored_dialog = MagicMock()
+
+        scorer._next_auto()
+
+        scorer._show_all_scored_dialog.assert_not_called()
+
     def test_filter_updates_after_score(self):
         """採点後にフィルタリストが更新される"""
         filenames = ["a.jpg", "b.jpg", "c.jpg"]
         scorer = self._make_scorer(filenames)
-        scorer._filter_unscored_var = type("MockVar", (), {"get": lambda s: True})()
+        scorer._single_filter_var = type("MockVar", (), {"get": lambda s: "未採点"})()
         scorer._update_filter_list()
         assert scorer._filtered_indices == [0, 1, 2]
 

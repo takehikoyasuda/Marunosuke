@@ -478,7 +478,7 @@ class TestDescriptiveReviewClose:
         gui = self._make_gui(tmp_path)
         gui.modified = True
 
-        with patch('descriptive_gui.messagebox.askyesnocancel', return_value=None):
+        with patch('descriptive_gui._ask_three_way_japanese', return_value=None):
             gui._on_close()
 
         gui.win.destroy.assert_not_called()
@@ -488,7 +488,7 @@ class TestDescriptiveReviewClose:
         gui = self._make_gui(tmp_path)
         gui.modified = True
 
-        with patch('descriptive_gui.messagebox.askyesnocancel', return_value=False):
+        with patch('descriptive_gui._ask_three_way_japanese', return_value=False):
             gui._on_close()
 
         gui.win.destroy.assert_called_once()
@@ -498,7 +498,7 @@ class TestDescriptiveReviewClose:
         gui = self._make_gui(tmp_path)
         gui.modified = True
 
-        with patch('descriptive_gui.messagebox.askyesnocancel', return_value=True):
+        with patch('descriptive_gui._ask_three_way_japanese', return_value=True):
             with patch.object(gui, '_save', return_value=True):
                 gui._on_close()
 
@@ -509,7 +509,7 @@ class TestDescriptiveReviewClose:
         gui = self._make_gui(tmp_path)
         gui.modified = True
 
-        with patch('descriptive_gui.messagebox.askyesnocancel', return_value=True):
+        with patch('descriptive_gui._ask_three_way_japanese', return_value=True):
             with patch.object(gui, '_save', return_value=False):
                 gui._on_close()
 
