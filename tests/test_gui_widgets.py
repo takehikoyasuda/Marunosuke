@@ -722,3 +722,175 @@ class TestStartAnswerPrep:
                 mock_multi_page.assert_not_called()
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+# ================================================================
+# 11. _is_pages_confirmed — ページ確定状態のフォールバック判定
+# ================================================================
+
+class TestIsPagesConfirmed:
+    """_is_pages_confirmed() が明示フラグとディスク上の状態を正しく統合するか検証する"""
+
+    def setup_method(self):
+        self.root, self.app = _make_gui()
+
+    def teardown_method(self):
+        _destroy_gui(self.root)
+
+    def test_explicit_flag_true_short_circuits(self):
+        """明示的に確定済みなら、フォルダの状態に関わらず True"""
+        self.app._pages_confirmed = True
+        self.app.image_folder_path.set("")
+        assert self.app._is_pages_confirmed() is True
+
+    def test_empty_folder_returns_false(self):
+        """フォルダが空（未取込・未準備）なら False"""
+        tmpdir = tempfile.mkdtemp()
+        try:
+            self.app.image_folder_path.set(tmpdir)
+            assert self.app._is_pages_confirmed() is False
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_existing_multi_page_manifest_returns_true(self):
+        """複数ページマニフェストが既に存在すれば True"""
+        tmpdir = tempfile.mkdtemp()
+        try:
+            self.app.image_folder_path.set(tmpdir)
+            fake_status = {'pages': [{'page': 1, 'state': '取込済み'}], 'active_page': 1}
+            with patch('multi_page_merger.get_multi_page_project_status', return_value=fake_status):
+                assert self.app._is_pages_confirmed() is True
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_boxed_images_present_returns_true(self):
+        """画像案件で既に採点準備済み（boxedフォルダに画像あり）なら True"""
+        from constants import RESULTS_FOLDER, BOXED_FOLDER
+        tmpdir = tempfile.mkdtemp()
+        try:
+            self.app.image_folder_path.set(tmpdir)
+            boxed = Path(tmpdir, RESULTS_FOLDER, BOXED_FOLDER)
+            boxed.mkdir(parents=True)
+            Path(boxed, "001.jpg").touch()
+            with patch('multi_page_merger.get_multi_page_project_status', return_value=None):
+                assert self.app._is_pages_confirmed() is True
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_manifest_error_falls_back_to_boxed_check(self):
+        """マニフェスト読み込みエラー時は例外を握りつぶし、boxed判定へフォールバックする"""
+        from constants import RESULTS_FOLDER, BOXED_FOLDER
+        tmpdir = tempfile.mkdtemp()
+        try:
+            self.app.image_folder_path.set(tmpdir)
+            boxed = Path(tmpdir, RESULTS_FOLDER, BOXED_FOLDER)
+            boxed.mkdir(parents=True)
+            Path(boxed, "001.jpg").touch()
+            with patch('multi_page_merger.get_multi_page_project_status',
+                       side_effect=RuntimeError("corrupt manifest")):
+                assert self.app._is_pages_confirmed() is True
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+# ================================================================
+# 12. 複数ページダッシュボードの表示/非表示・状態表示
+# ================================================================
+
+class TestMultiPageDashboardVisibility:
+    """画像案件では隠し、PDF案件・既存マニフェストでは表示する"""
+
+    def setup_method(self):
+        self.root, self.app = _make_gui()
+
+    def teardown_method(self):
+        _destroy_gui(self.root)
+
+    def test_image_only_folder_hides_dashboard(self):
+        """答案ファイルが直下に画像である案件では、複数ページ機能は使わない前提で隠す"""
+        tmpdir = tempfile.mkdtemp()
+        try:
+            Path(tmpdir, "answer.png").touch()
+            self.app.image_folder_path.set(tmpdir)
+            self.app._update_multi_page_dashboard()
+            assert self.app._multi_page_dashboard.winfo_manager() == ""
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_pdf_only_folder_shows_dashboard(self):
+        """PDF案件（未取込）では、複数ページ機能を案内するため表示する"""
+        tmpdir = tempfile.mkdtemp()
+        try:
+            Path(tmpdir, "page1.pdf").touch()
+            self.app.image_folder_path.set(tmpdir)
+            self.app._update_multi_page_dashboard()
+            assert self.app._multi_page_dashboard.winfo_manager() == "grid"
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_existing_manifest_shows_dashboard_and_active_state(self):
+        """既存マニフェストがあれば表示を維持し、アクティブページの状態文字列を表示する"""
+        tmpdir = tempfile.mkdtemp()
+        try:
+            self.app.image_folder_path.set(tmpdir)
+            fake_status = {
+                'pages': [{'page': 1, 'state': '採点中 2/5', 'workspace': tmpdir}],
+                'active_page': 1,
+                'combined_summary_path': str(Path(tmpdir, "combined.xlsx")),
+            }
+            with patch('multi_page_merger.get_multi_page_project_status', return_value=fake_status):
+                self.app._update_multi_page_dashboard()
+            assert self.app._multi_page_dashboard.winfo_manager() == "grid"
+            assert "採点中 2/5" in self.app._multi_page_status_label.cget("text")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+# ================================================================
+# 13. ページ切替エラーの分かりやすい文言化
+# ================================================================
+
+class TestExamPageErrorMessages:
+    """_go_to_exam_page / _try_continue_multi_page_prep のエラーが
+    _friendly_error_message() を経由することを確認する"""
+
+    def setup_method(self):
+        self.root, self.app = _make_gui()
+
+    def teardown_method(self):
+        _destroy_gui(self.root)
+
+    def test_go_to_exam_page_uses_friendly_message(self):
+        tmpdir = tempfile.mkdtemp()
+        try:
+            self.app.image_folder_path.set(tmpdir)
+            fake_status = {'project_folder': tmpdir}
+            with patch('multi_page_merger.get_multi_page_project_status', return_value=fake_status), \
+                 patch('multi_page_merger.activate_exam_page', side_effect=FileNotFoundError("missing")), \
+                 patch.object(self.app, '_friendly_error_message', return_value="わかりやすいメッセージ") as mock_friendly, \
+                 patch('main_gui.messagebox.showerror') as mock_showerror:
+                self.app._go_to_exam_page(1)
+                mock_friendly.assert_called_once()
+                mock_showerror.assert_called_once_with("ページ切替エラー", "わかりやすいメッセージ")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_try_continue_multi_page_prep_uses_friendly_message(self):
+        tmpdir = tempfile.mkdtemp()
+        try:
+            self.app.image_folder_path.set(tmpdir)
+            fake_status = {
+                'project_folder': tmpdir,
+                'pages': [{'page': 1, 'state': '取込済み'}],
+                'active_page': 1,
+            }
+            with patch('multi_page_merger.get_multi_page_project_status', return_value=fake_status), \
+                 patch('multi_page_merger.activate_exam_page', side_effect=FileNotFoundError("missing")), \
+                 patch.object(self.app, '_friendly_error_message', return_value="わかりやすいメッセージ") as mock_friendly, \
+                 patch('main_gui.messagebox.showerror') as mock_showerror:
+                result = self.app._try_continue_multi_page_prep()
+                assert result is True
+                mock_friendly.assert_called_once()
+                mock_showerror.assert_called_once_with("ページ切替エラー", "わかりやすいメッセージ")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)

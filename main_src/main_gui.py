@@ -807,6 +807,28 @@ class MarunosukeGUI:
     # Step 進行ガード
     # ---------------------------------------------------------
 
+    def _is_pages_confirmed(self):
+        """このフォルダで「ページ数確定」相当の状態が既に成立しているか判定する。
+
+        明示的に「確定」ボタンを押した場合（self._pages_confirmed）に加え、
+        既に答案の取込・準備が進んでいるフォルダでは、アプリ再起動後や
+        「📚 ページを管理」を直接使った場合でも自動的に確定済みとみなす。
+        """
+        if self._pages_confirmed:
+            return True
+        folder = self.image_folder_path.get()
+        if not folder or not Path(folder).exists():
+            return False
+        try:
+            from multi_page_merger import get_multi_page_project_status
+            status = get_multi_page_project_status(folder)
+            if status and status['pages']:
+                return True
+        except Exception:
+            pass  # マニフェスト破損時は他の判定にフォールバック
+        boxed = Path(folder) / RESULTS_FOLDER / BOXED_FOLDER
+        return boxed.exists() and any(boxed.iterdir())
+
     def _update_step1_availability(self):
         """Step 1 実行ボタン（画像準備）の有効化/無効化を制御する。
 
@@ -815,7 +837,7 @@ class MarunosukeGUI:
         if not hasattr(self, '_btn_run_box'):
             return
         folder = Path(self.image_folder_path.get()) if self.image_folder_path.get() else None
-        ready = bool(folder and folder.exists() and self._pages_confirmed)
+        ready = bool(folder and folder.exists() and self._is_pages_confirmed())
         self._btn_run_box.config(state=tk.NORMAL if ready else tk.DISABLED)
 
     def _update_step_availability(self):
@@ -877,21 +899,38 @@ class MarunosukeGUI:
         self._update_multi_page_dashboard()
 
     def _update_multi_page_dashboard(self):
-        """トップ画面の複数ページ数・現在ページ・進捗を更新する。"""
+        """トップ画面の複数ページ数・現在ページ・進捗を更新する。
+
+        画像ファイルが直下にある案件は、複数ページ機能を使わない
+        単純な画像案件として扱い（_start_answer_prep と同じ優先順位）、
+        既存の複数ページマニフェストが無ければダッシュボード自体を隠す。
+        """
         if not hasattr(self, '_multi_page_status_label'):
             return
         folder = self.image_folder_path.get()
+        folder_path = Path(folder) if folder else None
+        has_images = bool(folder_path and folder_path.exists() and any(
+            f.is_file() and f.suffix.lower() in ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff')
+            for f in folder_path.iterdir()
+        ))
+        has_pdfs = bool(folder_path and folder_path.exists() and any(
+            f.is_file() and f.suffix.lower() == '.pdf' for f in folder_path.iterdir()
+        ))
         if not folder:
-            self._multi_page_status_label.config(
-                text="未設定 — PDFを選択して複数ページ答案の取込を開始"
-            )
+            self._multi_page_dashboard.grid_remove()
             return
         try:
             from multi_page_merger import get_multi_page_project_status
             status = get_multi_page_project_status(folder)
         except Exception as exc:
+            self._multi_page_dashboard.grid()
             self._multi_page_status_label.config(text=f"進捗を読み込めません: {exc}")
             return
+        show_dashboard = bool(status and status['pages']) or (not has_images and has_pdfs)
+        if not show_dashboard:
+            self._multi_page_dashboard.grid_remove()
+            return
+        self._multi_page_dashboard.grid()
         if not status:
             self._multi_page_status_label.config(
                 text="単一ページ案件　｜　複数ページの場合は「ページを管理」"
@@ -901,11 +940,13 @@ class MarunosukeGUI:
             return
         pages = status['pages']
         active = status.get('active_page')
+        active_state = next((p['state'] for p in pages if p['page'] == active), None)
+        state_text = f"　｜　{active_state}" if active_state else ""
         combined_done = Path(status['combined_summary_path']).is_file()
         combined_text = "　｜　✅ 全ページ集計済み" if combined_done else ""
         self._multi_page_status_label.config(
             text=(f"作業ページ：{active or '未選択'} / {len(pages)}ページ"
-                  + combined_text)
+                  + state_text + combined_text)
         )
         page_numbers = [item['page'] for item in pages]
         if active in page_numbers:
@@ -956,7 +997,7 @@ class MarunosukeGUI:
         try:
             workspace = activate_exam_page(status['project_folder'], page_number)
         except Exception as exc:
-            messagebox.showerror("ページ切替エラー", str(exc))
+            messagebox.showerror("ページ切替エラー", self._friendly_error_message(exc))
             return
         self._prepare_multi_page_exam_page(page_number, workspace)
 
@@ -1067,7 +1108,7 @@ class MarunosukeGUI:
         # 縦型の工程表示（完了はチェック、次の工程は矢印）
         marker_done = {
             1: source,
-            2: self._pages_confirmed,
+            2: self._is_pages_confirmed(),
             3: all_boxed,
             4: all_scored,
             5: all_summary,
@@ -1183,6 +1224,7 @@ class MarunosukeGUI:
         folder = filedialog.askdirectory(title="作業スペースを選択")
         if folder:
             self._set_processing_state(False)
+            self._pages_confirmed = False
             self.image_folder_path.set(str(folder))
             self.log_message(f"✓ 作業スペースを選択: {folder}")
             self._try_auto_restore()
@@ -1202,7 +1244,7 @@ class MarunosukeGUI:
         if not self.image_folder_path.get():
             messagebox.showerror("エラー", "先に作業スペースを選択してください。")
             return
-        if not self._pages_confirmed:
+        if not self._is_pages_confirmed():
             messagebox.showerror("エラー", "先にページ数を入力して「確定」を押してください。")
             return
 
@@ -1246,7 +1288,7 @@ class MarunosukeGUI:
         try:
             workspace = activate_exam_page(status['project_folder'], target)
         except Exception as exc:
-            messagebox.showerror("ページ切替エラー", str(exc))
+            messagebox.showerror("ページ切替エラー", self._friendly_error_message(exc))
             return True
         self._prepare_multi_page_exam_page(target, workspace)
         return True
@@ -1277,6 +1319,7 @@ class MarunosukeGUI:
     def _start_setup_for_image_source(self, folder):
         """画像ソースを反映し、画像準備から初期設定まで連続実行する。"""
         self._set_processing_state(False)
+        self._pages_confirmed = False
         self.image_folder_path.set(str(folder))
         self.log_message(f"✓ 画像フォルダを選択: {folder}")
         self._try_auto_restore()
@@ -1530,6 +1573,7 @@ class MarunosukeGUI:
 
     def _prepare_multi_page_exam_page(self, exam_page, workspace):
         """選択した試験ページを現在の作業対象にして採点準備を開始する。"""
+        self._pages_confirmed = False
         self.image_folder_path.set(str(workspace))
         self.log_message(f"✓ 試験ページ {exam_page} を作業対象に設定: {workspace}")
         self._update_step1_availability()
@@ -2183,6 +2227,7 @@ class MarunosukeGUI:
             )
             return False
 
+        self._pages_confirmed = False
         self.image_folder_path.set(str(base_folder))
 
         # 数値・フラグの復元
