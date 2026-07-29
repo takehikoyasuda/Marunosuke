@@ -407,6 +407,7 @@ def generate_descriptive_only_sheets(
     output_folder: str,
     log_callback=None,
     rendering_settings=None,
+    annotations=None,
 ) -> dict:
     """記述のみモード: 記述得点のみを描画した返却答案を生成する。
 
@@ -420,6 +421,7 @@ def generate_descriptive_only_sheets(
         output_folder: 出力フォルダパス
         log_callback: ログ出力コールバック
         rendering_settings: 描画設定 dict
+        annotations: 回答注釈。生徒向けコメントだけを答案へ描画する。
 
     Returns:
         {'total_count', 'success_count', 'error_count'}
@@ -461,6 +463,7 @@ def generate_descriptive_only_sheets(
 
     success_count = 0
     error_count = 0
+    annotation_answers = (annotations or {}).get("answers", {})
 
     for idx, img_path in enumerate(image_files, 1):
         fname = img_path.name
@@ -482,10 +485,17 @@ def generate_descriptive_only_sheets(
 
             # 記述採点の描画
             scores_for_img = descriptive_scores.get(fname, {})
+            question_annotations = annotation_answers.get(fname, {})
+            comments_for_img = {
+                qid: annotation.get("comment", "")
+                for qid, annotation in question_annotations.items()
+                if isinstance(annotation, dict) and annotation.get("comment")
+            }
             image = draw_descriptive_on_image(
                 image, config, scores_for_img,
                 output_scale=output_scale,
                 rendering_settings=rendering_settings,
+                comments_for_image=comments_for_img,
             )
 
             # 合計点描画（マーク = 0、記述得点のみ）

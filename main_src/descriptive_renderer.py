@@ -9,6 +9,7 @@ descriptive_scorer.py から描画関連コードを分離・抽出したモジ�
 """
 
 import logging
+import unicodedata
 from typing import Optional, Dict, List, Tuple
 
 import cv2
@@ -35,6 +36,42 @@ TOTAL_COLOR_RGB = (0, 0, 255)   # 青色 (RGB, PIL用)
 # 合計点表示ボックスのデフォルトサイズ
 DEFAULT_TOTAL_BOX_WIDTH = 200
 DEFAULT_TOTAL_BOX_HEIGHT = 60
+COMMENT_MAX_LINES = 3
+
+
+def _display_width(text: str) -> int:
+    """日本語を2桁、半角文字を1桁として表示幅を概算する。"""
+    return sum(2 if unicodedata.east_asian_width(ch) in "WFA" else 1 for ch in text)
+
+
+def wrap_student_comment(text: str, max_width: int, max_lines: int = COMMENT_MAX_LINES) -> List[str]:
+    """生徒向けコメントを表示幅で折り返し、超過時は末尾を省略する。"""
+    if max_width <= 0 or max_lines <= 0:
+        return []
+    normalized = " ".join(str(text or "").split())
+    if not normalized:
+        return []
+    lines: List[str] = []
+    current = ""
+    consumed = 0
+    for ch in normalized:
+        candidate = current + ch
+        if current and _display_width(candidate) > max_width:
+            lines.append(current)
+            current = ch
+            if len(lines) == max_lines:
+                consumed -= len(current)
+                break
+        else:
+            current = candidate
+        consumed += 1
+    if len(lines) < max_lines and current:
+        lines.append(current)
+    if consumed < len(normalized) and lines:
+        while lines[-1] and _display_width(lines[-1] + "…") > max_width:
+            lines[-1] = lines[-1][:-1]
+        lines[-1] += "…"
+    return lines
 
 
 # ============================================================
@@ -67,6 +104,7 @@ def draw_descriptive_on_image(
     scores_for_image: dict,
     output_scale: float = 1.0,
     rendering_settings: dict = None,
+    comments_for_image: dict = None,
 ) -> np.ndarray:
     """
     1枚の補正済み画像に記述問題の得点を描画する。
@@ -88,6 +126,7 @@ def draw_descriptive_on_image(
         scores_for_image: {question_id: score, ...}
         output_scale: 出力スケール (1.0 = 595x842)
         rendering_settings: 描画設定辞書（Noneならデフォルト）
+        comments_for_image: {question_id: 生徒向けコメント}。教員用メモは渡さない。
 
     Returns:
         描画済み画像 (OpenCV BGR)
@@ -109,6 +148,7 @@ def draw_descriptive_on_image(
     alpha_value = int(255 * opacity)
     RED_ALPHA = (255, 0, 0, alpha_value)
     BLACK_ALPHA = (0, 0, 0, alpha_value)
+    comments_for_image = comments_for_image or {}
 
     for q in config["questions"]:
         q_id = q["id"]
@@ -116,17 +156,6 @@ def draw_descriptive_on_image(
         aspect = q["aspect"]
         max_score = q["max_score"]
         score = scores_for_image.get(q_id)
-
-        if score is None:
-            continue
-
-        # ○×△ の判定
-        if score >= max_score:
-            symbol = "○"
-        elif score > 0:
-            symbol = "△"
-        else:
-            symbol = "×"
 
         # 領域の中央80%エリアを計算
         left = int(region[0] * s)
@@ -142,6 +171,39 @@ def draw_descriptive_on_image(
         usable_h = int(region_h * 0.8)
         usable_x = left + int(region_w * 0.1)
         usable_y = top + int(region_h * 0.1)
+
+        # コメントは得点が未入力でも返却答案へ表示できる。
+        comment = comments_for_image.get(q_id, "")
+        if rs.get('descriptive_show_comment', True) and str(comment).strip():
+            comment_font_size = max(10, min(int(region_h * 0.15), int(18 * s)))
+            comment_font = _get_font(comment_font_size)
+            approx_chars = max(4, int(usable_w / max(comment_font_size, 1)))
+            lines = wrap_student_comment(str(comment), approx_chars * 2)
+            if lines:
+                line_h = comment_font_size + max(2, int(2 * s))
+                block_h = line_h * len(lines) + 4
+                box_top = max(top, bottom - block_h - 2)
+                draw.rounded_rectangle(
+                    (usable_x, box_top, usable_x + usable_w, bottom - 2),
+                    radius=max(2, int(3 * s)), fill=(255, 255, 255, min(235, alpha_value + 80)),
+                    outline=(220, 0, 0, alpha_value), width=max(1, int(s)),
+                )
+                for line_index, line in enumerate(lines):
+                    draw.text(
+                        (usable_x + 3, box_top + 2 + line_index * line_h), line,
+                        font=comment_font, fill=(180, 0, 0, alpha_value),
+                    )
+
+        if score is None:
+            continue
+
+        # ○×△ の判定
+        if score >= max_score:
+            symbol = "○"
+        elif score > 0:
+            symbol = "△"
+        else:
+            symbol = "×"
 
         # 表示項目の決定
         d_show_mark = rs.get('descriptive_show_mark', True)
@@ -216,6 +278,7 @@ def draw_descriptive_on_image(
         if d_show_aspect:
             # パーツ3: 観点（黒色）
             draw.text((current_x, text_y), aspect_text, font=font_main, fill=BLACK_ALPHA)
+
 
     # オーバーレイを合成
     pil_img = Image.alpha_composite(pil_img, overlay)

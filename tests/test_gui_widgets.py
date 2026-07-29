@@ -147,6 +147,8 @@ class TestInitialState:
     def test_brand_icon_is_shown_in_header(self):
         """赤いマル之助アイコンをトップ画面のブランド要素として表示する。"""
         assert self.app._header_icon is not None
+        assert self.app._header_icon.width() == 48
+        assert self.app._header_icon.height() == 48
 
     def test_main_action_buttons_exist(self):
         """主要アクションボタンが存在する"""

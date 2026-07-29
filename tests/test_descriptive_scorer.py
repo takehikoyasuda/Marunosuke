@@ -981,6 +981,24 @@ class TestDescriptiveReviewGUIStructure:
         assert '_annotation_preview(annotation.get("memo", ""), 18)' in table_src
         assert '_annotation_preview(annotation.get("comment", ""), 18)' in table_src
 
+    def test_text_table_cells_have_visible_borders(self):
+        """見出し・データ・操作欄の区切りを罫線で判別できる。"""
+        import inspect
+        from descriptive_scorer import DescriptiveReviewGUI
+
+        table_src = inspect.getsource(DescriptiveReviewGUI._render_text_table)
+        assert table_src.count("relief=tk.SOLID") >= 3
+        assert table_src.count("bd=1") >= 3
+
+    def test_image_cards_use_available_width_for_annotations(self):
+        """画像一覧のメモ・コメントをサムネイル幅だけで細く折り返さない。"""
+        import inspect
+        from descriptive_scorer import DescriptiveReviewGUI
+
+        refresh_src = inspect.getsource(DescriptiveReviewGUI._refresh_grid)
+        assert "annotation_wraplength = max(320, self._thumb_size * 2)" in refresh_src
+        assert refresh_src.count("wraplength=annotation_wraplength") == 2
+
     def test_get_thumb_no_hardcoded_595x842(self):
         """_get_thumb が 595×842 ハードコード座標変換を使っていないことを確認"""
         import inspect, re

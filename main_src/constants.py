@@ -105,6 +105,7 @@ DEFAULT_RENDERING_SETTINGS = {
     'descriptive_show_mark': True,  # ○×△マーク
     'descriptive_show_score': True, # 得点
     'descriptive_show_aspect': True, # 観点番号
+    'descriptive_show_comment': True, # 生徒向けコメント
 }
 
 

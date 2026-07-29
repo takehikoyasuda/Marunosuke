@@ -4156,7 +4156,7 @@ class DescriptiveReviewGUI:
         q = self.questions[self._current_q_idx]
         # フィルタ更新: セマンティックフィルタ + 数値フィルタ
         vals = [
-            "全て", "○ 満点", "× 0点", "△ 中間点", "未採点", "保留",
+            "全て", "○ 満点", "× 0点", "△ 中間点", "未採点", "保留", "コメントあり",
         ] + [str(s) for s in range(q["max_score"] + 1)]
         self._filter_combo.config(values=vals)
         self._filter_var.set("全て")
@@ -4193,6 +4193,10 @@ class DescriptiveReviewGUI:
                     filtered.append((fname, sc))
             elif filter_val == "保留":
                 if self.annotations.get("answers", {}).get(fname, {}).get(qid, {}).get("held", False):
+                    filtered.append((fname, sc))
+            elif filter_val == "コメントあり":
+                comment = self.annotations.get("answers", {}).get(fname, {}).get(qid, {}).get("comment", "")
+                if str(comment).strip():
                     filtered.append((fname, sc))
             elif filter_val == "○ 満点":
                 if sc is not None and sc >= max_score:
@@ -4301,12 +4305,15 @@ class DescriptiveReviewGUI:
             tk.Label(cell, text="  ".join(badges) or "注釈なし", bg=card_bg,
                      fg="#AD1457" if annotation.get("held") else "#777",
                      font=(UI_FONT, get_ui_font_size(8))).pack()
+            # サムネイルよりカードが横に広がる場合の余白を活用し、注釈が
+            # 細い段落にならないよう従来の約2倍まで一行に表示する。
+            annotation_wraplength = max(320, self._thumb_size * 2)
             tk.Label(cell, text=f"メモ: {memo_preview or '—'}", bg=card_bg,
                      fg="#5D4037", anchor=tk.W, justify=tk.LEFT,
-                     wraplength=self._thumb_size).pack(fill=tk.X)
+                     wraplength=annotation_wraplength).pack(fill=tk.X)
             tk.Label(cell, text=f"コメント: {comment_preview or '—'}", bg=card_bg,
                      fg="#37474F", anchor=tk.W, justify=tk.LEFT,
-                     wraplength=self._thumb_size).pack(fill=tk.X)
+                     wraplength=annotation_wraplength).pack(fill=tk.X)
             tk.Button(cell, text="採点画面へ",
                       command=lambda q_=qid: self._open_scoring_screen(q_),
                       font=(UI_FONT, get_ui_font_size(7))).pack(side=tk.LEFT, pady=(2, 0))
@@ -4341,7 +4348,8 @@ class DescriptiveReviewGUI:
         for col, (name, width) in enumerate(zip(columns, widths)):
             tk.Label(self._grid_frame, text=name, bg="#455A64", fg="white",
                      font=(UI_FONT, get_ui_font_size(8), "bold"), width=width,
-                     anchor=tk.W, padx=3, pady=3).grid(row=0, column=col, sticky="nsew")
+                     anchor=tk.W, padx=3, pady=3, bd=1, relief=tk.SOLID,
+                     highlightthickness=0).grid(row=0, column=col, sticky="nsew")
 
         for row, (fname, score) in enumerate(filtered, start=1):
             annotation = self.annotations.get("answers", {}).get(fname, {}).get(qid, {})
@@ -4358,11 +4366,15 @@ class DescriptiveReviewGUI:
             for col, (value, width) in enumerate(zip(values, widths[:-1])):
                 label = tk.Label(self._grid_frame, text=value, bg=bg,
                                  anchor=tk.W, justify=tk.LEFT, width=width,
-                                 height=1, padx=3, pady=2)
+                                 height=1, padx=3, pady=2, bd=1,
+                                 relief=tk.SOLID, highlightthickness=0)
                 label.grid(row=row, column=col, sticky="nsew")
                 label.bind("<Double-Button-1>",
                            lambda e, q_=qid: self._open_scoring_screen(q_))
-            actions = tk.Frame(self._grid_frame, bg=bg)
+            actions = tk.Frame(
+                self._grid_frame, bg=bg, bd=1, relief=tk.SOLID,
+                highlightthickness=0,
+            )
             actions.grid(row=row, column=len(columns) - 1, sticky="nsew")
             tk.Button(actions, text="採点", command=lambda q_=qid: self._open_scoring_screen(q_),
                       font=(UI_FONT, get_ui_font_size(6))).pack(side=tk.LEFT, padx=(1, 0), pady=1)
@@ -4560,7 +4572,6 @@ class DescriptiveReviewGUI:
             annotation["comment"] = comment.get("1.0", "end-1c").strip()
             annotation["held"] = held.get()
             self.modified = True
-            save_descriptive_annotations(self.annotations_path, self.annotations)
             dialog.destroy()
             self._refresh_grid()
 

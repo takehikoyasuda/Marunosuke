@@ -116,6 +116,7 @@ class RenderingSettingsGUI:
         self.var_desc_show_mark = tk.BooleanVar(value=s['descriptive_show_mark'])
         self.var_desc_show_score = tk.BooleanVar(value=s['descriptive_show_score'])
         self.var_desc_show_aspect = tk.BooleanVar(value=s['descriptive_show_aspect'])
+        self.var_desc_show_comment = tk.BooleanVar(value=s['descriptive_show_comment'])
 
     # ─────────────────────────────────────────────
     # UI 構築
@@ -168,6 +169,7 @@ class RenderingSettingsGUI:
             ("○×△マークを表示", self.var_desc_show_mark),
             ("得点を表示", self.var_desc_show_score),
             ("観点を表示", self.var_desc_show_aspect),
+            ("生徒向けコメントを表示", self.var_desc_show_comment),
         ]:
             tk.Checkbutton(desc_chk_frame, text=text, variable=var,
                            font=FONT_S, bg=SEC_BG, anchor=tk.W,
@@ -214,6 +216,7 @@ class RenderingSettingsGUI:
         self.var_desc_show_mark.set(d['descriptive_show_mark'])
         self.var_desc_show_score.set(d['descriptive_show_score'])
         self.var_desc_show_aspect.set(d['descriptive_show_aspect'])
+        self.var_desc_show_comment.set(d['descriptive_show_comment'])
 
     def _collect_settings(self):
         """現在のGUI状態から設定辞書を作成"""
@@ -229,6 +232,7 @@ class RenderingSettingsGUI:
             'descriptive_show_mark': self.var_desc_show_mark.get(),
             'descriptive_show_score': self.var_desc_show_score.get(),
             'descriptive_show_aspect': self.var_desc_show_aspect.get(),
+            'descriptive_show_comment': self.var_desc_show_comment.get(),
         }
 
     def _on_apply(self):
@@ -243,5 +247,4 @@ class RenderingSettingsGUI:
         """キャンセル — 変更せずに閉じる"""
         self.window.grab_release()
         self.window.destroy()
-
 

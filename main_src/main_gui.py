@@ -30,7 +30,7 @@ _HEADER_ICON_CACHE = {}
 # サードパーティライブラリ
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageTk
 
 
 def _askyesno_japanese(title, message, **kwargs):
@@ -52,6 +52,40 @@ def _askyesno_japanese(title, message, **kwargs):
     dialog.grab_set()
     dialog.wait_window()
     return result["value"]
+
+
+def _get_header_icon(root, size=48):
+    """高解像度ロゴから、滑らかで余白の少ないヘッダー画像を作る。"""
+    cache_key = (root.tk, size)
+    cached = _HEADER_ICON_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    logo_path = Path(resource_path("resources/marunosuke-logo.png"))
+    if not logo_path.exists():
+        return None
+
+    with Image.open(logo_path) as source:
+        image = source.convert("RGB")
+        white = Image.new("RGB", image.size, "white")
+        difference = ImageChops.difference(image, white).convert("L")
+        mask = difference.point(lambda value: 255 if value > 18 else 0)
+        bbox = mask.getbbox()
+        if bbox:
+            left, top, right, bottom = bbox
+            padding = max(8, int(max(right - left, bottom - top) * 0.04))
+            image = image.crop((
+                max(0, left - padding), max(0, top - padding),
+                min(image.width, right + padding), min(image.height, bottom + padding),
+            ))
+        image.thumbnail((size, size), Image.Resampling.LANCZOS)
+
+        tile = Image.new("RGB", (size, size), "white")
+        tile.paste(image, ((size - image.width) // 2, (size - image.height) // 2))
+        photo = ImageTk.PhotoImage(tile, master=root)
+
+    _HEADER_ICON_CACHE[cache_key] = photo
+    return photo
 
 
 # アプリ内の確認ダイアログは日本語ボタンを統一して使う。
@@ -400,15 +434,12 @@ class MarunosukeGUI:
         self._header_icon = None
         try:
             if self._app_icon is not None:
-                tk_key = self.root.tk
-                self._header_icon = _HEADER_ICON_CACHE.get(tk_key)
-                if self._header_icon is None:
-                    scale = max(1, (max(self._app_icon.width(), self._app_icon.height()) + 37) // 38)
-                    self._header_icon = self._app_icon.subsample(scale, scale)
-                    _HEADER_ICON_CACHE[tk_key] = self._header_icon
+                self._header_icon = _get_header_icon(self.root, size=48)
+            if self._header_icon is not None:
                 tk.Label(
                     title_row, image=self._header_icon, bg=BG_COLOR, bd=0,
-                ).pack(side=tk.LEFT, padx=(0, 7))
+                    highlightthickness=0,
+                ).pack(side=tk.LEFT, padx=(0, 9), pady=1)
         except Exception:
             self._header_icon = None
 
@@ -1210,6 +1241,7 @@ class MarunosukeGUI:
                 load_descriptive_config, load_descriptive_scores,
                 generate_descriptive_only_sheets,
                 load_total_display_config, TOTAL_DISPLAY_CONFIG_FILE,
+                load_descriptive_annotations, DESCRIPTIVE_ANNOTATIONS_FILE,
             )
 
             results_folder = Path(params['image_folder']) / RESULTS_FOLDER
@@ -1219,6 +1251,9 @@ class MarunosukeGUI:
 
             config = load_descriptive_config(str(results_data / "descriptive_config.json"))
             scores_data = load_descriptive_scores(str(results_data / "descriptive_scores.json"))
+            annotations = load_descriptive_annotations(
+                str(results_data / DESCRIPTIVE_ANNOTATIONS_FILE)
+            )
 
             if not config or not scores_data:
                 self.root.after(0, lambda: messagebox.showerror(
@@ -1242,6 +1277,7 @@ class MarunosukeGUI:
                 output_folder=str(output_folder),
                 log_callback=self.log_message,
                 rendering_settings=dict(self.rendering_settings),
+                annotations=annotations,
             )
 
             if result:
