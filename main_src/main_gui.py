@@ -932,7 +932,7 @@ class MarunosukeGUI:
 
     def _navigate_exam_page(self, offset):
         """現在ページの前後へワンクリックで切り替える。"""
-        from multi_page_merger import activate_exam_page, get_multi_page_project_status
+        from multi_page_merger import get_multi_page_project_status
         status = get_multi_page_project_status(self.image_folder_path.get())
         if not status or not status['pages']:
             return
@@ -945,12 +945,20 @@ class MarunosukeGUI:
         if not 0 <= target_index < len(pages):
             return
         target = pages[target_index]
+        self._go_to_exam_page(target)
+
+    def _go_to_exam_page(self, page_number):
+        """指定した試験ページを採点対象として開く。"""
+        from multi_page_merger import activate_exam_page, get_multi_page_project_status
+        status = get_multi_page_project_status(self.image_folder_path.get())
+        if not status:
+            return
         try:
-            workspace = activate_exam_page(status['project_folder'], target)
+            workspace = activate_exam_page(status['project_folder'], page_number)
         except Exception as exc:
             messagebox.showerror("ページ切替エラー", str(exc))
             return
-        self._prepare_multi_page_exam_page(target, workspace)
+        self._prepare_multi_page_exam_page(page_number, workspace)
 
     def _generate_or_explain_combined_summary(self):
         """全ページ統合Excelを生成し、未集計なら次の作業を案内する。"""
@@ -962,7 +970,6 @@ class MarunosukeGUI:
             )
             return
         from multi_page_merger import (
-            activate_exam_page,
             generate_combined_multi_page_summary,
             get_multi_page_project_status,
         )
@@ -1000,11 +1007,7 @@ class MarunosukeGUI:
                 f"最初の未集計ページ（ページ{pending[0]}）を開きますか？",
             )
             if move:
-                try:
-                    workspace = activate_exam_page(status['project_folder'], pending[0])
-                    self._prepare_multi_page_exam_page(pending[0], workspace)
-                except Exception as exc:
-                    messagebox.showerror("ページ切替エラー", str(exc))
+                self._go_to_exam_page(pending[0])
             return
 
         messagebox.showerror(
@@ -1043,6 +1046,8 @@ class MarunosukeGUI:
         # 全ページの完了状況で判定する。1ページ目だけ終えた時点で✓が付くと
         # 紛らわしいため。
         all_boxed, all_scored, all_summary = boxed, scored, summary
+        multi_status = None
+        pending_page = None
         if img_folder:
             from multi_page_merger import get_multi_page_project_status
             multi_status = get_multi_page_project_status(img_folder)
@@ -1056,6 +1061,8 @@ class MarunosukeGUI:
                         all_scored = False
                     if not (page_base / FINAL_REPORT_FOLDER).exists():
                         all_summary = False
+                        if pending_page is None:
+                            pending_page = page['page']
 
         # 縦型の工程表示（完了はチェック、次の工程は矢印）
         marker_done = {
@@ -1087,6 +1094,12 @@ class MarunosukeGUI:
             next_text, button_text, command, button_bg = "次にすること：採点を開始してください", "採点", self.run_descriptive_scoring, "#90CAF9"
         elif not summary:
             next_text, button_text, command, button_bg = "次にすること：採点結果を確認して集計してください", "集計", self.run_summary_generation, "#FFE082"
+        elif multi_status and multi_status['pages'] and not all_summary:
+            # 今のページは完了しているが、他のページがまだ集計未完了。
+            next_text = f"次にすること：ページ{pending_page}の採点・集計を進めてください"
+            button_text = f"ページ{pending_page}へ移動"
+            command = lambda: self._go_to_exam_page(pending_page)
+            button_bg = "#FFE082"
         else:
             next_text, button_text, command, button_bg = "次にすること：採点結果を確認・再集計できます", "採点確認", self._open_descriptive_review, "#E1BEE7"
         self._progress_next_label.config(text=next_text)
