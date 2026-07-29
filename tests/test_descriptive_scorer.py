@@ -1229,7 +1229,7 @@ class TestScoringQuestionListLayout:
                 for child in descendants(win)
                 if isinstance(child, tk.Button)
             }
-            for text in ("設定", "✔ 採点完了・保存", "キャンセル"):
+            for text in ("配点・設定", "✔ 採点完了・保存", "キャンセル"):
                 button = buttons[text]
                 assert button.winfo_rootx() >= win.winfo_rootx()
                 assert button.winfo_rooty() >= win.winfo_rooty()

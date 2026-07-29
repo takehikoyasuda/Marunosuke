@@ -60,7 +60,11 @@ class TestDefaultRenderingSettings(unittest.TestCase):
         self.assertIsInstance(DEFAULT_RENDERING_SETTINGS['mark_result_offset'], float)
 
     def test_default_booleans_are_true(self):
+        # descriptive_show_aspect は観点表示機能の廃止に伴い、
+        # 旧設定との互換用としてデフォルト False が正しい。
         for key in self.EXPECTED_KEYS:
+            if key == 'descriptive_show_aspect':
+                continue
             if key.startswith('show_') or key.startswith('descriptive_show_'):
                 self.assertTrue(DEFAULT_RENDERING_SETTINGS[key], f"{key} のデフォルトは True であるべき")
 

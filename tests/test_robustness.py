@@ -415,6 +415,8 @@ class TestDescriptiveReviewSave:
         gui.win = MagicMock()
         gui.scores = {"img.jpg": {"Q1": 5}}
         gui.scores_save_path = scores_path
+        gui.annotations_path = str(tmp_path / "annotations.json")
+        gui.annotations = {}
         gui.modified = True
 
         with patch('descriptive_gui.messagebox.showinfo'):
