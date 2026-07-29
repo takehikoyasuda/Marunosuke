@@ -26,7 +26,7 @@ from typing import Dict, List, Optional
 
 from PIL import Image, ImageTk
 
-from constants import get_ui_font_family, get_ui_font_size
+from constants import get_ui_font_family, get_ui_font_size, fit_window_to_content
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +73,7 @@ class StudentIdReviewGUI:
 
         self._build_grid_view()
         self._grid_frame.pack(fill=tk.BOTH, expand=True)
+        fit_window_to_content(self.window, min_width=640, min_height=480)
 
         self.window.grab_set()
 

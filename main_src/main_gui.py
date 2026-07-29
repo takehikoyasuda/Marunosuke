@@ -71,6 +71,7 @@ from constants import (
     atomic_json_save, load_json_safe,
     get_app_temp_dir,
     open_in_file_manager, get_ui_font_family, get_ui_font_size,
+    fit_window_to_content,
     number_to_circled,
 )
 
@@ -198,6 +199,7 @@ class MarunosukeGUI:
         self.rendering_settings = get_rendering_settings()
 
         self.create_widgets()
+        fit_window_to_content(self.root, min_width=760, min_height=500)
 
         # ウィンドウ閉じるハンドラ（処理中のデータ保護）
         self.root.protocol("WM_DELETE_WINDOW", self._on_window_close)
@@ -289,6 +291,34 @@ class MarunosukeGUI:
             command=self._restore_session_interactive,
             font=(UI_FONT, get_ui_font_size(8)), bg="#E3F2FD", relief=tk.FLAT, cursor="hand2",
         ).pack(side=tk.RIGHT, padx=(10, 0))
+
+        # 進捗ガイド（処理の状態をトップ画面だけで確認できるようにする）
+        self._progress_guide_frame = tk.LabelFrame(
+            controls_frame, text="現在の進捗", padx=10, pady=6,
+            font=FONT_BOLD, bg=SECTION_BG, fg=HEADER_TEXT, relief=tk.FLAT,
+        )
+        self._progress_guide_frame.pack(fill=tk.X, pady=(0, 8))
+        self._progress_guide_labels = {}
+        for key, title in (
+            ("source", "準備"), ("setup", "問題設定"),
+            ("scoring", "採点"), ("review", "採点確認"), ("summary", "集計"),
+        ):
+            row = tk.Frame(self._progress_guide_frame, bg=SECTION_BG)
+            row.pack(fill=tk.X, pady=1)
+            marker = tk.Label(row, text="○", width=3, anchor=tk.W,
+                              font=FONT_BOLD, bg=SECTION_BG, fg="#90A4AE")
+            marker.pack(side=tk.LEFT)
+            tk.Label(row, text=title, width=10, anchor=tk.W,
+                     font=FONT_NORMAL, bg=SECTION_BG, fg="#455A64").pack(side=tk.LEFT)
+            status = tk.Label(row, text="未完了", anchor=tk.W,
+                              font=FONT_NORMAL, bg=SECTION_BG, fg="#78909C")
+            status.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            self._progress_guide_labels[key] = (marker, status)
+        self._progress_next_label = tk.Label(
+            self._progress_guide_frame, text="次の操作: 画像フォルダを選択してください",
+            anchor=tk.W, font=FONT_BOLD, bg="#FFF8E1", fg="#795548", padx=6, pady=3,
+        )
+        self._progress_next_label.pack(fill=tk.X, pady=(5, 0))
 
         # ---------------------------------------------------------
         # 1. データソース & 設定 (横並び)
@@ -529,6 +559,7 @@ class MarunosukeGUI:
             # フォルダ未選択 → Step2/3 無効
             self._set_step2_enabled(False)
             self._set_step3_enabled(False)
+            self._update_progress_guide()
             return
 
         base = Path(img_folder)
@@ -561,6 +592,51 @@ class MarunosukeGUI:
         if final.exists():
             self.last_results_folder = str(final)
             self.open_results_btn.config(state=tk.NORMAL)
+        self._update_progress_guide()
+
+    def _update_progress_guide(self):
+        """トップ画面の準備状況と次の操作を更新する。"""
+        if not hasattr(self, "_progress_guide_labels"):
+            return
+        img_folder = self.image_folder_path.get()
+        base = Path(img_folder) / RESULTS_FOLDER if img_folder else None
+        data = base / RESULTS_DATA_FOLDER if base else None
+
+        def has_images(path):
+            return bool(path and path.exists() and any(
+                p.suffix.lower() in (".jpg", ".jpeg", ".png") for p in path.iterdir()
+            ))
+
+        source = bool(img_folder and Path(img_folder).exists())
+        setup = bool(data and (data / "descriptive_config.json").exists())
+        boxed = has_images(base / BOXED_FOLDER) if base else False
+        scored = has_images(base / SCORED_FOLDER) if base else False
+        reviewed = bool(data and (data / "descriptive_scores.json").exists())
+        summary = bool(base and (base / FINAL_REPORT_FOLDER).exists())
+        states = {
+            "source": (source, "画像フォルダ選択済み" if source else "画像フォルダ未選択"),
+            "setup": (setup, "採点領域設定済み" if setup else "初期設定が必要"),
+            "scoring": (scored, "採点済み答案あり" if scored else ("採点可能" if setup and boxed else "画像準備が必要")),
+            "review": (reviewed, "確認可能" if reviewed else "採点後に確認"),
+            "summary": (summary, "集計結果あり" if summary else ("集計可能" if boxed else "画像準備後に実行")),
+        }
+        for key, (done, text) in states.items():
+            marker, label = self._progress_guide_labels[key]
+            marker.config(text="✓" if done else "○", fg="#2E7D32" if done else "#90A4AE")
+            label.config(text=text, fg="#2E7D32" if done else "#78909C")
+        if not source:
+            next_text = "次の操作: 画像フォルダを選択してください"
+        elif not boxed:
+            next_text = "次の操作: 画像準備を実行してください"
+        elif not setup:
+            next_text = "次の操作: 初期設定を実行してください"
+        elif not reviewed:
+            next_text = "次の操作: 記述採点を実行してください"
+        elif not summary:
+            next_text = "次の操作: 採点確認後に集計を実行してください"
+        else:
+            next_text = "次の操作: 必要に応じて採点結果を確認・再集計できます"
+        self._progress_next_label.config(text=next_text)
 
     def _set_step2_enabled(self, enabled: bool):
         """Step2 の操作ボタン群を有効化/無効化する"""

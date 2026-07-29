@@ -342,9 +342,18 @@ def fit_window_to_content(window, min_width=0, min_height=0):
     終えた後（pack/grid呼び出しの後）に呼び出すこと。
     """
     window.update_idletasks()
-    width = max(min_width, window.winfo_reqwidth())
-    height = max(min_height, window.winfo_reqheight())
-    window.geometry(f"{width}x{height}")
+    screen_w = max(1, window.winfo_screenwidth())
+    screen_h = max(1, window.winfo_screenheight())
+    margin_x = min(40, max(12, screen_w // 40))
+    margin_y = min(60, max(12, screen_h // 30))
+    max_width = max(1, screen_w - margin_x * 2)
+    max_height = max(1, screen_h - margin_y * 2)
+    width = min(max(min_width, window.winfo_reqwidth()), max_width)
+    height = min(max(min_height, window.winfo_reqheight()), max_height)
+    x = max(0, min(window.winfo_x(), screen_w - width))
+    y = max(0, min(window.winfo_y(), screen_h - height))
+    window.geometry(f"{width}x{height}+{x}+{y}")
+    window.minsize(min(min_width, max_width), min(min_height, max_height))
 
 
 def get_excel_font_family():
