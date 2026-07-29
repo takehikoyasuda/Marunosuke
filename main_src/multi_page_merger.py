@@ -820,6 +820,7 @@ def run_multi_page_import_gui(
     parent: Optional[tk.Tk] = None,
     on_prepare_page=None,
     on_project_change=None,
+    total_pages: Optional[int] = None,
 ) -> None:
     """複数ページ答案の試験ページ・取込バッチ管理画面を開く。"""
     from constants import BOXED_FOLDER, RESULTS_DATA_FOLDER, RESULTS_FOLDER
@@ -844,7 +845,16 @@ def run_multi_page_import_gui(
             return
     else:
         batches = []
-        expected_pages = []
+        # 新規案件では、ページ番号を都度入力させず、最初に総ページ数だけを
+        # 確認して1ページ目から順番に取り込む。
+        if total_pages is None:
+            total_pages = simpledialog.askinteger(
+                "総ページ数", "この答案は全部で何ページですか？",
+                parent=parent, minvalue=1,
+            )
+        if total_pages is None:
+            return
+        expected_pages = list(range(1, total_pages + 1))
         saved_shared_layout = False
         saved_active_page = None
 
@@ -1021,6 +1031,51 @@ def run_multi_page_import_gui(
             messagebox.showerror("取込エラー", str(exc), parent=window)
             _refresh()
 
+    def _guided_import():
+        """ページ番号入力を省略し、ページ順にPDFを取り込む。"""
+        for page in sorted(expected_pages):
+            already = any(batch.exam_page == page for batch in batches)
+            if already:
+                continue
+            messagebox.showinfo(
+                "答案ファイルの追加",
+                f"試験ページ {page} のファイルを追加してください。\n"
+                "同じページが複数PDFに分かれている場合は、続けて追加できます。",
+                parent=window,
+            )
+            while True:
+                paths = list(filedialog.askopenfilenames(
+                    title=f"試験ページ {page} のPDF・画像を選択",
+                    filetypes=[
+                        ("PDF・画像", "*.pdf *.png *.jpg *.jpeg *.bmp *.tif *.tiff"),
+                        ("すべてのファイル", "*.*"),
+                    ], parent=window,
+                ))
+                if not paths:
+                    break
+                existing = {str(Path(path).resolve()) for batch in batches for path in batch.source_paths}
+                repeated = [path for path in paths if str(Path(path).resolve()) in existing]
+                if repeated:
+                    messagebox.showerror("重複する取込元", "既に取り込まれているファイルがあります。", parent=window)
+                    continue
+                try:
+                    status_var.set(f"試験ページ {page} を取り込んでいます…")
+                    window.update_idletasks()
+                    batch = import_files_as_batch(page, paths, str(managed_root))
+                    batches.append(batch)
+                    _save()
+                    _refresh(f"batch:{batch.batch_id}")
+                except Exception as exc:
+                    messagebox.showerror("取込エラー", str(exc), parent=window)
+                if not messagebox.askyesno(
+                    "同じページの追加", f"試験ページ {page} に、他のファイルもありますか？",
+                    parent=window,
+                ):
+                    break
+            if page < max(expected_pages):
+                continue
+        _refresh()
+
     def _change_page():
         selection = tree.selection()
         if not selection or not selection[0].startswith('batch:'):
@@ -1111,7 +1166,9 @@ def run_multi_page_import_gui(
 
     buttons = tk.Frame(window)
     buttons.pack(fill=tk.X, padx=12, pady=(0, 8))
-    tk.Button(buttons, text="＋ 試験ページ", command=_add_page).pack(side=tk.LEFT, padx=(0, 4))
+    if not manifest_path.exists():
+        window.after(50, _guided_import)
+    tk.Button(buttons, text="＋ 試験ページ（手動）", command=_add_page).pack(side=tk.LEFT, padx=(0, 4))
     tk.Button(buttons, text="＋ PDF・画像を追加", command=_add_files, bg="#C8E6C9").pack(side=tk.LEFT, padx=4)
     tk.Button(buttons, text="試験ページ変更", command=_change_page).pack(side=tk.LEFT, padx=4)
     tk.Button(buttons, text="削除", command=_delete_selected).pack(side=tk.LEFT, padx=4)

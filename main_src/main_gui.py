@@ -314,6 +314,7 @@ class MarunosukeGUI:
             pass  # アイコンが見つからない場合はデフォルトのまま
 
         self.image_folder_path = tk.StringVar()
+        self.total_pages = tk.StringVar(value="1")
         self.skip_questions = tk.StringVar(value="4")
 
         self.last_boxed_folder = None
@@ -478,7 +479,7 @@ class MarunosukeGUI:
         )
         self._progress_next_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self._progress_next_button = ColoredButton(
-            next_row, text="フォルダを選択", command=self.select_folder,
+            next_row, text="作業スペースを選択", command=self.select_folder,
             font=FONT_BOLD, bg="#FFCC80", relief=tk.FLAT, cursor="hand2", padx=8,
         )
         self._progress_next_button.pack(side=tk.RIGHT, padx=4, pady=3)
@@ -490,13 +491,13 @@ class MarunosukeGUI:
         top_section.pack(fill=tk.X, pady=(0, 10))
 
         # 左側: ファイル入力
-        input_group = tk.LabelFrame(top_section, text="1. データソース", padx=10, pady=5, font=FONT_BOLD, bg=SECTION_BG, fg=HEADER_TEXT, relief=tk.FLAT)
+        input_group = tk.LabelFrame(top_section, text="1. 作業スペースとページ設定", padx=10, pady=5, font=FONT_BOLD, bg=SECTION_BG, fg=HEADER_TEXT, relief=tk.FLAT)
         input_group.pack(fill=tk.BOTH, expand=True)
 
         # 画像フォルダ
         row1 = tk.Frame(input_group, bg=SECTION_BG)
         row1.pack(fill=tk.X, pady=2)
-        tk.Label(row1, text="画像フォルダ", width=10, anchor=tk.W, font=FONT_NORMAL, bg=SECTION_BG).pack(side=tk.LEFT)
+        tk.Label(row1, text="作業スペース", width=10, anchor=tk.W, font=FONT_NORMAL, bg=SECTION_BG).pack(side=tk.LEFT)
         tk.Entry(
             row1, textvariable=self.image_folder_path,
             font=(UI_FONT, get_ui_font_size(8)),
@@ -505,12 +506,21 @@ class MarunosukeGUI:
             highlightbackground="#9E9E9E", highlightcolor="#1976D2",
             state="readonly",
         ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3), ipady=2)
-        self._btn_select_folder = tk.Button(row1, text="フォルダ選択", command=self.select_folder, width=10, bg=BTN_GRAY, relief=tk.FLAT, font=FONT_NORMAL)
+        self._btn_select_folder = tk.Button(row1, text="作業スペース選択", command=self.select_folder, width=14, bg=BTN_GRAY, relief=tk.FLAT, font=FONT_NORMAL)
         self._btn_select_folder.pack(side=tk.LEFT)
-        self._btn_select_pdf = tk.Button(row1, text="PDF選択", command=self.select_pdf, width=8, bg=BTN_GRAY, relief=tk.FLAT, font=FONT_NORMAL)
+        self._btn_select_pdf = tk.Button(row1, text="画像を追加", command=self.select_pdf, width=10, bg=BTN_GRAY, relief=tk.FLAT, font=FONT_NORMAL)
         self._btn_select_pdf.pack(side=tk.LEFT, padx=(2, 0))
         self._btn_page_number_check = tk.Button(row1, text="🔢 ページ番号確認", command=self.run_page_number_check, bg=BTN_GRAY, relief=tk.FLAT, font=FONT_NORMAL)
         self._btn_page_number_check.pack(side=tk.LEFT, padx=(2, 0))
+
+        page_row = tk.Frame(input_group, bg=SECTION_BG)
+        page_row.pack(fill=tk.X, pady=(7, 2))
+        tk.Label(page_row, text="答案のページ数", width=10, anchor=tk.W,
+                 font=FONT_BOLD, bg=SECTION_BG, fg=HEADER_TEXT).pack(side=tk.LEFT)
+        tk.Spinbox(page_row, from_=1, to=999, width=6, textvariable=self.total_pages,
+                   font=FONT_BOLD, justify=tk.CENTER).pack(side=tk.LEFT, padx=(0, 8))
+        tk.Label(page_row, text="ページ　（複数ページの場合は、ページ順に画像を追加します）",
+                 font=FONT_NORMAL, bg=SECTION_BG, fg="#455A64").pack(side=tk.LEFT)
         _ToolTip(
             self._btn_page_number_check,
             "同じページ番号の答案だけをまとめたつもりのフォルダに、\n"
@@ -542,9 +552,9 @@ class MarunosukeGUI:
         self._btn_next_exam_page.pack(side=tk.LEFT, padx=2)
         self._multi_page_status_label = tk.Label(
             self._multi_page_dashboard,
-            text="未設定 — PDFフォルダを選ぶか、右の管理ボタンから開始",
-            bg="#E8EAF6", fg="#455A64", anchor=tk.W,
-            font=(UI_FONT, get_ui_font_size(8)),
+            text="未設定 — PDFを選択して複数ページ答案の取込を開始",
+            bg="#FFF3CD", fg="#5D4037", anchor=tk.W,
+            font=(UI_FONT, get_ui_font_size(9), 'bold'),
         )
         self._multi_page_status_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=8)
         self._btn_multi_page_merge = tk.Button(
@@ -594,7 +604,7 @@ class MarunosukeGUI:
         step1_run_row = tk.Frame(step1, bg=SECTION_BG)
         step1_run_row.pack(fill=tk.X, pady=(0, 5))
 
-        self._btn_run_box = ColoredButton(step1_run_row, text="▶ 採点準備を開始（画像準備）",
+        self._btn_run_box = ColoredButton(step1_run_row, text="▶ 採点準備を開始",
                                       command=lambda: self._prepare_images_for_descriptive(auto_start_setup=True),
                                       bg="#1976D2", fg="white",
                                       font=FONT_BOLD, height=2,
@@ -607,7 +617,7 @@ class MarunosukeGUI:
 
         # 初期設定
         self.desc_setup_btn = ColoredButton(
-            step1, text="⚙ 初期設定をやり直す",
+            step1, text="⚙ 採点準備をやり直す",
             command=self._run_step1_setup_wizard,
             bg="#ECEFF1", fg="#455A64", font=FONT_NORMAL, height=1, relief=tk.FLAT, cursor="hand2",
         )
@@ -793,7 +803,7 @@ class MarunosukeGUI:
         folder = self.image_folder_path.get()
         if not folder:
             self._multi_page_status_label.config(
-                text="未設定 — PDFフォルダを選ぶか、右の管理ボタンから開始"
+                text="未設定 — PDFを選択して複数ページ答案の取込を開始"
             )
             return
         try:
@@ -818,7 +828,8 @@ class MarunosukeGUI:
         combined_done = Path(status['combined_summary_path']).is_file()
         combined_text = "　｜　✅ 全ページ集計済み" if combined_done else ""
         self._multi_page_status_label.config(
-            text=f"全{len(pages)}ページ　｜　" + "　".join(page_texts) + combined_text
+            text=(f"【現在：試験ページ {active}】　全{len(pages)}ページ　｜　"
+                  + "　".join(page_texts) + combined_text)
         )
         page_numbers = [item['page'] for item in pages]
         if active in page_numbers:
@@ -1171,7 +1182,7 @@ class MarunosukeGUI:
         self._run_step1_setup_wizard()
     
     def select_pdf(self):
-        """PDFファイルを選択し、画像に展開する"""
+        """PDFまたは画像ファイルを選択する。"""
         if not HAS_PYMUPDF:
             messagebox.showerror(
                 "エラー",
@@ -1182,13 +1193,22 @@ class MarunosukeGUI:
             return
         
         pdf_files = filedialog.askopenfilenames(
-            title="PDFファイルを選択（複数選択可）",
-            filetypes=[("PDFファイル", "*.pdf"), ("すべてのファイル", "*.*")]
+            title="画像ファイルを選択（複数選択可）",
+            filetypes=[
+                ("PDF・画像", "*.pdf *.png *.jpg *.jpeg *.bmp *.tif *.tiff"),
+                ("すべてのファイル", "*.*"),
+            ]
         )
         if not pdf_files:
             return
 
         pdf_files = list(pdf_files)
+        non_pdf_files = [path for path in pdf_files if Path(path).suffix.lower() != ".pdf"]
+        if non_pdf_files:
+            # 画像はそのまま作業スペースの入力として扱う。複数の場所から
+            # 選ばれた場合も、最初の画像の親を作業スペースにする。
+            self._start_setup_for_image_source(Path(non_pdf_files[0]).parent)
+            return
         if len(pdf_files) == 1:
             self.log_message(f"PDF展開中: {pdf_files[0]}")
         else:
@@ -1249,11 +1269,17 @@ class MarunosukeGUI:
             run_multi_page_import_gui,
         )
         project_folder = resolve_multi_page_project_folder(image_folder)
+        try:
+            total_pages = max(1, int(self.total_pages.get()))
+        except (TypeError, ValueError):
+            messagebox.showerror("ページ数", "答案のページ数を1以上の整数で入力してください。")
+            return
         run_multi_page_import_gui(
             project_folder,
             parent=self.root,
             on_prepare_page=self._prepare_multi_page_exam_page,
             on_project_change=self._update_multi_page_dashboard,
+            total_pages=total_pages,
         )
 
     def _prepare_multi_page_exam_page(self, exam_page, workspace):
