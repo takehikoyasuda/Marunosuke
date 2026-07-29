@@ -23,6 +23,10 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# 同じ Tcl/Tk セッションではヘッダー用縮小画像を共有する。画面を作り直すたびに
+# PhotoImage を増やすと、macOS の Tk で画像資源が蓄積して不安定になるため。
+_HEADER_ICON_CACHE = {}
+
 # サードパーティライブラリ
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
@@ -70,13 +74,16 @@ class ColoredButton(tk.Frame):
         self._disabled_bg = disabledbackground
         self._disabled_fg = disabledforeground
         self._state = state
+        self._hovered = False
         self._label = tk.Label(self, text=text, bg=bg, fg=fg, font=font,
                                padx=padx, pady=pady, cursor="hand2")
         self._label.pack(fill=tk.BOTH, expand=True)
-        for widget in (self, self._label):
-            widget.bind("<Button-1>", self._on_click)
-            widget.bind("<Enter>", self._on_enter)
-            widget.bind("<Leave>", self._on_leave)
+        # Label が全面を覆うため、ポインターイベントは Label だけで受け取る。
+        # Frame と Label の両方に Enter/Leave を設定すると、境界をまたぐ際に
+        # Leave/Enter が連続して発生し、macOS で再描画がちらつくことがある。
+        self._label.bind("<Button-1>", self._on_click)
+        self._label.bind("<Enter>", self._on_enter)
+        self._label.bind("<Leave>", self._on_leave)
         self._apply_state()
 
     def _on_click(self, _event=None):
@@ -84,12 +91,19 @@ class ColoredButton(tk.Frame):
             self._command()
 
     def _on_enter(self, _event=None):
-        if self._state != tk.DISABLED:
+        # ホバー色が通常色と同じボタンでは何も再描画しない。
+        # macOS の Tk は同じ背景色の再設定でも一瞬ちらつくことがある。
+        if self._state != tk.DISABLED and self._active_bg != self._normal_bg:
+            self._hovered = True
             self._label.config(bg=self._active_bg)
-            self.config(bg=self._active_bg)
+            # self.config(bg=...) は通常色 (_normal_bg) の変更として扱われる。
+            # ホバー表示では基底クラスを直接更新し、通常色を保持する。
+            tk.Frame.config(self, bg=self._active_bg)
 
     def _on_leave(self, _event=None):
-        self._apply_state()
+        if self._hovered:
+            self._hovered = False
+            self._apply_state()
 
     def _apply_state(self):
         enabled = self._state != tk.DISABLED
@@ -134,6 +148,10 @@ class ColoredButton(tk.Frame):
         if key == "state":
             return self._state
         return super().cget(key)
+
+    # tkinter.Misc.__getitem__ は基底クラスの cget への固定エイリアスなので、
+    # サブクラスで cget を上書きした場合は明示的に張り直す必要がある。
+    __getitem__ = cget
 
     def invoke(self):
         if self._state != tk.DISABLED and self._command:
@@ -348,10 +366,15 @@ class MarunosukeGUI:
         self.log_text = scrolledtext.ScrolledText(log_frame, state=tk.DISABLED, wrap=tk.WORD, font=("Consolas", 9), bg="#FAFAFA", relief=tk.FLAT, bd=1, height=4)
         self.log_text.pack(fill=tk.BOTH, expand=True)
 
-        # プログレスバー（処理中のみ表示、determinateモードで進捗率表示）
-        self._progress_bar = ttk.Progressbar(log_frame, mode="determinate", maximum=100, length=200)
-        # 中断ボタン（処理中のみ表示）
-        self._cancel_frame = tk.Frame(log_frame, bg=SECTION_BG)
+        # 処理開始・終了時にレイアウト全体が上下へ動かないよう、進捗領域は
+        # 最初から一定の高さを確保する。処理中は中身だけを表示する。
+        self._processing_frame = tk.Frame(log_frame, bg=SECTION_BG, height=42)
+        self._processing_frame.pack(fill=tk.X, pady=(4, 0))
+        self._processing_frame.pack_propagate(False)
+        self._progress_bar = ttk.Progressbar(
+            self._processing_frame, mode="determinate", maximum=100, length=200,
+        )
+        self._cancel_frame = tk.Frame(self._processing_frame, bg=SECTION_BG)
         self._btn_cancel = tk.Button(
             self._cancel_frame, text="⏹ 中断", font=FONT_BOLD,
             bg="#E74C3C", fg="black", activebackground="#C0392B",
@@ -359,7 +382,7 @@ class MarunosukeGUI:
         )
         self._btn_cancel.pack(side=tk.RIGHT, padx=4, pady=2)
         self._cancel_event = threading.Event()
-        # 初期状態では非表示（pack しない）
+        # 初期状態では中身だけを非表示にし、確保済み領域の高さは変えない。
         self._processing = False
 
         # =============================================================================
@@ -372,7 +395,27 @@ class MarunosukeGUI:
         title_row = tk.Frame(controls_frame, bg=BG_COLOR)
         title_row.pack(fill=tk.X, pady=(0, 5))
 
-        tk.Label(title_row, text=APP_TITLE, font=FONT_TITLE, fg="#1976D2", bg=BG_COLOR).pack(side=tk.LEFT)
+        # 青は操作色、赤はブランド色として使い分ける。アイコンはタイトル横に
+        # 常時表示し、アプリの視覚的な識別点にする。
+        self._header_icon = None
+        try:
+            if self._app_icon is not None:
+                tk_key = self.root.tk
+                self._header_icon = _HEADER_ICON_CACHE.get(tk_key)
+                if self._header_icon is None:
+                    scale = max(1, (max(self._app_icon.width(), self._app_icon.height()) + 37) // 38)
+                    self._header_icon = self._app_icon.subsample(scale, scale)
+                    _HEADER_ICON_CACHE[tk_key] = self._header_icon
+                tk.Label(
+                    title_row, image=self._header_icon, bg=BG_COLOR, bd=0,
+                ).pack(side=tk.LEFT, padx=(0, 7))
+        except Exception:
+            self._header_icon = None
+
+        tk.Label(
+            title_row, text=APP_TITLE, font=FONT_TITLE,
+            fg="#C62828", bg=BG_COLOR,
+        ).pack(side=tk.LEFT)
         tk.Button(
             title_row, text="📂 前回の状態を復元",
             command=self._restore_session_interactive,
@@ -482,7 +525,7 @@ class MarunosukeGUI:
 
         self._btn_run_box = ColoredButton(step1_run_row, text="▶ 採点準備を開始（画像準備）",
                                       command=lambda: self._prepare_images_for_descriptive(auto_start_setup=True),
-                                      bg="#1976D2", fg="white", activebackground="#1565C0",
+                                      bg="#1976D2", fg="white",
                                       font=FONT_BOLD, height=2,
                                       relief=tk.FLAT, cursor="hand2")
         self._btn_run_box.pack(side=tk.LEFT, fill=tk.X, expand=True)
@@ -508,9 +551,9 @@ class MarunosukeGUI:
 
         # 記述採点ボタン
         self.desc_scoring_btn = ColoredButton(
-            step2, text="✏ 記述採点を開始",
+            step2, text="✏ 採点を開始",
             command=self.run_descriptive_scoring,
-            bg="#1976D2", fg="white", activebackground="#1565C0", **BTN_STYLE,
+            bg="#1976D2", fg="white", **BTN_STYLE,
         )
         self.desc_scoring_btn.pack(fill=tk.X, pady=3)
 
@@ -586,7 +629,7 @@ class MarunosukeGUI:
 
         # 記述採点を分析に含むチェックボックス（常にON固定）
         self._chk_include_desc_analysis = tk.Checkbutton(
-            step3, text="記述採点の結果を分析ファイルに含む",
+            step3, text="採点結果を分析ファイルに含む",
             variable=self.include_descriptive_in_analysis, bg=SECTION_BG,
             font=(UI_FONT, get_ui_font_size(8)), anchor=tk.W, cursor="hand2"
         )
@@ -597,7 +640,7 @@ class MarunosukeGUI:
         # --- 集計実行 + 結果フォルダ（横並び） ---
         self._step3_run_row = tk.Frame(step3, bg=SECTION_BG)
         self._step3_run_row.pack(fill=tk.X, pady=5)
-        self._btn_run_summary = ColoredButton(self._step3_run_row, text="▶ 確認して集計を実行", command=self.run_summary_generation, bg="#1976D2", fg="white", activebackground="#1565C0", font=FONT_BOLD, pady=7)
+        self._btn_run_summary = ColoredButton(self._step3_run_row, text="▶ 確認して集計を実行", command=self.run_summary_generation, bg="#1976D2", fg="white", font=FONT_BOLD, pady=7)
         self._btn_run_summary.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.open_results_btn = tk.Button(self._step3_run_row, text="📁", command=self.open_results_folder, bg=BTN_GRAY, relief=tk.FLAT, state=tk.DISABLED, width=3, font=(UI_FONT, get_ui_font_size(10)))
         self.open_results_btn.pack(side=tk.LEFT, padx=(3, 0), fill=tk.Y)
@@ -731,7 +774,7 @@ class MarunosukeGUI:
         elif not setup:
             next_text, button_text, command, button_bg = "次にすること：初期設定を実行してください", "初期設定", self._run_step1_setup_wizard, "#CE93D8"
         elif not reviewed:
-            next_text, button_text, command, button_bg = "次にすること：記述採点を開始してください", "記述採点", self.run_descriptive_scoring, "#90CAF9"
+            next_text, button_text, command, button_bg = "次にすること：採点を開始してください", "採点", self.run_descriptive_scoring, "#90CAF9"
         elif not summary:
             next_text, button_text, command, button_bg = "次にすること：採点結果を確認して集計してください", "集計", self.run_summary_generation, "#FFE082"
         else:
@@ -1117,15 +1160,15 @@ class MarunosukeGUI:
         if not desc_config_path.exists():
             messagebox.showerror(
                 "エラー",
-                "採点領域の設定が見つかりません。\n"
+                "記述問題の採点領域設定が見つかりません。\n"
                 "先に「⚙ 初期設定」を実行してください。"
             )
             return
         if not desc_scores_path.exists():
             messagebox.showerror(
                 "エラー",
-                "記述採点結果が見つかりません。\n"
-                "先に「✏ 記述採点」を実行してください。"
+                "採点結果が見つかりません。\n"
+                "先に「✏ 採点を開始」を実行してください。"
             )
             return
 
@@ -1134,8 +1177,8 @@ class MarunosukeGUI:
         if not is_complete and total_img > 0:
             detail_text = "\n".join(detail) if detail else ""
             if not messagebox.askyesno(
-                "記述採点が未完了です",
-                f"記述採点が完了していない生徒が {unscored}名 います。\n\n"
+                "採点が未完了です",
+                f"採点が完了していない生徒が {unscored}名 います。\n\n"
                 f"{detail_text}\n\n"
                 f"未採点の問題は 0点 として処理されます。\n"
                 f"このまま続行しますか？",
@@ -1245,7 +1288,7 @@ class MarunosukeGUI:
             messagebox.showerror("エラー", "採点領域の設定が見つかりません。\n先に「⚙ 初期設定」を実行してください。")
             return
         if not scores_path.exists():
-            messagebox.showinfo("情報", "採点データがまだありません。\n先に「✏ 記述採点」を実行してください。")
+            messagebox.showinfo("情報", "採点データがまだありません。\n先に「✏ 採点を開始」を実行してください。")
             return
 
         try:
@@ -1269,14 +1312,14 @@ class MarunosukeGUI:
                 original_image_folder=self.image_folder_path.get(),
             )
             if reviewer.modified:
-                self.log_message("✓ 記述採点の確認・修正が完了しました")
+                self.log_message("✓ 採点結果の確認・修正が完了しました")
                 self._update_descriptive_status()
                 self._save_session_state()
         except Exception as e:
-            self.log_message(f"記述採点確認エラー: {e}")
+            self.log_message(f"採点確認エラー: {e}")
             import traceback
             self.log_message(traceback.format_exc())
-            messagebox.showerror("エラー", f"記述採点確認中にエラーが発生しました:\n{e}")
+            messagebox.showerror("エラー", f"採点確認中にエラーが発生しました:\n{e}")
 
     def _update_descriptive_status(self):
         """記述ステータスパネルの内容を更新する"""
@@ -1285,7 +1328,7 @@ class MarunosukeGUI:
 
         img_folder = self.image_folder_path.get()
         if not img_folder:
-            self._set_desc_status("📋 記述ステータス: フォルダ未選択")
+            self._set_desc_status("📋 採点ステータス: フォルダ未選択")
             return
 
         results_data = Path(img_folder) / RESULTS_FOLDER / RESULTS_DATA_FOLDER
@@ -1301,7 +1344,7 @@ class MarunosukeGUI:
             from descriptive_scorer import load_descriptive_config, load_descriptive_scores
             config = load_descriptive_config(str(config_path))
             if not config or not config.get("questions"):
-                self._set_desc_status("📋 記述ステータス: ⚠ 設定が空です")
+                self._set_desc_status("📋 採点ステータス: ⚠ 設定が空です")
                 return
 
             questions = config["questions"]
@@ -1326,7 +1369,7 @@ class MarunosukeGUI:
                 if scores_data and "scores" in scores_data:
                     scores = scores_data["scores"]
 
-            lines = [f"📋 記述ステータス: {q_count}問 (満点: {total_max}点)"]
+            lines = [f"📋 採点ステータス: {q_count}問 (満点: {total_max}点)"]
 
             if total_images == 0:
                 lines.append("  画像: 未検出（Step1を先に実行）")
@@ -1359,7 +1402,7 @@ class MarunosukeGUI:
 
             self._set_desc_status("\n".join(lines))
         except Exception as e:
-            self._set_desc_status(f"📋 記述ステータス: 読み込みエラー ({e})")
+            self._set_desc_status(f"📋 採点ステータス: 読み込みエラー ({e})")
 
     def _check_descriptive_completeness(self) -> tuple:
         """記述採点の完了状態をチェックする。
@@ -1453,7 +1496,7 @@ class MarunosukeGUI:
         if config_path.exists():
             existing.append(f"・採点領域の初期設定（{config_path.name}）")
         if scores_path.exists():
-            existing.append(f"・記述採点結果（{scores_path.name}）")
+            existing.append(f"・採点結果（{scores_path.name}）")
         if annotations_path.exists():
             existing.append(f"・採点メモ・注釈（{annotations_path.name}）")
         if total_pos_path.exists():
@@ -1475,7 +1518,7 @@ class MarunosukeGUI:
             "以下のファイルを削除し、初期状態に戻します。\n\n"
             + "\n".join(existing) + "\n\n"
             "この操作は取り消せません。\n"
-            "進行中の記述採点データ・学籍番号欄の位置設定もすべて失われます。\n\n"
+            "進行中の採点データ・学籍番号欄の位置設定もすべて失われます。\n\n"
             "本当に初期化しますか？",
             icon="warning",
         )
@@ -2032,7 +2075,7 @@ class MarunosukeGUI:
         if not config_path.exists():
             messagebox.showerror(
                 "エラー",
-                "採点領域の設定が見つかりません。\n"
+                "記述問題の採点領域設定が見つかりません。\n"
                 "先に「初期設定」を実行してください。"
             )
             return
@@ -2069,16 +2112,16 @@ class MarunosukeGUI:
             result = scorer.run()
 
             if result is not None:
-                self.log_message(f"✓ 記述採点完了: {len(result)}枚")
+                self.log_message(f"✓ 採点完了: {len(result)}枚")
                 self._update_descriptive_status()
                 self._save_session_state()
             else:
-                self.log_message("記述採点がキャンセルされました。")
+                self.log_message("採点がキャンセルされました。")
         except Exception as e:
-            self.log_message(f"記述採点エラー: {e}")
+            self.log_message(f"採点エラー: {e}")
             import traceback
             self.log_message(traceback.format_exc())
-            messagebox.showerror("エラー", f"記述採点中にエラーが発生しました:\n{e}")
+            messagebox.showerror("エラー", f"採点中にエラーが発生しました:\n{e}")
 
     def validate_inputs(self):
         """入力値の検証"""
@@ -2128,7 +2171,7 @@ class MarunosukeGUI:
         if busy:
             self._cancel_event.clear()
             self._progress_bar["value"] = 0
-            self._progress_bar.pack(fill=tk.X, pady=(4, 0))
+            self._progress_bar.pack(fill=tk.X)
             self._cancel_frame.pack(fill=tk.X, pady=(2, 0))
             self._btn_cancel.config(state=tk.NORMAL)
             for btn in action_buttons:
@@ -2268,12 +2311,12 @@ class MarunosukeGUI:
             if not desc_config_path.exists():
                 missing.append("・採点領域の初期設定（descriptive_config.json）")
             if not desc_scores_path.exists():
-                missing.append("・記述採点結果（descriptive_scores.json）")
+                missing.append("・採点結果（descriptive_scores.json）")
             messagebox.showerror(
                 "エラー",
                 "以下のデータが見つかりません:\n\n"
                 + "\n".join(missing) + "\n\n"
-                "先に「⚙ 初期設定」と「✏ 記述採点」を実行してください。"
+                "先に「⚙ 初期設定」と「✏ 採点を開始」を実行してください。"
             )
             return
 
@@ -2282,8 +2325,8 @@ class MarunosukeGUI:
         if not is_complete and total_img > 0:
             detail_text = "\n".join(detail) if detail else ""
             if not messagebox.askyesno(
-                "記述採点が未完了です",
-                f"記述採点が完了していない生徒が {unscored}名 います。\n\n"
+                "採点が未完了です",
+                f"採点が完了していない生徒が {unscored}名 います。\n\n"
                 f"{detail_text}\n\n"
                 f"未採点の問題は 0点 として集計されます。\n"
                 f"このまま続行しますか？",

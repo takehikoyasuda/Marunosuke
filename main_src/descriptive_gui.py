@@ -1335,28 +1335,29 @@ class DescriptiveScorerGUI:
         """問題一覧・採点進捗画面（モーダル）"""
         win = tk.Toplevel(self.parent)
         win.title("採点")
-        win.geometry("600x520")
         win.resizable(True, True)
-        win.minsize(500, 350)
         win.transient(self.parent)
         self._list_win = win
 
         frame = tk.Frame(win, padx=20, pady=15)
         frame.pack(fill=tk.BOTH, expand=True)
+        frame.grid_columnconfigure(0, weight=1)
+        # 中央の問題一覧だけを伸縮させ、ヘッダーと下部操作は常に表示する。
+        frame.grid_rowconfigure(3, weight=1, minsize=100)
 
         tk.Label(
-            frame, text="記述問題 採点",
+            frame, text="採点",
             font=(UI_FONT, get_ui_font_size(13), "bold"),
-        ).pack(pady=(0, 5))
+        ).grid(row=0, column=0, sticky="ew", pady=(0, 5))
         tk.Label(
             frame,
             text="採点する問題を選択してください。完了後「採点完了」を押してください。",
             font=(UI_FONT, get_ui_font_size(8)), fg="gray", wraplength=520,
-        ).pack(pady=(0, 10))
+        ).grid(row=1, column=0, sticky="ew", pady=(0, 10))
 
         # --- 採点モード選択 ---
         mode_frame = tk.Frame(frame, bg="#F3E5F5", padx=10, pady=6)
-        mode_frame.pack(fill=tk.X, pady=(0, 10))
+        mode_frame.grid(row=2, column=0, sticky="ew", pady=(0, 10))
 
         tk.Label(mode_frame, text="採点モード:", font=(UI_FONT, get_ui_font_size(9), "bold"),
                  bg="#F3E5F5").pack(side=tk.LEFT, padx=(0, 5))
@@ -1378,7 +1379,7 @@ class DescriptiveScorerGUI:
 
         # Canvas + Scrollbar によるスクロール可能エリア
         scroll_container = tk.Frame(frame)
-        scroll_container.pack(fill=tk.BOTH, expand=True)
+        scroll_container.grid(row=3, column=0, sticky="nsew")
 
         q_canvas = tk.Canvas(scroll_container, highlightthickness=0, bd=0)
         q_scrollbar = tk.Scrollbar(scroll_container, orient=tk.VERTICAL, command=q_canvas.yview)
@@ -1410,22 +1411,23 @@ class DescriptiveScorerGUI:
             q_id = q["id"]
             q_row = tk.Frame(questions_frame, pady=4)
             q_row.pack(fill=tk.X)
+            q_row.grid_columnconfigure(0, weight=1)
 
             info_text = f"{q['name']}  (配点:{q['max_score']}点  観点:{q['aspect']})"
             info_label = tk.Label(
                 q_row, text=info_text,
                 font=(UI_FONT, get_ui_font_size(9)), anchor=tk.W,
             )
-            info_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            info_label.grid(row=0, column=0, sticky="ew")
             self._info_labels[q_id] = info_label
 
             status = self._get_question_status(q_id)
             status_label = tk.Label(
                 q_row, text=status,
-                font=(UI_FONT, get_ui_font_size(8)), width=22,
+                font=(UI_FONT, get_ui_font_size(8)),
                 fg="green" if "完了" in status else "gray",
             )
-            status_label.pack(side=tk.LEFT, padx=5)
+            status_label.grid(row=0, column=1, padx=5, sticky="e")
             self._status_labels[q_id] = status_label
 
             tk.Button(
@@ -1433,14 +1435,14 @@ class DescriptiveScorerGUI:
                 command=lambda qid=q_id: self._score_question(qid),
                 width=5, font=(UI_FONT, get_ui_font_size(9)),
                 bg="#90CAF9", relief=tk.FLAT, cursor="hand2",
-            ).pack(side=tk.LEFT, padx=(0, 2))
+            ).grid(row=0, column=2, padx=(0, 2))
 
             tk.Button(
                 q_row, text="設定",
                 command=lambda qid=q_id: self._edit_question(qid),
                 width=3, font=(UI_FONT, get_ui_font_size(8)),
                 bg="#FFE082", relief=tk.FLAT, cursor="hand2",
-            ).pack(side=tk.LEFT)
+            ).grid(row=0, column=3)
 
         # 子ウィジェットにもマウスホイールバインド（スクロール連動）
         def _bind_mousewheel_recursive(widget):
@@ -1452,7 +1454,7 @@ class DescriptiveScorerGUI:
 
         # --- 下部ボタン ---
         btn_frame = tk.Frame(frame, pady=10)
-        btn_frame.pack(fill=tk.X)
+        btn_frame.grid(row=4, column=0, sticky="ew")
 
         tk.Button(
             btn_frame, text="✔ 採点完了・保存",
@@ -1469,6 +1471,7 @@ class DescriptiveScorerGUI:
         ).pack(side=tk.LEFT, padx=5)
 
         win.protocol("WM_DELETE_WINDOW", lambda: self._cancel(win))
+        fit_window_to_content(win, min_width=600, min_height=520)
         win.grab_set()
         win.wait_window()
 
@@ -3848,12 +3851,28 @@ class DescriptiveReviewGUI:
         # スクロール可能キャンバス
         self._canvas = tk.Canvas(right, bg="#FFFFFF", highlightthickness=0)
         self._scrollbar = tk.Scrollbar(right, orient=tk.VERTICAL, command=self._canvas.yview)
+        # テキスト一覧は全列の可読幅を維持し、横方向に収まらない場合は
+        # 明示的な案内と常設スクロールバーで続きがあることを伝える。
+        self._horizontal_nav = tk.Frame(right, bg="#FFF3E0")
+        tk.Label(
+            self._horizontal_nav,
+            text="↔ 左右に項目があります。下のバーを横へ動かしてください",
+            bg="#FFF3E0", fg="#BF360C",
+            font=(UI_FONT, get_ui_font_size(8), "bold"), anchor=tk.W,
+        ).pack(fill=tk.X, padx=6, pady=(3, 1))
+        self._h_scrollbar = tk.Scrollbar(
+            self._horizontal_nav, orient=tk.HORIZONTAL, command=self._canvas.xview,
+        )
+        self._h_scrollbar.pack(fill=tk.X, padx=4, pady=(0, 3))
         self._grid_frame = tk.Frame(self._canvas, bg="#FFFFFF")
 
         self._grid_frame.bind("<Configure>",
                               lambda e: self._canvas.configure(scrollregion=self._canvas.bbox("all")))
         self._canvas_window = self._canvas.create_window((0, 0), window=self._grid_frame, anchor="nw")
-        self._canvas.configure(yscrollcommand=self._scrollbar.set)
+        self._canvas.configure(
+            yscrollcommand=self._scrollbar.set,
+            xscrollcommand=self._h_scrollbar.set,
+        )
 
         self._scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self._canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -3861,6 +3880,7 @@ class DescriptiveReviewGUI:
         # マウスホイールスクロール
         self._canvas.bind("<Enter>", lambda e: self._canvas.bind_all("<MouseWheel>", self._on_mousewheel))
         self._canvas.bind("<Leave>", lambda e: self._canvas.unbind_all("<MouseWheel>"))
+        self._canvas.bind("<Shift-MouseWheel>", self._on_shift_mousewheel)
 
         # キャンバスのリサイズ追従
         self._canvas.bind("<Configure>", self._on_canvas_resize)
@@ -3873,8 +3893,10 @@ class DescriptiveReviewGUI:
     def _on_display_mode_changed(self):
         if self._display_mode_var.get() == "画像一覧":
             self._review_zoom_bar.pack(fill=tk.X, before=self._canvas)
+            self._horizontal_nav.pack_forget()
         else:
             self._review_zoom_bar.pack_forget()
+            self._horizontal_nav.pack(side=tk.BOTTOM, fill=tk.X, before=self._canvas)
         self._refresh_grid()
 
     def _change_review_zoom(self, factor: float):
@@ -3892,8 +3914,19 @@ class DescriptiveReviewGUI:
     def _on_mousewheel(self, event):
         self._canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
+    def _on_shift_mousewheel(self, event):
+        """Shift＋ホイールでテキスト一覧を横スクロールする。"""
+        if self._display_mode_var.get() == "テキスト一覧":
+            self._canvas.xview_scroll(int(-1 * (event.delta / 120)), "units")
+            return "break"
+
     def _on_canvas_resize(self, event):
-        self._canvas.itemconfig(self._canvas_window, width=event.width)
+        if self._display_mode_var.get() == "テキスト一覧":
+            # 表の全列が読める幅を維持し、超過分は横スクロールさせる。
+            content_width = max(event.width, self._grid_frame.winfo_reqwidth())
+            self._canvas.itemconfig(self._canvas_window, width=content_width)
+        else:
+            self._canvas.itemconfig(self._canvas_window, width=event.width)
         # 列数を再計算
         new_cols = max(1, event.width // (self._thumb_size + 14))
         if new_cols != self._grid_cols:
@@ -4137,11 +4170,13 @@ class DescriptiveReviewGUI:
     def _render_text_table(self, filtered, qid: str, max_score: int):
         """答案1件を1行に表示する表形式の一覧を描画する。"""
         columns = ["氏名", "学籍番号", "ファイル名", "得点", "状態", "保留", "教員用メモ", "生徒コメント", "操作"]
-        widths = [14, 12, 24, 8, 10, 8, 28, 28, 16]
+        # 最大化時には全列を一望でき、小さい画面では横スクロールできる幅にする。
+        # 長いファイル名・メモ・コメントは列を広げず、セル内で折り返す。
+        widths = [10, 10, 18, 6, 7, 4, 16, 16, 8]
         for col, (name, width) in enumerate(zip(columns, widths)):
             tk.Label(self._grid_frame, text=name, bg="#455A64", fg="white",
                      font=(UI_FONT, get_ui_font_size(8), "bold"), width=width,
-                     anchor=tk.W, padx=4, pady=5).grid(row=0, column=col, sticky="nsew")
+                     anchor=tk.W, padx=3, pady=3).grid(row=0, column=col, sticky="nsew")
 
         for row, (fname, score) in enumerate(filtered, start=1):
             annotation = self.annotations.get("answers", {}).get(fname, {}).get(qid, {})
@@ -4152,25 +4187,32 @@ class DescriptiveReviewGUI:
                 f"{score} / {max_score}" if score is not None else "未採点",
                 "採点済み" if score is not None else "未採点",
                 "保留" if annotation.get("held") else "",
-                self._annotation_preview(annotation.get("memo", ""), 56) or "—",
-                self._annotation_preview(annotation.get("comment", ""), 56) or "—",
+                self._annotation_preview(annotation.get("memo", ""), 18) or "—",
+                self._annotation_preview(annotation.get("comment", ""), 18) or "—",
             ]
             for col, (value, width) in enumerate(zip(values, widths[:-1])):
                 label = tk.Label(self._grid_frame, text=value, bg=bg,
                                  anchor=tk.W, justify=tk.LEFT, width=width,
-                                 padx=4, pady=5, wraplength=width * 7)
+                                 height=1, padx=3, pady=2)
                 label.grid(row=row, column=col, sticky="nsew")
                 label.bind("<Double-Button-1>",
                            lambda e, q_=qid: self._open_scoring_screen(q_))
             actions = tk.Frame(self._grid_frame, bg=bg)
             actions.grid(row=row, column=len(columns) - 1, sticky="nsew")
             tk.Button(actions, text="採点", command=lambda q_=qid: self._open_scoring_screen(q_),
-                      font=(UI_FONT, get_ui_font_size(7))).pack(side=tk.LEFT, padx=2, pady=2)
+                      font=(UI_FONT, get_ui_font_size(6))).pack(side=tk.LEFT, padx=(1, 0), pady=1)
             tk.Button(actions, text="注釈", command=lambda f=fname, q_=qid: self._edit_annotation(f, q_),
-                      font=(UI_FONT, get_ui_font_size(7))).pack(side=tk.LEFT, padx=2, pady=2)
+                      font=(UI_FONT, get_ui_font_size(6))).pack(side=tk.LEFT, padx=1, pady=1)
 
         for col in range(len(columns)):
             self._grid_frame.columnconfigure(col, weight=1 if col in (0, 4, 5) else 0)
+
+        # 強制縮小で左端列が消えないよう、表の要求幅をキャンバス内ウィンドウへ反映する。
+        self._grid_frame.update_idletasks()
+        content_width = max(self._canvas.winfo_width(), self._grid_frame.winfo_reqwidth())
+        self._canvas.itemconfig(self._canvas_window, width=content_width)
+        self._canvas.configure(scrollregion=self._canvas.bbox("all"))
+        self._canvas.xview_moveto(0)
 
     def _identity_for_filename(self, fname: str):
         """ファイル名から名簿情報を取得できる場合だけ氏名・番号を補う。"""

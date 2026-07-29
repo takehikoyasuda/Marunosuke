@@ -10,6 +10,7 @@ import json
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import cv2
 import numpy as np
@@ -718,7 +719,7 @@ class TestProcessingStateAndButtons:
             pytest.skip("Tkinter not available")
         try:
             assert "合計点位置設定" in app._btn_total_pos["text"]
-            assert "採点済み答案を生成" in app._btn_run_scoring["text"]
+            assert "採点済み答案を出力" in app._btn_run_scoring["text"]
             # return_sheet_btn は廃止されたことを確認
             assert not hasattr(app, "return_sheet_btn")
         finally:
@@ -920,6 +921,66 @@ class TestDescriptiveReviewGUIStructure:
         assert "sort" in src.lower() or "ソート" in src, "ソートロジックが_refresh_gridにない"
         assert "filtered.sort" in src, "filteredリストのソートがない"
 
+    def test_text_table_has_visible_horizontal_navigation(self):
+        """テキスト一覧で隠れた左右の列へ移動できる導線がある。"""
+        import inspect
+        from descriptive_scorer import DescriptiveReviewGUI
+
+        build_src = inspect.getsource(DescriptiveReviewGUI._build_gui)
+        mode_src = inspect.getsource(DescriptiveReviewGUI._on_display_mode_changed)
+        assert "_h_scrollbar" in build_src
+        assert "orient=tk.HORIZONTAL" in build_src
+        assert "xscrollcommand=self._h_scrollbar.set" in build_src
+        assert "左右に項目があります" in build_src
+        assert "_horizontal_nav.pack" in mode_src
+        assert "_horizontal_nav.pack_forget" in mode_src
+
+    def test_text_table_keeps_full_content_width(self):
+        """狭い画面でも氏名列を潰さず、超過分を横スクロールさせる。"""
+        import inspect
+        from descriptive_scorer import DescriptiveReviewGUI
+
+        resize_src = inspect.getsource(DescriptiveReviewGUI._on_canvas_resize)
+        table_src = inspect.getsource(DescriptiveReviewGUI._render_text_table)
+        assert "winfo_reqwidth" in resize_src
+        assert "winfo_reqwidth" in table_src
+        assert "itemconfig(self._canvas_window, width=content_width)" in table_src
+        assert "xview_moveto(0)" in table_src
+
+    def test_text_table_uses_compact_columns(self):
+        """最大化時に全列を一望できるよう列幅を過度に広げない。"""
+        import ast
+        import inspect
+        import textwrap
+        from descriptive_scorer import DescriptiveReviewGUI
+
+        table_src = inspect.getsource(DescriptiveReviewGUI._render_text_table)
+        tree = ast.parse(textwrap.dedent(table_src))
+        widths = None
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                if any(isinstance(target, ast.Name) and target.id == "widths" for target in node.targets):
+                    widths = ast.literal_eval(node.value)
+                    break
+        assert widths is not None
+        assert len(widths) == 9
+        assert sum(widths) <= 100
+        assert widths[6] <= 16  # 教員用メモ
+        assert widths[7] <= 16  # 生徒コメント
+
+    def test_text_table_uses_compact_single_line_rows(self):
+        """多人数を一覧できるよう各答案行を1行の高さに抑える。"""
+        import inspect
+        from descriptive_scorer import DescriptiveReviewGUI
+
+        table_src = inspect.getsource(DescriptiveReviewGUI._render_text_table)
+        assert "height=1" in table_src
+        assert "pady=2" in table_src
+        assert "wraplength=" not in table_src
+        assert 'pack(side=tk.LEFT' in table_src
+        assert '_annotation_preview(annotation.get("memo", ""), 18)' in table_src
+        assert '_annotation_preview(annotation.get("comment", ""), 18)' in table_src
+
     def test_get_thumb_no_hardcoded_595x842(self):
         """_get_thumb が 595×842 ハードコード座標変換を使っていないことを確認"""
         import inspect, re
@@ -1074,6 +1135,85 @@ class TestIntegratedDescriptiveSetupStructure:
         assert "image_folder" in params, "image_folder パラメータがない"
         assert "config_save_path" in params, "config_save_path パラメータがない"
         assert "parent" in params, "parent パラメータがない"
+
+
+class TestScoringQuestionListLayout:
+    """採点問題一覧が小さい画面でも操作を隠さない構造か検証する。"""
+
+    def test_uses_responsive_grid_and_content_fitting(self):
+        import inspect
+        from descriptive_gui import DescriptiveScorerGUI
+
+        src = inspect.getsource(DescriptiveScorerGUI._show_question_list)
+        assert 'frame.grid_rowconfigure(3, weight=1' in src
+        assert 'scroll_container.grid(row=3' in src
+        assert 'btn_frame.grid(row=4' in src
+        assert 'fit_window_to_content(win' in src
+        assert 'win.geometry("600x520")' not in src
+
+    def test_heading_is_simply_scoring(self):
+        import inspect
+        from descriptive_gui import DescriptiveScorerGUI
+
+        src = inspect.getsource(DescriptiveScorerGUI._show_question_list)
+        assert 'text="採点"' in src
+        assert 'text="記述問題 採点"' not in src
+
+    def test_settings_and_footer_buttons_stay_inside_window(self, tmp_path):
+        import tkinter as tk
+        from descriptive_gui import DescriptiveScorerGUI
+
+        try:
+            root = tk.Tk()
+            root.withdraw()
+        except tk.TclError:
+            pytest.skip("Tkinter not available")
+
+        scorer = DescriptiveScorerGUI(
+            root,
+            {
+                "questions": [
+                    {"id": "D1", "name": "記述1", "max_score": 5, "aspect": 1},
+                    {"id": "D2", "name": "記述2", "max_score": 5, "aspect": 1},
+                ]
+            },
+            str(tmp_path),
+            str(tmp_path / "descriptive_scores.json"),
+        )
+        scorer._trimmed = {
+            "D1": {"001.jpg": "unused"},
+            "D2": {"001.jpg": "unused"},
+        }
+
+        try:
+            with patch.object(tk.Toplevel, "wait_window"), \
+                    patch.object(tk.Toplevel, "grab_set"):
+                scorer._show_question_list()
+            win = scorer._list_win
+            win.update_idletasks()
+
+            def descendants(widget):
+                for child in widget.winfo_children():
+                    yield child
+                    yield from descendants(child)
+
+            buttons = {
+                child.cget("text"): child
+                for child in descendants(win)
+                if isinstance(child, tk.Button)
+            }
+            for text in ("設定", "✔ 採点完了・保存", "キャンセル"):
+                button = buttons[text]
+                assert button.winfo_rootx() >= win.winfo_rootx()
+                assert button.winfo_rooty() >= win.winfo_rooty()
+                assert button.winfo_rootx() + button.winfo_width() <= \
+                    win.winfo_rootx() + win.winfo_width()
+                assert button.winfo_rooty() + button.winfo_height() <= \
+                    win.winfo_rooty() + win.winfo_height()
+        finally:
+            if scorer._list_win and scorer._list_win.winfo_exists():
+                scorer._list_win.destroy()
+            root.destroy()
 
 
 class TestGridModeScorerStructure:

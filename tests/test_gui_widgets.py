@@ -68,6 +68,54 @@ def _destroy_gui(top):
         pass
 
 
+class TestColoredButton:
+    """macOS向け独自ボタンのホバー表示を検証する。"""
+
+    def setup_method(self):
+        from conftest import get_shared_tk_root
+        from main_gui import ColoredButton
+        self.root = get_shared_tk_root()
+        self.button = ColoredButton(
+            self.root, text="テスト", bg="#90CAF9",
+            activebackground="#42A5F5",
+        )
+
+    def teardown_method(self):
+        self.button.destroy()
+
+    def test_hover_restores_normal_background(self):
+        self.button._on_enter()
+        assert self.button.cget("bg") == "#42A5F5"
+        assert self.button._normal_bg == "#90CAF9"
+
+        self.button._on_leave()
+        assert self.button.cget("bg") == "#90CAF9"
+        assert self.button._label.cget("bg") == "#90CAF9"
+
+    def test_pointer_events_are_bound_only_to_label(self):
+        assert not self.button.bind("<Enter>")
+        assert not self.button.bind("<Leave>")
+        assert self.button._label.bind("<Enter>")
+        assert self.button._label.bind("<Leave>")
+
+    def test_same_hover_color_does_not_redraw(self):
+        from main_gui import ColoredButton
+        button = ColoredButton(
+            self.root, text="採点結果を確認", bg="#90CAF9",
+        )
+        try:
+            with patch.object(button._label, "config") as label_config, \
+                    patch.object(tk.Frame, "config") as frame_config:
+                button._on_enter()
+                button._on_leave()
+
+            label_config.assert_not_called()
+            frame_config.assert_not_called()
+            assert button._hovered is False
+        finally:
+            button.destroy()
+
+
 # ================================================================
 # 1. 初期状態テスト — ウィジェットの存在と属性
 # ================================================================
@@ -96,6 +144,10 @@ class TestInitialState:
         assert int(w) >= 1000, f"幅が小さすぎます: {w}"
         assert int(h) >= 500, f"高さが小さすぎます: {h}"
 
+    def test_brand_icon_is_shown_in_header(self):
+        """赤いマル之助アイコンをトップ画面のブランド要素として表示する。"""
+        assert self.app._header_icon is not None
+
     def test_main_action_buttons_exist(self):
         """主要アクションボタンが存在する"""
         assert hasattr(self.app, '_btn_run_box')
@@ -109,10 +161,20 @@ class TestInitialState:
         """ボタンのテキストが期待通り"""
         assert "画像準備" in self.app._btn_run_box["text"]
         assert "初期設定" in self.app.desc_setup_btn["text"]
-        assert "記述採点" in self.app.desc_scoring_btn["text"]
+        assert self.app.desc_scoring_btn["text"] == "✏ 採点を開始"
         assert "合計点位置" in self.app._btn_total_pos["text"]
         assert "採点済み答案" in self.app._btn_run_scoring["text"]
         assert "集計" in self.app._btn_run_summary["text"]
+
+    def test_main_colored_buttons_do_not_repaint_on_hover(self):
+        """macOSでちらつかないよう主要ボタンは背景色をホバー変更しない。"""
+        buttons = (
+            self.app._btn_run_box,
+            self.app.desc_scoring_btn,
+            self.app._btn_run_summary,
+        )
+        for button in buttons:
+            assert button._active_bg == button._normal_bg
 
     def test_buttons_initially_normal(self):
         """Step 1 ボタンはフォルダ未設定時 disabled、Step 2/3 も disabled（Step 進行ガード）"""
@@ -352,7 +414,8 @@ class TestRunSummaryGuard:
             self.app.image_folder_path.set(tmpdir)
             self.app.run_summary_generation()
             mock_mb.showerror.assert_called_once()
-            assert "記述" in mock_mb.showerror.call_args[0][1]
+            assert "採点領域" in mock_mb.showerror.call_args[0][1]
+            assert "採点結果" in mock_mb.showerror.call_args[0][1]
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -516,6 +579,23 @@ class TestProcessingState:
         self.app._set_processing_state(False)
         self.root.update_idletasks()
         assert self.app._progress_bar.winfo_manager() == ""
+
+    def test_processing_area_height_does_not_change(self):
+        """処理開始・終了でトップ画面のレイアウトを上下へ動かさない。"""
+        self.root.update_idletasks()
+        idle_height = self.app._processing_frame.winfo_height()
+        idle_root_height = self.root.winfo_height()
+
+        self.app._set_processing_state(True)
+        self.root.update_idletasks()
+        busy_height = self.app._processing_frame.winfo_height()
+        busy_root_height = self.root.winfo_height()
+
+        self.app._set_processing_state(False)
+        self.root.update_idletasks()
+
+        assert idle_height == busy_height == 42
+        assert idle_root_height == busy_root_height == self.root.winfo_height()
 
 
 # ================================================================
