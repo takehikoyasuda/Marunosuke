@@ -1051,10 +1051,23 @@ class MarunosukeGUI:
                 self._go_to_exam_page(pending[0])
             return
 
+        missing_student_id = result.get('missing_student_id_pages')
+        if missing_student_id:
+            pages_text = "、".join(f"ページ{page}" for page in missing_student_id)
+            move = messagebox.askyesno(
+                "全ページ集計はまだ作成できません",
+                f"次のページの集計結果には、学籍番号OCRで確認済みの学籍番号が"
+                f"含まれていません:\n\n{pages_text}\n\n"
+                "該当ページで学籍番号OCRを有効にして集計をやり直す必要があります。\n"
+                f"最初のページ（ページ{missing_student_id[0]}）を開きますか？",
+            )
+            if move:
+                self._go_to_exam_page(missing_student_id[0])
+            return
+
         messagebox.showerror(
             "全ページ集計エラー",
-            f"統合Excelを作成できませんでした。\n\n{result.get('error', '不明なエラー')}\n\n"
-            "各ページの集計時に学籍番号OCRを完了しているか確認してください。",
+            f"統合Excelを作成できませんでした。\n\n{result.get('error', '不明なエラー')}",
         )
 
     def _update_progress_guide(self):

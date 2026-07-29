@@ -894,3 +894,34 @@ class TestExamPageErrorMessages:
                 mock_showerror.assert_called_once_with("ページ切替エラー", "わかりやすいメッセージ")
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+# ================================================================
+# 14. 全ページ集計: 学籍番号未確認ページの案内
+# ================================================================
+
+class TestCombinedSummaryMissingStudentId:
+    """学籍番号OCR未確認のページがある場合、原因ページを具体的に案内する"""
+
+    def setup_method(self):
+        self.root, self.app = _make_gui()
+
+    def teardown_method(self):
+        _destroy_gui(self.root)
+
+    def test_offers_to_open_first_missing_student_id_page(self):
+        tmpdir = tempfile.mkdtemp()
+        try:
+            self.app.image_folder_path.set(tmpdir)
+            fake_status = {'project_folder': tmpdir, 'pages': [{'page': 1}]}
+            fake_result = {'success': False, 'missing_student_id_pages': [1, 3]}
+            with patch('multi_page_merger.get_multi_page_project_status', return_value=fake_status), \
+                 patch('multi_page_merger.generate_combined_multi_page_summary', return_value=fake_result), \
+                 patch('main_gui.messagebox.askyesno', return_value=True) as mock_ask, \
+                 patch.object(self.app, '_go_to_exam_page') as mock_go:
+                self.app._generate_or_explain_combined_summary()
+                assert "ページ1" in mock_ask.call_args[0][1]
+                assert "ページ3" in mock_ask.call_args[0][1]
+                mock_go.assert_called_once_with(1)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)

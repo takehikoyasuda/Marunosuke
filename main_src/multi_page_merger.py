@@ -609,9 +609,18 @@ def generate_combined_multi_page_summary(project_folder: str) -> dict:
     if missing:
         return {'success': False, 'pending_pages': missing}
     pages = []
+    missing_student_id_pages = []
     try:
         for item in status['pages']:
-            pages.append(read_page_summary(item['summary_path'], f"ページ{item['page']}"))
+            try:
+                pages.append(read_page_summary(item['summary_path'], f"ページ{item['page']}"))
+            except ValueError:
+                # 「学籍番号(確認済み)」列が無い＝そのページで学籍番号OCRの
+                # 確認をしていない集計Excel。全ページ分まとめて原因を示す
+                # ため、最初の1件で止めずに全ページを走査する。
+                missing_student_id_pages.append(item['page'])
+        if missing_student_id_pages:
+            return {'success': False, 'missing_student_id_pages': missing_student_id_pages}
         merged, warnings = merge_page_summaries(pages)
         output = (
             Path(status['project_folder']) / RESULTS_FOLDER / FINAL_REPORT_FOLDER

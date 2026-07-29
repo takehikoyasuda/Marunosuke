@@ -364,6 +364,38 @@ class TestAnswerPageAudit(unittest.TestCase):
         self.assertEqual(stats["満点"], 25)
         self.assertEqual(stats["平均点"], 20)
 
+    def test_combined_summary_reports_all_pages_missing_student_id(self):
+        """学籍番号OCR未確認のページが複数ある場合、最初の1件で止めず
+        全ページ分をまとめて報告する（missing_student_id_pages）。"""
+        from constants import FINAL_REPORT_FOLDER, RESULTS_DATA_FOLDER, RESULTS_FOLDER, STUDENT_SUMMARY_FILE
+        from multi_page_merger import (
+            MultiPageAudit, create_import_batch, generate_combined_multi_page_summary,
+            save_multi_page_manifest,
+        )
+        project = self.test_dir / "project"
+        manifest = project / RESULTS_FOLDER / RESULTS_DATA_FOLDER / "multi_page_manifest.json"
+        batch1 = create_import_batch(1, {"p1.pdf": ["p1-a.png"]}, batch_id="b1")
+        batch2 = create_import_batch(2, {"p2.pdf": ["p2-a.png"]}, batch_id="b2")
+        batch3 = create_import_batch(3, {"p3.pdf": ["p3-a.png"]}, batch_id="b3")
+        audit = MultiPageAudit(exam_pages=[1, 2, 3], active_exam_page=3)
+        save_multi_page_manifest([batch1, batch2, batch3], audit, str(manifest))
+        for page, include_sid in [(1, False), (2, True), (3, False)]:
+            output = (
+                project / "_multi_page_pages" / f"page_{page:03d}"
+                / RESULTS_FOLDER / FINAL_REPORT_FOLDER / STUDENT_SUMMARY_FILE
+            )
+            output.parent.mkdir(parents=True)
+            _build_summary_excel(
+                output, [(f"問題{page}", 10)],
+                [{'file': f'p{page}-a.png', 'sid': '1001', 'scores': {f"問題{page}": 5}}],
+                include_sid_column=include_sid,
+            )
+
+        result = generate_combined_multi_page_summary(str(project))
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["missing_student_id_pages"], [1, 3])
+
     def test_combined_summary_waits_for_unfinished_pages(self):
         from constants import RESULTS_DATA_FOLDER, RESULTS_FOLDER
         from multi_page_merger import (
