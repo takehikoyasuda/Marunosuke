@@ -314,12 +314,14 @@ class MarunosukeGUI:
             pass  # アイコンが見つからない場合はデフォルトのまま
 
         self.image_folder_path = tk.StringVar()
-        self.total_pages = tk.StringVar(value="1")
+        self.total_pages = tk.StringVar(value="")
+        self._pages_confirmed = False
         self.skip_questions = tk.StringVar(value="4")
 
         self.last_boxed_folder = None
         self.last_scored_folder = None
         self.last_results_folder = None
+        self.last_combined_summary_folder = None
         self._name_trimmer = None  # 氏名欄トリミング用（cleanup管理）
         self._student_id_ocr_trimmer = None  # 学籍番号OCR用（cleanup管理）
 
@@ -382,14 +384,17 @@ class MarunosukeGUI:
         main_container.pack(fill=tk.BOTH, expand=True)
 
         # =============================================================================
-        # 下部: ログエリア (先に配置して下部に固定)
+        # 下部: 処理状況（詳細ログ本文は別ウィンドウで表示）
         # =============================================================================
-        log_frame = tk.LabelFrame(main_container, text="処理ログ", padx=5, pady=2, font=FONT_BOLD, bg=SECTION_BG, fg=HEADER_TEXT, relief=tk.FLAT, bd=1)
-        log_frame.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True, pady=(5, 0))
+        log_frame = tk.LabelFrame(main_container, text="処理状況", padx=5, pady=2, font=FONT_BOLD, bg=SECTION_BG, fg=HEADER_TEXT, relief=tk.FLAT, bd=1, height=42)
+        log_frame.pack(side=tk.BOTTOM, fill=tk.X, expand=False, pady=(5, 0))
+        log_frame.pack_propagate(False)
+        # 詳細ログは別ウィンドウから取得するため、トップ画面には表示しない。
+        log_frame.pack_forget()
 
         # 高さ10行固定
         self.log_text = scrolledtext.ScrolledText(log_frame, state=tk.DISABLED, wrap=tk.WORD, font=("Consolas", 9), bg="#FAFAFA", relief=tk.FLAT, bd=1, height=4)
-        self.log_text.pack(fill=tk.BOTH, expand=True)
+        # ログ本文は常設しない。log_message() の保存先として保持する。
 
         # 処理開始・終了時にレイアウト全体が上下へ動かないよう、進捗領域は
         # 最初から一定の高さを確保する。処理中は中身だけを表示する。
@@ -450,6 +455,7 @@ class MarunosukeGUI:
             font=FONT_BOLD, bg=SECTION_BG, fg=HEADER_TEXT, relief=tk.FLAT,
         )
         self._progress_guide_frame.pack(fill=tk.X, pady=(0, 8))
+        self._progress_guide_frame.pack_forget()
         self._progress_guide_labels = {}
         progress_items = (
             ("source", "準備"), ("setup", "問題設定"),
@@ -491,13 +497,28 @@ class MarunosukeGUI:
         top_section.pack(fill=tk.X, pady=(0, 10))
 
         # 左側: ファイル入力
-        input_group = tk.LabelFrame(top_section, text="1. 作業スペースとページ設定", padx=10, pady=5, font=FONT_BOLD, bg=SECTION_BG, fg=HEADER_TEXT, relief=tk.FLAT)
+        input_group = tk.LabelFrame(
+            top_section, text="案件設定", labelanchor="n", padx=10, pady=5,
+            font=(UI_FONT, get_ui_font_size(13), "bold"), bg=SECTION_BG, fg=HEADER_TEXT,
+            relief=tk.FLAT, bd=0,
+        )
         input_group.pack(fill=tk.BOTH, expand=True)
 
         # 画像フォルダ
         row1 = tk.Frame(input_group, bg=SECTION_BG)
         row1.pack(fill=tk.X, pady=2)
-        tk.Label(row1, text="作業スペース", width=10, anchor=tk.W, font=FONT_NORMAL, bg=SECTION_BG).pack(side=tk.LEFT)
+        self._step_markers = {}
+        self._step_markers[1] = tk.Label(row1, text="→", width=2, anchor=tk.CENTER, font=(UI_FONT, get_ui_font_size(22), "bold"), fg="#1565C0", bg=SECTION_BG)
+        self._step_markers[1].pack(side=tk.LEFT)
+        tk.Label(row1, text="1", width=2, anchor=tk.CENTER, font=(UI_FONT, get_ui_font_size(22), "bold"), fg="#1565C0", bg=SECTION_BG).pack(side=tk.LEFT, padx=(0, 8))
+        self._btn_select_folder = ColoredButton(
+            row1, text="作業スペース選択", command=self.select_folder,
+            bg="#1976D2", fg="white",
+            font=(UI_FONT, get_ui_font_size(11), "bold"),
+            width=220, height=58, padx=20, pady=8,
+        )
+        self._btn_select_folder.pack_propagate(False)
+        self._btn_select_folder.pack(side=tk.LEFT, padx=(0, 8))
         tk.Entry(
             row1, textvariable=self.image_folder_path,
             font=(UI_FONT, get_ui_font_size(8)),
@@ -506,32 +527,59 @@ class MarunosukeGUI:
             highlightbackground="#9E9E9E", highlightcolor="#1976D2",
             state="readonly",
         ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3), ipady=2)
-        self._btn_select_folder = tk.Button(row1, text="作業スペース選択", command=self.select_folder, width=14, bg=BTN_GRAY, relief=tk.FLAT, font=FONT_NORMAL)
-        self._btn_select_folder.pack(side=tk.LEFT)
-        self._btn_select_pdf = tk.Button(row1, text="画像を追加", command=self.select_pdf, width=10, bg=BTN_GRAY, relief=tk.FLAT, font=FONT_NORMAL)
-        self._btn_select_pdf.pack(side=tk.LEFT, padx=(2, 0))
-        self._btn_page_number_check = tk.Button(row1, text="🔢 ページ番号確認", command=self.run_page_number_check, bg=BTN_GRAY, relief=tk.FLAT, font=FONT_NORMAL)
-        self._btn_page_number_check.pack(side=tk.LEFT, padx=(2, 0))
 
         page_row = tk.Frame(input_group, bg=SECTION_BG)
         page_row.pack(fill=tk.X, pady=(7, 2))
+        self._step_markers[2] = tk.Label(page_row, text=" ", width=2, anchor=tk.CENTER, font=(UI_FONT, get_ui_font_size(22), "bold"), fg="#2E7D32", bg=SECTION_BG)
+        self._step_markers[2].pack(side=tk.LEFT)
+        tk.Label(page_row, text="2", width=2, anchor=tk.CENTER, font=(UI_FONT, get_ui_font_size(22), "bold"), fg="#1565C0", bg=SECTION_BG).pack(side=tk.LEFT, padx=(0, 8))
         tk.Label(page_row, text="答案のページ数", width=10, anchor=tk.W,
-                 font=FONT_BOLD, bg=SECTION_BG, fg=HEADER_TEXT).pack(side=tk.LEFT)
-        tk.Spinbox(page_row, from_=1, to=999, width=6, textvariable=self.total_pages,
-                   font=FONT_BOLD, justify=tk.CENTER).pack(side=tk.LEFT, padx=(0, 8))
-        tk.Label(page_row, text="ページ　（複数ページの場合は、ページ順に画像を追加します）",
-                 font=FONT_NORMAL, bg=SECTION_BG, fg="#455A64").pack(side=tk.LEFT)
-        _ToolTip(
-            self._btn_page_number_check,
-            "同じページ番号の答案だけをまとめたつもりのフォルダに、\n"
-            "取り違えが混ざっていないかを確認する単発ツールです。\n"
-            "印刷されたページ番号の数字を1回だけ矩形選択すると、\n"
-            "全画像の同じ位置をOCRして多数決と異なるものを警告表示します。",
+                 font=(UI_FONT, get_ui_font_size(11), "bold"), bg=SECTION_BG,
+                 fg=HEADER_TEXT).pack(side=tk.LEFT)
+        # tk.Spinbox はmacOS上で矢印を素早く連続クリックすると、二重入力扱いに
+        # なり値が1つ飛ぶことがあるため使わない。数字入力欄と増減ボタンを分離し、
+        # 単純な command 呼び出しだけで値を変える。
+        self._page_entry = tk.Entry(
+            page_row, textvariable=self.total_pages, width=5, justify=tk.CENTER,
+            font=(UI_FONT, get_ui_font_size(11), "bold"),
         )
+        self._page_entry.pack(side=tk.LEFT)
+        page_stepper = tk.Frame(page_row, bg=SECTION_BG)
+        page_stepper.pack(side=tk.LEFT, padx=(2, 8))
+        tk.Button(
+            page_stepper, text="▲", width=2, font=(UI_FONT, get_ui_font_size(6)),
+            relief=tk.FLAT, bg="#ECEFF1", command=lambda: self._adjust_page_count(1),
+        ).pack(side=tk.TOP)
+        tk.Button(
+            page_stepper, text="▼", width=2, font=(UI_FONT, get_ui_font_size(6)),
+            relief=tk.FLAT, bg="#ECEFF1", command=lambda: self._adjust_page_count(-1),
+        ).pack(side=tk.TOP)
+        tk.Button(page_row, text="確定", command=self._confirm_page_count,
+                  bg="#ECEFF1", fg="#37474F", relief=tk.FLAT,
+                  font=(UI_FONT, get_ui_font_size(8), "bold"), padx=8, pady=3).pack(side=tk.LEFT)
 
-        # 複数ページ案件ダッシュボード（ファイル読込段階から常時確認可能）
-        self._multi_page_dashboard = tk.Frame(input_group, bg="#E8EAF6", padx=8, pady=6)
-        self._multi_page_dashboard.pack(fill=tk.X, pady=(5, 1))
+        tk.Button(
+            log_frame, text="処理ログを表示", command=self._show_log_window,
+            font=(UI_FONT, get_ui_font_size(8)), bg="#ECEFF1", fg="#607D8B",
+            relief=tk.FLAT, padx=6,
+        ).pack(side=tk.RIGHT, padx=4, pady=2)
+
+        # ---------------------------------------------------------
+        # 2. アクションパイプライン（Step3〜5をひとつの枠にまとめ、
+        #    どのページを対象にしているかを示すダッシュボードを先頭に置く）
+        # ---------------------------------------------------------
+        pipeline_frame = tk.LabelFrame(
+            controls_frame, text="採点ワークフロー（各ページの作業）", labelanchor="n", padx=10, pady=8,
+            font=(UI_FONT, get_ui_font_size(13), "bold"), bg=SECTION_BG, fg=HEADER_TEXT,
+            relief=tk.FLAT, bd=0,
+        )
+        pipeline_frame.pack(fill=tk.X, pady=(10, 0))
+        pipeline_frame.columnconfigure(0, weight=1)
+
+        # 複数ページ案件ダッシュボード（Step3〜5すべてが対象にする「今のページ」を
+        # 切り替える場所なので、案件設定(Step1・2)側ではなくこの枠の先頭に置く）
+        self._multi_page_dashboard = tk.Frame(pipeline_frame, bg="#E8EAF6", padx=8, pady=6)
+        self._multi_page_dashboard.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         tk.Label(
             self._multi_page_dashboard, text="複数ページ答案",
             bg="#E8EAF6", fg="#283593", font=FONT_BOLD,
@@ -554,7 +602,7 @@ class MarunosukeGUI:
             self._multi_page_dashboard,
             text="未設定 — PDFを選択して複数ページ答案の取込を開始",
             bg="#FFF3CD", fg="#5D4037", anchor=tk.W,
-            font=(UI_FONT, get_ui_font_size(9), 'bold'),
+            font=(UI_FONT, get_ui_font_size(8), 'bold'),
         )
         self._multi_page_status_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=8)
         self._btn_multi_page_merge = tk.Button(
@@ -565,78 +613,81 @@ class MarunosukeGUI:
             relief=tk.FLAT, font=FONT_BOLD,
         )
         self._btn_multi_page_merge.pack(side=tk.RIGHT)
-        self._btn_combined_summary = tk.Button(
-            self._multi_page_dashboard, text="📊 全ページ集計",
-            command=self._generate_or_explain_combined_summary,
-            bg="#FFE082", fg="#3E2723",
-            activebackground="#FFD54F", activeforeground="#3E2723",
-            relief=tk.FLAT, font=FONT_BOLD,
-        )
-        self._btn_combined_summary.pack(side=tk.RIGHT, padx=(0, 5))
-        _ToolTip(
-            self._btn_combined_summary,
-            "全ページのページ別集計が揃ったら、学籍番号をキーに\n"
-            "得点・総合計・全ページ試験統計を1つのExcelへ統合します。",
-        )
-
-        # ---------------------------------------------------------
-        # 2. アクションパイプライン (3カラム)
-        # ---------------------------------------------------------
-        pipeline_frame = tk.Frame(controls_frame, bg=BG_COLOR)
-        pipeline_frame.pack(fill=tk.X)
-        pipeline_frame.columnconfigure(0, weight=2, uniform="steps")   # Step1
-        pipeline_frame.columnconfigure(1, weight=3, uniform="steps")   # Step2 (広め)
-        pipeline_frame.columnconfigure(2, weight=2, uniform="steps")   # Step3
 
         # 共通スタイル
-        def create_step_frame(parent, title, color_bar):
-            f = tk.LabelFrame(parent, text=title, padx=10, pady=10, font=FONT_BOLD, bg=SECTION_BG, fg=HEADER_TEXT, relief=tk.FLAT)
+        def create_step_frame(parent, title, color_bar, number):
+            f = tk.Frame(parent, padx=8, pady=5, bg=SECTION_BG,
+                         relief=tk.FLAT, bd=0, highlightthickness=0)
+            header = tk.Frame(f, bg=SECTION_BG)
+            header.pack(fill=tk.X, pady=(0, 3))
+            marker = tk.Label(header, text=" ", width=2, font=(UI_FONT, get_ui_font_size(22), "bold"), fg="#2E7D32", bg=SECTION_BG)
+            marker.pack(side=tk.LEFT)
+            f._step_marker = marker
+            self._step_markers[number] = marker
+            tk.Label(header, text=str(number), width=2, font=(UI_FONT, get_ui_font_size(22), "bold"), fg="#1565C0", bg=SECTION_BG).pack(side=tk.LEFT, padx=(0, 10))
+            f._main_header = header
             # 色付きバー（アクセント）
-            tk.Frame(f, bg=color_bar, height=2).pack(fill=tk.X, pady=(0, 10))
+            # 工程間は水平線を使わず、余白だけで区切る。
             return f
 
-        # Step 1: 採点準備
-        step1 = create_step_frame(pipeline_frame, "Step 1: 採点準備", BTN_GREEN)
-        step1.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+        # Step 1: 答案ファイル追加＆採点準備
+        step1 = create_step_frame(pipeline_frame, "答案ファイル追加＆採点準備", BTN_GREEN, 3)
+        step1.grid(row=1, column=0, sticky="ew", pady=0)
         self._step1_frame = step1  # toggle用に保持
 
         # 画像準備 + 結果フォルダ
-        step1_run_row = tk.Frame(step1, bg=SECTION_BG)
-        step1_run_row.pack(fill=tk.X, pady=(0, 5))
+        step1_run_row = step1._main_header
 
-        self._btn_run_box = ColoredButton(step1_run_row, text="▶ 採点準備を開始",
-                                      command=lambda: self._prepare_images_for_descriptive(auto_start_setup=True),
+        self._btn_run_box = ColoredButton(step1_run_row, text="答案ファイルを追加\n＆ 採点準備",
+                                      command=self._start_answer_prep,
                                       bg="#1976D2", fg="white",
-                                      font=FONT_BOLD, height=2,
+                                      font=(UI_FONT, get_ui_font_size(11), "bold"), width=220, height=58, padx=20, pady=8,
                                       relief=tk.FLAT, cursor="hand2")
-        self._btn_run_box.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self._btn_run_box.pack_propagate(False)
+        self._btn_run_box.pack(side=tk.LEFT, padx=(0, 3))
         # 初期状態: フォルダ未選択なので無効化
         self._btn_run_box.config(state=tk.DISABLED)
+        # 📁はメインボタン（答案ファイルを追加＆採点準備）の出力を開くもの
+        # なので、間を空けずメインボタンにくっつけて「同じグループ」だと
+        # 分かるようにする。
         self.open_boxed_btn = tk.Button(step1_run_row, text="📁", command=self.open_boxed_folder, bg=BTN_GRAY, relief=tk.FLAT, state=tk.DISABLED, width=3, font=(UI_FONT, get_ui_font_size(10)))
-        self.open_boxed_btn.pack(side=tk.LEFT, padx=(3, 0), fill=tk.Y)
+        self.open_boxed_btn.pack(side=tk.LEFT, fill=tk.Y)
 
-        # 初期設定
+        # 初期設定（やり直し用の補助ボタン。頻度が低いので小さく、
+        # 上のグループとは間隔を空けて別グループだと分かるようにする）
         self.desc_setup_btn = ColoredButton(
-            step1, text="⚙ 採点準備をやり直す",
+            step1_run_row, text="採点準備をやり直す",
             command=self._run_step1_setup_wizard,
-            bg="#ECEFF1", fg="#455A64", font=FONT_NORMAL, height=1, relief=tk.FLAT, cursor="hand2",
+            bg="#ECEFF1", fg="#455A64", font=(UI_FONT, get_ui_font_size(8), "bold"), width=130, height=32, padx=8, pady=4, relief=tk.FLAT, cursor="hand2",
         )
-        self.desc_setup_btn.pack(fill=tk.X, pady=(5, 0))
+        self.desc_setup_btn.pack_propagate(False)
+        self.desc_setup_btn.pack(side=tk.LEFT, padx=(16, 0))
 
         # Step 2: 採点実行
-        step2 = create_step_frame(pipeline_frame, "Step 2: 採点実行", BTN_BLUE)
-        step2.grid(row=0, column=1, sticky="nsew", padx=5)
+        step2 = create_step_frame(pipeline_frame, "採点実行", BTN_BLUE, 4)
+        step2.grid(row=2, column=0, sticky="ew", pady=0)
         self._step2_frame = step2  # toggle用に保持
 
         BTN_STYLE = dict(font=FONT_BOLD, height=2, relief=tk.FLAT, cursor="hand2")
 
         # 記述採点ボタン
         self.desc_scoring_btn = ColoredButton(
-            step2, text="✏ 採点を開始",
+            step2._main_header, text="採点実行",
             command=self.run_descriptive_scoring,
-            bg="#1976D2", fg="white", **BTN_STYLE,
+            bg="#1976D2", fg="white", font=(UI_FONT, get_ui_font_size(11), "bold"), width=220, height=58, padx=20, pady=9,
         )
-        self.desc_scoring_btn.pack(fill=tk.X, pady=3)
+        self.desc_scoring_btn.pack_propagate(False)
+        self.desc_scoring_btn.pack(side=tk.LEFT, pady=3)
+
+        # 「合計点位置設定」「描画の詳細設定」はどちらも補助的な調整項目で、
+        # 頻度も低いため個別の行にせず「⚙」メニューへまとめる。
+        self._btn_step2_more = tk.Button(
+            step2._main_header, text="⚙", width=2, relief=tk.FLAT, bg=SECTION_BG,
+            fg="#78909C", font=(UI_FONT, get_ui_font_size(14), "bold"),
+            command=self._show_step2_more_menu,
+        )
+        self._btn_step2_more.pack(side=tk.RIGHT, anchor="ne", padx=(4, 0))
+        _ToolTip(self._btn_step2_more, "合計点位置設定・描画の詳細設定（補助的な項目）")
 
         # 記述ステータスパネル
         # 外枠: 左に紫のアクセントライン
@@ -651,70 +702,82 @@ class MarunosukeGUI:
         self._desc_status_text = tk.Text(
             _inner, font=(UI_FONT, get_ui_font_size(8)),
             bg="#F3E5F5", fg="#4A148C", wrap=tk.WORD,
-            height=4, relief=tk.FLAT, bd=0, state=tk.DISABLED,
+            height=2, relief=tk.FLAT, bd=0, state=tk.DISABLED,
             highlightthickness=0, cursor="arrow",
         )
         self._desc_status_text.pack(fill=tk.BOTH, expand=True)
-        self._desc_status_frame.pack(fill=tk.X, pady=(3, 0))
+        # 採点状況の詳細は必要時の確認画面で扱い、トップには表示しない。
+        self._desc_status_frame.pack_forget()
 
-        # --- 採点確認ボタン（α: 記述採点の確認機能） ---
-        self._btn_desc_review = ColoredButton(
-            step2, text="🔎 採点結果を確認",
-            command=self._open_descriptive_review,
-            bg="#90CAF9", **BTN_STYLE,
-        )
-        self._btn_desc_review.pack(fill=tk.X, pady=3)
-
-        # --- 合計点位置設定（出力の直前）---
-        self._btn_total_pos = ColoredButton(step2, text="📐 合計点位置設定（補助）", command=self.setup_total_position, bg="#ECEFF1", fg="#455A64", font=FONT_NORMAL, pady=3)
-        self._btn_total_pos.pack(fill=tk.X, pady=3)
-
-        # --- 詳細設定リンク ---
-        self._link_detailed_settings = tk.Label(
-            step2, text="⚙ 描画の詳細設定（補助）",
-            font=(UI_FONT, get_ui_font_size(8), "underline"), fg="#607D8B",
-            bg=SECTION_BG, cursor="hand2", anchor=tk.E,
-        )
-        self._link_detailed_settings.pack(fill=tk.X, pady=(0, 2))
-        self._link_detailed_settings.bind("<Button-1>", lambda e: self._open_rendering_settings())
-        self._link_detailed_settings.bind("<Enter>", lambda e: self._link_detailed_settings.config(fg="#0D47A1"))
-        self._link_detailed_settings.bind("<Leave>", lambda e: self._link_detailed_settings.config(fg="#1976D2"))
-
-        # 採点済み答案を生成 + 結果フォルダ（横並び）
-        step2_run_row = tk.Frame(step2, bg=SECTION_BG)
-        step2_run_row.pack(fill=tk.X, pady=(3, 5))
+        # 採点済み答案を出力・結果フォルダ・採点結果を確認は、「4」の番号の
+        # 真下ではなく、メインボタン（採点実行）と同じ行のその右側に置く。
+        step2_run_row = tk.Frame(step2._main_header, bg=SECTION_BG)
+        step2_run_row.pack(side=tk.LEFT, padx=(16, 0))
         self._btn_run_scoring = ColoredButton(step2_run_row, text="▶ 採点済み答案を出力", command=self.run_scoring, bg="#90CAF9", fg="#263238", font=FONT_NORMAL, pady=3)
-        self._btn_run_scoring.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self._btn_run_scoring.pack(side=tk.LEFT)
         self.open_scored_btn = tk.Button(step2_run_row, text="📁", command=self.open_scored_folder, bg=BTN_GRAY, relief=tk.FLAT, state=tk.DISABLED, width=3, font=(UI_FONT, get_ui_font_size(10)))
         self.open_scored_btn.pack(side=tk.LEFT, padx=(3, 0), fill=tk.Y)
+        self._btn_desc_review = ColoredButton(
+            step2_run_row, text="🔎 採点確認",
+            command=self._open_descriptive_review,
+            bg="#B39DDB", fg="#263238", font=FONT_NORMAL, pady=3,
+        )
+        self._btn_desc_review.pack(side=tk.LEFT, padx=(3, 0))
 
         # Step 3: サマリー
-        step3 = create_step_frame(pipeline_frame, "Step 3: 集計", BTN_AMBER)
-        step3.grid(row=0, column=2, sticky="nsew", padx=(5, 0))
+        step3 = create_step_frame(pipeline_frame, "集計", BTN_AMBER, 5)
+        step3.grid(row=3, column=0, sticky="ew", pady=0)
 
-        # --- チェックボックス群（集計実行ボタンの上部） ---
+        self._btn_run_summary = ColoredButton(step3._main_header, text="集計", command=self.run_summary_generation, bg="#1976D2", fg="white", font=(UI_FONT, get_ui_font_size(11), "bold"), width=220, height=58, padx=20, pady=9)
+        self._btn_run_summary.pack_propagate(False)
+        self._btn_run_summary.pack(side=tk.LEFT, pady=3)
+
+        # 結果フォルダ・「氏名画像を表示する」チェックは、「5」の番号の
+        # 真下ではなく、メインボタン（集計）と同じ行のその右側に置く。
+        self._step3_run_row = tk.Frame(step3._main_header, bg=SECTION_BG)
+        self._step3_run_row.pack(side=tk.LEFT, padx=(16, 0))
+        self.open_results_btn = tk.Button(self._step3_run_row, text="📁", command=self.open_results_folder, bg=BTN_GRAY, relief=tk.FLAT, state=tk.DISABLED, width=3, font=(UI_FONT, get_ui_font_size(10)))
+        self.open_results_btn.pack(side=tk.LEFT)
+
+        # 学籍番号OCRを実施するかどうかは、初期設定（学籍番号欄指定）で
+        # 一度だけ決める。ここでは切り替えない。
         self.name_trim_enabled = tk.BooleanVar(value=True)
         tk.Checkbutton(
-            step3, text="氏名画像を集計シートに表示する",
+            self._step3_run_row, text="氏名画像を集計シートに表示する",
             variable=self.name_trim_enabled, bg=SECTION_BG,
             font=(UI_FONT, get_ui_font_size(8)), anchor=tk.W, cursor="hand2"
-        ).pack(fill=tk.X, pady=(0, 3))
+        ).pack(side=tk.LEFT, padx=(8, 0))
 
-        # 学籍番号OCR（新機能のためデフォルトOFF、実験的機能）
+        # 学籍番号OCRの実施可否は初期設定側で決めるが、既存コードとの
+        # 互換のため変数自体はここで初期化しておく（トップ画面には出さない）。
         self.student_id_ocr_enabled = tk.BooleanVar(value=False)
-        tk.Checkbutton(
-            step3, text="学籍番号をOCRで読み取る（実験的機能・要確認）",
-            variable=self.student_id_ocr_enabled, bg=SECTION_BG,
-            font=(UI_FONT, get_ui_font_size(8)), anchor=tk.W, cursor="hand2"
-        ).pack(fill=tk.X, pady=(0, 3))
 
-        # --- 集計実行 + 結果フォルダ（横並び） ---
-        self._step3_run_row = tk.Frame(step3, bg=SECTION_BG)
-        self._step3_run_row.pack(fill=tk.X, pady=5)
-        self._btn_run_summary = ColoredButton(self._step3_run_row, text="▶ 確認して集計を実行", command=self.run_summary_generation, bg="#1976D2", fg="white", font=FONT_BOLD, pady=7)
-        self._btn_run_summary.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self.open_results_btn = tk.Button(self._step3_run_row, text="📁", command=self.open_results_folder, bg=BTN_GRAY, relief=tk.FLAT, state=tk.DISABLED, width=3, font=(UI_FONT, get_ui_font_size(10)))
-        self.open_results_btn.pack(side=tk.LEFT, padx=(3, 0), fill=tk.Y)
+        # 全ページ集計（Step3〜5をページごとに繰り返した最後にだけ意味を持つ、
+        # 案件全体のゴール。ページ単位の3・4・5とは性質が違うので、
+        # 「採点ワークフロー」の枠の外に独立して置く。大きさで十分目立つので
+        # 色は控えめ（アプリの他のアンバー系と揃える）にする。
+        combined_border = tk.Frame(controls_frame, bg="#FFCC80", padx=2, pady=2)
+        combined_border.pack(fill=tk.X, pady=(20, 0))
+        combined_row = tk.Frame(combined_border, bg="#FFF8E1", padx=8, pady=8)
+        combined_row.pack(fill=tk.X)
+        self._btn_combined_summary = ColoredButton(
+            combined_row, text="🏁 全ページがそろったら：全ページ集計",
+            command=self._generate_or_explain_combined_summary,
+            bg="#FFE082", fg="#4E342E",
+            font=(UI_FONT, get_ui_font_size(13), "bold"), padx=20, pady=12,
+        )
+        self._btn_combined_summary.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.open_combined_summary_btn = tk.Button(
+            combined_row, text="📁", command=self.open_combined_summary_folder,
+            bg=BTN_GRAY, relief=tk.FLAT, state=tk.DISABLED, width=3,
+            font=(UI_FONT, get_ui_font_size(10)),
+        )
+        self.open_combined_summary_btn.pack(side=tk.LEFT, padx=(6, 0), fill=tk.Y)
+        _ToolTip(
+            self._btn_combined_summary,
+            "全ページのページ別集計が揃ったら、学籍番号をキーに\n"
+            "得点・総合計・全ページ試験統計を1つのExcelへ統合します。",
+        )
 
         # --- 初期化完了後の処理 ---
         # Step2/3 のボタンを初期状態で無効化（Step進行ガード）
@@ -735,7 +798,8 @@ class MarunosukeGUI:
         """
         if not hasattr(self, '_btn_run_box'):
             return
-        ready = bool(self.image_folder_path.get())
+        folder = Path(self.image_folder_path.get()) if self.image_folder_path.get() else None
+        ready = bool(folder and folder.exists() and self._pages_confirmed)
         self._btn_run_box.config(state=tk.NORMAL if ready else tk.DISABLED)
 
     def _update_step_availability(self):
@@ -821,15 +885,11 @@ class MarunosukeGUI:
             return
         pages = status['pages']
         active = status.get('active_page')
-        page_texts = [
-            f"{item['page']}:{item['state']}" + ("●" if item['page'] == active else "")
-            for item in pages
-        ]
         combined_done = Path(status['combined_summary_path']).is_file()
         combined_text = "　｜　✅ 全ページ集計済み" if combined_done else ""
         self._multi_page_status_label.config(
-            text=(f"【現在：試験ページ {active}】　全{len(pages)}ページ　｜　"
-                  + "　".join(page_texts) + combined_text)
+            text=(f"作業ページ：{active or '未選択'} / {len(pages)}ページ"
+                  + combined_text)
         )
         page_numbers = [item['page'] for item in pages]
         if active in page_numbers:
@@ -842,6 +902,17 @@ class MarunosukeGUI:
             state = tk.NORMAL if page_numbers else tk.DISABLED
             self._btn_prev_exam_page.config(state=tk.DISABLED)
             self._btn_next_exam_page.config(state=state)
+
+    def _on_multi_page_project_change(self):
+        """答案取込画面を閉じた後、トップ画面の工程状態を再評価する。
+
+        取込済みの答案があれば、追加画面を再度開かせずにそのまま
+        採点準備へ継続する。
+        """
+        self._update_step_availability()
+        self._update_progress_guide()
+        self._update_multi_page_dashboard()
+        self._try_continue_multi_page_prep()
 
     def _navigate_exam_page(self, offset):
         """現在ページの前後へワンクリックで切り替える。"""
@@ -890,8 +961,8 @@ class MarunosukeGUI:
         result = generate_combined_multi_page_summary(status['project_folder'])
         if result.get('success'):
             output_path = Path(result['output_path'])
-            self.last_results_folder = str(output_path.parent)
-            self.open_results_btn.config(state=tk.NORMAL)
+            self.last_combined_summary_folder = str(output_path.parent)
+            self.open_combined_summary_btn.config(state=tk.NORMAL)
             messagebox.showinfo(
                 "全ページ集計 完了",
                 f"全ページの採点結果を統合しました。\n\n"
@@ -952,6 +1023,40 @@ class MarunosukeGUI:
             "review": (reviewed, "確認可能" if reviewed else "採点後に確認"),
             "summary": (summary, "集計結果あり" if summary else ("集計可能" if boxed else "画像準備後に実行")),
         }
+        # 複数ページ案件では、Step3〜5のチェックは「今見ているページ」だけでなく
+        # 全ページの完了状況で判定する。1ページ目だけ終えた時点で✓が付くと
+        # 紛らわしいため。
+        all_boxed, all_scored, all_summary = boxed, scored, summary
+        if img_folder:
+            from multi_page_merger import get_multi_page_project_status
+            multi_status = get_multi_page_project_status(img_folder)
+            if multi_status and multi_status['pages']:
+                all_boxed = all_scored = all_summary = True
+                for page in multi_status['pages']:
+                    page_base = Path(page['workspace']) / RESULTS_FOLDER
+                    if not has_images(page_base / BOXED_FOLDER):
+                        all_boxed = False
+                    if not has_images(page_base / SCORED_FOLDER):
+                        all_scored = False
+                    if not (page_base / FINAL_REPORT_FOLDER).exists():
+                        all_summary = False
+
+        # 縦型の工程表示（完了はチェック、次の工程は矢印）
+        marker_done = {
+            1: source,
+            2: self._pages_confirmed,
+            3: all_boxed,
+            4: all_scored,
+            5: all_summary,
+        }
+        next_step = next((step for step, done in marker_done.items() if not done), 5)
+        for step, done in marker_done.items():
+            marker = getattr(self, "_step_markers", {}).get(step)
+            if marker is not None:
+                marker.config(
+                    text="✓" if done else ("→" if step == next_step else " "),
+                    fg="#2E7D32" if done else ("#1565C0" if step == next_step else "#B0BEC5"),
+                )
         for key, (done, text) in states.items():
             marker, label = self._progress_guide_labels[key]
             marker.config(text="✓" if done else "○", fg="#2E7D32" if done else "#90A4AE")
@@ -959,7 +1064,7 @@ class MarunosukeGUI:
         if not source:
             next_text, button_text, command, button_bg = "次にすること：画像フォルダを選択してください", "フォルダを選択", self.select_folder, "#FFCC80"
         elif not boxed:
-            next_text, button_text, command, button_bg = "次にすること：採点準備を実行してください", "採点準備", lambda: self._prepare_images_for_descriptive(auto_start_setup=True), "#1976D2"
+            next_text, button_text, command, button_bg = "次にすること：答案ファイルを追加して採点準備をしてください", "答案ファイル追加＆採点準備", self._start_answer_prep, "#1976D2"
         elif not setup:
             next_text, button_text, command, button_bg = "次にすること：初期設定を実行してください", "初期設定", self._run_step1_setup_wizard, "#CE93D8"
         elif not reviewed:
@@ -977,17 +1082,30 @@ class MarunosukeGUI:
         for btn in [
             self.desc_scoring_btn,
             self._btn_desc_review,
-            self._btn_total_pos,
             self._btn_run_scoring,
+            self._btn_step2_more,
         ]:
             try:
                 btn.config(state=state)
             except Exception:
                 pass
-        # 詳細設定リンクは色で表現
-        if hasattr(self, '_link_detailed_settings'):
-            fg = "#1976D2" if enabled else "#B0BEC5"
-            self._link_detailed_settings.config(fg=fg)
+
+    def _show_step2_more_menu(self):
+        """「合計点位置設定」「描画の詳細設定」をまとめた補助メニューを表示する。
+
+        どちらも頻度の低い調整項目なので、常設ボタンにせず「⋯」から呼び出す。
+        """
+        if str(self._btn_step2_more["state"]) == tk.DISABLED:
+            return
+        menu = tk.Menu(self.root, tearoff=0)
+        menu.add_command(label="📐 合計点位置設定", command=self.setup_total_position)
+        menu.add_command(label="⚙ 描画の詳細設定", command=self._open_rendering_settings)
+        x = self._btn_step2_more.winfo_rootx()
+        y = self._btn_step2_more.winfo_rooty() + self._btn_step2_more.winfo_height()
+        try:
+            menu.tk_popup(x, y)
+        finally:
+            menu.grab_release()
 
     def _set_step3_enabled(self, enabled: bool):
         """Step3 の操作ボタンを有効化/無効化する"""
@@ -1032,10 +1150,100 @@ class MarunosukeGUI:
         return f"処理中にエラーが発生しました。\n\n詳細: {msg}"
     
     def select_folder(self):
-        """画像フォルダを選択"""
-        folder = filedialog.askdirectory(title="画像フォルダを選択")
+        """作業スペースだけを選択し、処理は開始しない。"""
+        folder = filedialog.askdirectory(title="作業スペースを選択")
         if folder:
-            self._start_setup_for_image_source(folder)
+            self._set_processing_state(False)
+            self.image_folder_path.set(str(folder))
+            self.log_message(f"✓ 作業スペースを選択: {folder}")
+            self._try_auto_restore()
+            self._update_step1_availability()
+            self._update_step_availability()
+            self._update_multi_page_dashboard()
+
+    def _start_answer_prep(self):
+        """Step3の入口: 答案ファイルを追加し、そのまま採点準備まで進める。
+
+        画像案件はそのまま採点準備を実行する。PDF・複数ページ案件は、
+        取込済みの答案があれば追加画面を開かずに直接採点準備へ進み、
+        まだ何も取り込まれていなければ追加専用の画面を開く。
+        """
+        if self._processing:
+            return
+        if not self.image_folder_path.get():
+            messagebox.showerror("エラー", "先に作業スペースを選択してください。")
+            return
+        if not self._pages_confirmed:
+            messagebox.showerror("エラー", "先にページ数を入力して「確定」を押してください。")
+            return
+
+        img_folder = Path(self.image_folder_path.get())
+        if not img_folder.exists():
+            messagebox.showerror("エラー", "作業スペースが存在しません。")
+            return
+
+        has_images = any(
+            f.is_file() and f.suffix.lower() in ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff')
+            for f in img_folder.iterdir()
+        )
+        if has_images:
+            self._prepare_images_for_descriptive(auto_start_setup=True)
+            return
+
+        has_pdfs = any(f.is_file() and f.suffix.lower() == '.pdf' for f in img_folder.iterdir())
+        if not has_pdfs:
+            messagebox.showerror("エラー", "作業スペースに対応する画像またはPDFが見つかりません。")
+            return
+
+        if not self._try_continue_multi_page_prep():
+            self.run_multi_page_merge()
+
+    def _try_continue_multi_page_prep(self):
+        """取込済みの答案ページがあれば、追加画面を開かず直接採点準備へ進む。
+
+        Returns:
+            採点準備へ継続できた（＝呼び出し側は追加画面を開かなくてよい）場合True。
+        """
+        from multi_page_merger import activate_exam_page, get_multi_page_project_status
+        status = get_multi_page_project_status(self.image_folder_path.get())
+        if not status or not status['pages']:
+            return False
+        page_numbers = [item['page'] for item in status['pages']]
+        active = status.get('active_page')
+        target = active if active in page_numbers else page_numbers[0]
+        target_status = next(item for item in status['pages'] if item['page'] == target)
+        if target_status['state'] == '未取込':
+            return False
+        try:
+            workspace = activate_exam_page(status['project_folder'], target)
+        except Exception as exc:
+            messagebox.showerror("ページ切替エラー", str(exc))
+            return True
+        self._prepare_multi_page_exam_page(target, workspace)
+        return True
+
+    def _adjust_page_count(self, delta):
+        """▲▼ボタンでページ数を1刻みで増減する（1〜999に収める）。"""
+        try:
+            current = int(self.total_pages.get())
+        except (TypeError, ValueError):
+            current = 0
+        self.total_pages.set(str(max(1, min(999, current + delta))))
+
+    def _confirm_page_count(self):
+        """ページ数を確定し、次の答案ファイル追加工程を有効にする。"""
+        try:
+            pages = int(self.total_pages.get())
+            if pages < 1:
+                raise ValueError
+        except (TypeError, ValueError):
+            self._pages_confirmed = False
+            messagebox.showerror("ページ数", "1以上のページ数を入力してください。")
+            self._update_progress_guide()
+            return
+        self._pages_confirmed = True
+        self._update_step1_availability()
+        self._update_progress_guide()
 
     def _start_setup_for_image_source(self, folder):
         """画像ソースを反映し、画像準備から初期設定まで連続実行する。"""
@@ -1097,9 +1305,21 @@ class MarunosukeGUI:
             ]
             if pdf_files:
                 self.log_message(
-                    f"PDFファイルを{len(pdf_files)}件検出しました。複数ページ答案の管理を開きます。"
+                    f"PDFファイルを{len(pdf_files)}件検出しました。先に「答案ファイルを追加」を実行してください。"
                 )
-                self.run_multi_page_merge()
+                manifest_path = (
+                    Path(self.image_folder_path.get()) / RESULTS_FOLDER /
+                    RESULTS_DATA_FOLDER / "multi_page_manifest.json"
+                )
+                if manifest_path.exists():
+                    # 取込済みなら、答案追加の案内ではなく試験ページ選択へ進む。
+                    self.run_multi_page_merge()
+                    return
+                messagebox.showinfo(
+                    "答案ファイルの追加",
+                    "PDF案件は、先に「答案ファイルを追加」から答案を取り込んでください。\n"
+                    "取込完了後に「採点準備」を実行できます。",
+                )
             else:
                 messagebox.showerror(
                     "エラー",
@@ -1168,10 +1388,8 @@ class MarunosukeGUI:
             results_data = (
                 Path(self.image_folder_path.get()) / RESULTS_FOLDER / RESULTS_DATA_FOLDER
             )
-            self._wizard_step_roster(results_data)
-            from id_area_config import ID_AREA_CONFIG_FILE
-            if (results_data / ID_AREA_CONFIG_FILE).exists():
-                self.student_id_ocr_enabled.set(True)
+            self._wizard_step_roster()
+            self._sync_student_id_ocr_enabled(results_data)
             self.log_message(
                 "✓ 全ページ共通の学籍番号欄・氏名欄・解答欄設定を適用しました"
             )
@@ -1277,21 +1495,20 @@ class MarunosukeGUI:
         run_multi_page_import_gui(
             project_folder,
             parent=self.root,
-            on_prepare_page=self._prepare_multi_page_exam_page,
-            on_project_change=self._update_multi_page_dashboard,
+            on_project_change=self._on_multi_page_project_change,
             total_pages=total_pages,
         )
 
     def _prepare_multi_page_exam_page(self, exam_page, workspace):
         """選択した試験ページを現在の作業対象にして採点準備を開始する。"""
         self.image_folder_path.set(str(workspace))
-        self.student_id_ocr_enabled.set(True)
         self.log_message(f"✓ 試験ページ {exam_page} を作業対象に設定: {workspace}")
         self._update_step1_availability()
         self._update_step_availability()
         workspace_path = Path(workspace)
         boxed = workspace_path / RESULTS_FOLDER / BOXED_FOLDER
         config = workspace_path / RESULTS_FOLDER / RESULTS_DATA_FOLDER / "descriptive_config.json"
+        self._sync_student_id_ocr_enabled(workspace_path / RESULTS_FOLDER / RESULTS_DATA_FOLDER)
         if boxed.exists() and config.exists():
             self._update_descriptive_status()
             self._update_multi_page_dashboard()
@@ -1314,6 +1531,11 @@ class MarunosukeGUI:
         """集計結果フォルダ(_saiten_grading_results)を開く"""
         if self.last_results_folder and Path(self.last_results_folder).exists():
             open_in_file_manager(self.last_results_folder)
+
+    def open_combined_summary_folder(self):
+        """全ページ集計の統合Excelが入ったフォルダを開く"""
+        if self.last_combined_summary_folder and Path(self.last_combined_summary_folder).exists():
+            open_in_file_manager(self.last_combined_summary_folder)
     
     def log_message(self, message, replace_last=False):
         """
@@ -1341,6 +1563,17 @@ class MarunosukeGUI:
         self.log_text.config(state=tk.DISABLED)
         # update() はメインスレッドからのみ安全に呼べる
         self.root.update_idletasks()
+
+    def _show_log_window(self):
+        """必要なときだけ詳細ログを別ウィンドウで表示する。"""
+        window = tk.Toplevel(self.root)
+        window.title("処理ログ")
+        window.geometry("760x420")
+        text = scrolledtext.ScrolledText(window, wrap=tk.WORD, font=("Consolas", 9),
+                                         bg="#FAFAFA", relief=tk.FLAT)
+        text.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        text.insert("1.0", self.log_text.get("1.0", tk.END))
+        text.config(state=tk.DISABLED)
 
     # ------------------------------------------------------------------
     # ロガー出力 → GUIログ転送ヘルパー
@@ -2141,16 +2374,21 @@ class MarunosukeGUI:
                 if descriptive_config_path.exists():
                     return
 
-        self._wizard_step_roster(results_data_folder)
+        self._wizard_step_roster()
         self._wizard_step_page_check()
         self._wizard_step_name_area(boxed_folder, results_data_folder)
         self._wizard_step_id_area(boxed_folder, results_data_folder)
         self.setup_descriptive(skip_existing_prompt=True)
 
-    def _wizard_step_roster(self, results_data_folder):
-        """ウィザードStep: 名簿の読込(保存済みなら自動スキップ)"""
-        from roster_config import ROSTER_CONFIG_FILE, load_roster_config, save_roster_config
-        config_path = str(results_data_folder / ROSTER_CONFIG_FILE)
+    def _wizard_step_roster(self):
+        """ウィザードStep: 名簿の読込(保存済みなら自動スキップ)。
+
+        名簿はページに依存しない（試験全体で共通）ため、複数ページ案件では
+        案件フォルダ直下の1箇所にまとめて保存し、ページごとに聞き直さない。
+        """
+        from roster_config import load_roster_config, save_roster_config
+        from multi_page_merger import resolve_roster_config_path
+        config_path = resolve_roster_config_path(self.image_folder_path.get())
         if load_roster_config(config_path) is not None:
             self.log_message("✓ 名簿は設定済みです — スキップします")
             return
@@ -2166,7 +2404,7 @@ class MarunosukeGUI:
         """ウィザードStep: ページ番号確認(値の保存は行わない、ツールを流用するだけ)"""
         if not messagebox.askyesno(
             "ページ設定",
-            "複数ページに分かれた答案ですか？\n（ページ番号の取り違えを確認する場合は「はい」）",
+            "別ページの答案が紛れていないかOCRで確認しますか？",
         ):
             self.log_message("ページ設定: 該当なし（スキップ）")
             return
@@ -2196,16 +2434,27 @@ class MarunosukeGUI:
         self.log_message("✓ 氏名欄の位置を保存しました")
 
     def _wizard_step_id_area(self, boxed_folder, results_data_folder):
-        """ウィザードStep: 学籍番号欄の位置指定(保存済みなら自動スキップ、任意)"""
+        """ウィザードStep: 学籍番号OCRの実施可否と、学籍番号欄の位置指定。
+
+        学籍番号OCRを実施するかどうかは、このステップだけで決める
+        （集計実行時には聞かない・トップ画面にも表示しない）。
+        位置が既に保存済みならOCR実施として自動スキップする。
+        """
         from id_area_config import ID_AREA_CONFIG_FILE, load_id_area_config
         config_path = str(results_data_folder / ID_AREA_CONFIG_FILE)
         if load_id_area_config(config_path) is not None:
             self.log_message("✓ 学籍番号欄は設定済みです — スキップします")
+            self.student_id_ocr_enabled.set(True)
             return
         if not messagebox.askyesno(
-            "学籍番号欄指定", "学籍番号欄の位置を設定しますか？\n（後からでも設定できます）",
+            "学籍番号欄指定",
+            "学籍番号をOCRで読み取りますか？（実験的機能・要確認）\n\n"
+            "ここでは読み取り位置を1回選ぶだけで、実際の読み取りは\n"
+            "集計実行時に行います。（後からでも設定できます）",
         ):
             self.log_message("学籍番号欄指定: 該当なし（スキップ）")
+            self._warn_if_multi_page_needs_student_id()
+            self.student_id_ocr_enabled.set(False)
             return
         from student_id_ocr import ensure_id_area_config
         config = ensure_id_area_config(
@@ -2217,6 +2466,31 @@ class MarunosukeGUI:
             self.student_id_ocr_enabled.set(True)
         else:
             self.log_message("学籍番号欄指定: 該当なし（スキップ）")
+            self._warn_if_multi_page_needs_student_id()
+            self.student_id_ocr_enabled.set(False)
+
+    def _sync_student_id_ocr_enabled(self, results_data_folder):
+        """学籍番号欄が設定済みかどうかで、学籍番号OCRの実施可否を自動的に決める。"""
+        from id_area_config import ID_AREA_CONFIG_FILE, load_id_area_config
+        config_path = str(Path(results_data_folder) / ID_AREA_CONFIG_FILE)
+        self.student_id_ocr_enabled.set(load_id_area_config(config_path) is not None)
+
+    def _warn_if_multi_page_needs_student_id(self):
+        """複数ページ案件で学籍番号OCRを使わない場合、全ページ集計が
+        使えなくなることを警告する（選択自体は止めない）。"""
+        from multi_page_merger import resolve_multi_page_project_folder
+        workspace = self.image_folder_path.get()
+        if not workspace:
+            return
+        project_folder = resolve_multi_page_project_folder(workspace)
+        if project_folder == str(Path(workspace)):
+            return  # 単一ページ案件
+        messagebox.showwarning(
+            "全ページ集計が使えなくなります",
+            "学籍番号OCRを設定しないと、複数ページの答案を学籍番号で\n"
+            "1人分にまとめる「全ページ集計」が使えなくなります。\n\n"
+            "後から「採点準備をやり直す」で設定を追加できます。",
+        )
 
     def setup_descriptive(self, skip_existing_prompt=False):
         """採点領域の初期設定
@@ -2253,8 +2527,10 @@ class MarunosukeGUI:
 
         try:
             from descriptive_scorer import setup_descriptive_regions_integrated
+            from multi_page_merger import get_exam_page_for_workspace
+            exam_page = get_exam_page_for_workspace(self.image_folder_path.get())
             config = setup_descriptive_regions_integrated(
-                str(boxed_folder), config_path, parent=self.root
+                str(boxed_folder), config_path, parent=self.root, exam_page=exam_page
             )
             if config:
                 self.log_message(f"✓ 初期設定完了: {len(config['questions'])}問")
@@ -2432,7 +2708,7 @@ class MarunosukeGUI:
         self._processing = busy
         action_buttons = [
             self._btn_run_box,
-            self._btn_total_pos,
+            self._btn_step2_more,
             self._btn_run_scoring,
             self._btn_run_summary,
             self.desc_setup_btn,
@@ -2440,7 +2716,6 @@ class MarunosukeGUI:
             self._btn_desc_review,
             # データソース選択ボタンも無効化（処理中パス変更防止）
             self._btn_select_folder,
-            self._btn_select_pdf,
         ]
         if busy:
             self._cancel_event.clear()
@@ -2543,9 +2818,10 @@ class MarunosukeGUI:
 
             self.log_message(f"✓ 学籍番号OCR完了: {len(ocr_results)}枚")
 
-            from roster_config import ROSTER_CONFIG_FILE, load_roster_config
-            roster_config_path = Path(image_folder) / RESULTS_FOLDER / RESULTS_DATA_FOLDER / ROSTER_CONFIG_FILE
-            roster = load_roster_config(str(roster_config_path))
+            from roster_config import load_roster_config
+            from multi_page_merger import resolve_roster_config_path
+            roster_config_path = resolve_roster_config_path(image_folder)
+            roster = load_roster_config(roster_config_path)
             if roster is not None:
                 self.log_message(f"✓ 名簿読込（Step1で設定済み）: {len(roster)}件")
             else:
@@ -2725,7 +3001,8 @@ class MarunosukeGUI:
                         f"・{Path(combined['output_path']).name}\n"
                         f"・統合人数: {combined['student_count']}名"
                     )
-                    self.last_results_folder = str(Path(combined['output_path']).parent)
+                    self.last_combined_summary_folder = str(Path(combined['output_path']).parent)
+                    self.root.after(0, lambda: self.open_combined_summary_btn.config(state=tk.NORMAL))
                 elif combined.get('pending_pages'):
                     pages = "、".join(str(page) for page in combined['pending_pages'])
                     combined_note = (

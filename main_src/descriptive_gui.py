@@ -406,10 +406,11 @@ class IntegratedDescriptiveSetup:
     _MAX_ZOOM = 8.0
     _ZOOM_STEP = 1.25
 
-    def __init__(self, parent, image_folder: str, config_save_path: str):
+    def __init__(self, parent, image_folder: str, config_save_path: str, exam_page: Optional[int] = None):
         self.parent = parent
         self.image_folder = image_folder
         self.config_save_path = config_save_path
+        self.exam_page = exam_page  # 複数ページ案件のみ設定される
         self.result_config = None  # 完了時に設定が入る
 
         # 画像ファイル取得
@@ -446,7 +447,10 @@ class IntegratedDescriptiveSetup:
 
         # ウィンドウ構築
         self.win = tk.Toplevel(parent)
-        self.win.title("📝 問題の設定")
+        title = "📝 問題の設定"
+        if self.exam_page is not None:
+            title += f"（試験ページ {self.exam_page}）"
+        self.win.title(title)
         self.win.transient(parent)
         self.win.grab_set()
         self.win.focus_set()
@@ -475,6 +479,18 @@ class IntegratedDescriptiveSetup:
 
     def _build_gui(self):
         BG = "#F5F7FA"
+        if self.exam_page is not None:
+            # 複数ページ案件では、今どのページの設定をしているかを
+            # ポップアップに頼らず常設バナーで示す。
+            page_banner = tk.Frame(self.win, bg="#E8EAF6", padx=10, pady=4)
+            page_banner.pack(fill=tk.X)
+            tk.Label(
+                page_banner,
+                text=f"📄 試験ページ {self.exam_page} の設定です",
+                bg="#E8EAF6", fg="#283593",
+                font=(UI_FONT, get_ui_font_size(9), "bold"),
+            ).pack(anchor=tk.W)
+
         main = tk.Frame(self.win, bg=BG, padx=8, pady=8)
         main.pack(fill=tk.BOTH, expand=True)
 
@@ -547,15 +563,23 @@ class IntegratedDescriptiveSetup:
                  font=(UI_FONT, get_ui_font_size(11), "bold"), bg=BG, fg="#333").pack(anchor=tk.W, pady=(0, 5))
 
         # Treeview（問題リスト）
+        # 問題数は少ない想定なので、行の高さを広めに取り、配点入力時に
+        # 数字が行からはみ出さないようにする。専用スタイル名にして、
+        # 他画面のTreeviewへ影響しないようにする。
+        style = ttk.Style(self.win)
+        row_font = (UI_FONT, get_ui_font_size(11))
+        style.configure("Descriptive.Treeview", rowheight=36, font=row_font)
+        style.configure("Descriptive.Treeview.Heading", font=(UI_FONT, get_ui_font_size(10), "bold"))
+
         cols = ("id", "name", "score")
         self._tree = ttk.Treeview(right, columns=cols, show="headings", height=15,
-                                  selectmode="browse")
+                                  selectmode="browse", style="Descriptive.Treeview")
         self._tree.heading("id", text="#")
         self._tree.heading("name", text="問題名")
-        self._tree.heading("score", text="配点")
+        self._tree.heading("score", text="配点（ダブルクリックで編集）")
         self._tree.column("id", width=36, anchor="center")
         self._tree.column("name", width=100)
-        self._tree.column("score", width=74, anchor="center")
+        self._tree.column("score", width=150, anchor="center")
 
         tree_scroll = tk.Scrollbar(right, orient=tk.VERTICAL, command=self._tree.yview)
         self._tree.configure(yscrollcommand=tree_scroll.set)
@@ -768,9 +792,13 @@ class IntegratedDescriptiveSetup:
             self._tree.delete(item)
         self._tree.tag_configure("score_missing", background="#FFCDD2", foreground="#B71C1C")
         for q in self._questions:
-            tags = ("score_missing",) if q.get("max_score", 0) < 1 else ()
+            score = q.get("max_score", 0)
+            tags = ("score_missing",) if score < 1 else ()
+            # 配点セルは、それだけ見ても入力できるマスだと分かるよう
+            # 鉛筆アイコンを添える（実データはあくまで整数のまま保持）。
+            score_display = f"{score}点 ✎"
             self._tree.insert("", tk.END, iid=q["id"],
-                              values=(q["id"], q["name"], q["max_score"]), tags=tags)
+                              values=(q["id"], q["name"], score_display), tags=tags)
 
     def _on_tree_double_click(self, event):
         """Treeview のセルをダブルクリックで編集"""
@@ -789,10 +817,17 @@ class IntegratedDescriptiveSetup:
         if not bbox:
             return
 
-        current_val = self._tree.item(item, "values")[col_idx]
+        if col_idx == 2:
+            # 配点セルの表示値は鉛筆アイコン付きなので、編集時は
+            # 元の整数値を使う（アイコンごと編集欄に入らないように）。
+            current_val = next(
+                (q.get("max_score", 0) for q in self._questions if q["id"] == item), 0
+            )
+        else:
+            current_val = self._tree.item(item, "values")[col_idx]
 
         # 一時Entryウィジェットでインライン編集
-        entry = tk.Entry(self._tree, font=(UI_FONT, get_ui_font_size(9)))
+        entry = tk.Entry(self._tree, font=(UI_FONT, get_ui_font_size(11)))
         entry.place(x=bbox[0], y=bbox[1], width=bbox[2], height=bbox[3])
         entry.insert(0, str(current_val))
         entry.select_range(0, tk.END)
@@ -928,12 +963,14 @@ def setup_descriptive_regions_integrated(
     image_folder: str,
     config_save_path: str,
     parent: Optional[tk.Tk] = None,
+    exam_page: Optional[int] = None,
 ) -> Optional[dict]:
     """統合ウィンドウ版の記述問題設定（旧 setup_descriptive_regions のラッパー）。
 
     Phase 2A: 領域選択と設問情報設定を1画面で完結する。
+    exam_page は複数ページ案件でのみ指定し、どのページの設定かを画面に示す。
     """
-    setup = IntegratedDescriptiveSetup(parent, image_folder, config_save_path)
+    setup = IntegratedDescriptiveSetup(parent, image_folder, config_save_path, exam_page=exam_page)
     return setup.result_config
 
 

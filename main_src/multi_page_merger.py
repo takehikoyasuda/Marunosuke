@@ -279,6 +279,50 @@ def resolve_multi_page_project_folder(folder: str) -> str:
     return str(Path(folder))
 
 
+def get_exam_page_for_workspace(folder: str) -> Optional[int]:
+    """試験ページの作業フォルダなら、そのページ番号を返す。単一ページ案件はNone。"""
+    pointer_path = Path(folder) / MULTI_PAGE_PROJECT_POINTER_FILE
+    if not pointer_path.exists():
+        return None
+    try:
+        with pointer_path.open('r', encoding='utf-8') as handle:
+            payload = json.load(handle)
+        return int(payload['exam_page'])
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        return None
+
+
+def resolve_roster_config_path(image_folder: str) -> str:
+    """名簿設定ファイルのパスを返す。
+
+    名簿はページに依存しない（試験全体で共通）ため、複数ページ案件では
+    案件フォルダ直下の1箇所に統一する。単一ページ案件では、指定フォルダ
+    直下をそのまま使う（従来通り）。
+
+    複数ページ案件で、まだ案件レベルの名簿が無い場合は、いずれかの
+    ページに個別保存されていた名簿があれば引き上げて救済する
+    （旧バージョンでページごとに保存されていた案件との互換用）。
+    """
+    from constants import RESULTS_DATA_FOLDER, RESULTS_FOLDER
+    from roster_config import ROSTER_CONFIG_FILE
+
+    project_folder = Path(resolve_multi_page_project_folder(image_folder))
+    project_path = project_folder / RESULTS_FOLDER / RESULTS_DATA_FOLDER / ROSTER_CONFIG_FILE
+    if project_folder == Path(image_folder):
+        return str(project_path)  # 単一ページ案件
+
+    if not project_path.is_file():
+        workspace_root = project_folder / '_multi_page_pages'
+        if workspace_root.exists():
+            for page_workspace in sorted(workspace_root.glob('page_*')):
+                candidate = page_workspace / RESULTS_FOLDER / RESULTS_DATA_FOLDER / ROSTER_CONFIG_FILE
+                if candidate.is_file():
+                    project_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(candidate, project_path)
+                    break
+    return str(project_path)
+
+
 def shared_layout_was_applied(folder: str) -> bool:
     """ページ準備時にプロジェクト共通設定が適用済みか返す。"""
     pointer_path = Path(folder) / MULTI_PAGE_PROJECT_POINTER_FILE
@@ -818,7 +862,6 @@ def write_merged_excel(merged_rows: Dict[str, Dict], pages: List[PageSummary], o
 def run_multi_page_import_gui(
     image_folder: str,
     parent: Optional[tk.Tk] = None,
-    on_prepare_page=None,
     on_project_change=None,
     total_pages: Optional[int] = None,
 ) -> None:
@@ -859,8 +902,8 @@ def run_multi_page_import_gui(
         saved_active_page = None
 
     window = tk.Toplevel(parent)
-    window.title("複数ページ答案の管理")
-    window.geometry("820x560")
+    window.title("答案ファイルの追加")
+    window.geometry("900x620")
     if parent is not None:
         window.transient(parent)
 
@@ -868,22 +911,54 @@ def run_multi_page_import_gui(
     header.pack(fill=tk.X)
     tk.Label(
         header,
-        text="複数ページ答案の管理",
+        text="答案ファイルの追加",
         bg="#37474F", fg="white",
         font=(UI_FONT, get_ui_font_size(12), 'bold'),
     ).pack(anchor=tk.W, padx=12, pady=(10, 2))
     tk.Label(
         header,
         text=(
-            "① 試験ページを追加　② PDF・画像を追加　"
-            "③ 採点するページを選択　④『このページを開いて採点する』"
+            "ページを選択して、答案ファイルを追加してください。\n"
+            "ファイル選択画面では複数ファイルをまとめて選べます"
+            "（⌘/Ctrl+クリックや範囲選択で複数選択）。"
         ),
-        bg="#37474F", fg="#ECEFF1",
-        font=(UI_FONT, get_ui_font_size(9)),
+        bg="#37474F", fg="#ECEFF1", font=(UI_FONT, get_ui_font_size(9)), justify=tk.LEFT,
     ).pack(anchor=tk.W, padx=12, pady=(0, 10))
 
-    tree_frame = tk.Frame(window)
-    tree_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=10)
+    shared_layout_var = tk.BooleanVar(value=saved_shared_layout)
+    shared_layout_frame = tk.Frame(window, bg="#FFF3E0", padx=12, pady=8)
+    shared_layout_frame.pack(fill=tk.X, padx=12, pady=(10, 0))
+    tk.Checkbutton(
+        shared_layout_frame,
+        text="💡 学籍番号欄・氏名欄・解答欄の初期設定を全ページで共通にする",
+        variable=shared_layout_var,
+        command=lambda: (_save(), _refresh()),
+        anchor=tk.W, bg="#FFF3E0", activebackground="#FFF3E0",
+        highlightthickness=0, cursor="hand2",
+        font=(UI_FONT, get_ui_font_size(10), "bold"), fg="#E65100",
+    ).pack(fill=tk.X)
+    tk.Label(
+        shared_layout_frame,
+        text=(
+            "オンにすると、1ページ目で設定した学籍番号欄・氏名欄・解答欄の位置を、"
+            "2ページ目以降にも自動で適用します。"
+        ),
+        bg="#FFF3E0", fg="#795548", anchor=tk.W, justify=tk.LEFT,
+        font=(UI_FONT, get_ui_font_size(8)), wraplength=650,
+    ).pack(fill=tk.X, pady=(2, 0))
+
+    # 左に取込ボタン用サイドバー、右にツリーを横並びで配置する。
+    # 固定ピクセルのplace()は、上の案内文の行数（＝高さ）が変わるたびに
+    # 位置がずれるため使わない。
+    content_frame = tk.Frame(window)
+    content_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=10)
+
+    buttons = tk.Frame(content_frame, bg="#ECEFF1", padx=10, pady=10, width=165)
+    buttons.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 12))
+    buttons.pack_propagate(False)
+
+    tree_frame = tk.Frame(content_frame)
+    tree_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
     tree = ttk.Treeview(
         tree_frame,
         columns=('sources', 'answers', 'status'),
@@ -904,7 +979,6 @@ def run_multi_page_import_gui(
     scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
     status_var = tk.StringVar()
-    shared_layout_var = tk.BooleanVar(value=saved_shared_layout)
     active_page = [saved_active_page]
     status_label = tk.Label(
         window, textvariable=status_var, anchor=tk.W, justify=tk.LEFT,
@@ -960,6 +1034,11 @@ def run_multi_page_import_gui(
         if select_iid and tree.exists(select_iid):
             tree.selection_set(select_iid)
             tree.see(select_iid)
+        elif not tree.selection() and expected_pages:
+            # 何も選択されていなければ、現在の作業ページか先頭のページを
+            # 自動選択し、追加先を分かりやすくする。
+            default_page = active_page[0] if active_page[0] in expected_pages else sorted(expected_pages)[0]
+            tree.selection_set(f"page:{default_page}")
 
     def _selected_page():
         selection = tree.selection()
@@ -1001,12 +1080,12 @@ def run_multi_page_import_gui(
             messagebox.showerror("エラー", f"試験ページ {page} は登録されていません。", parent=window)
             return
         paths = list(filedialog.askopenfilenames(
-            title=f"試験ページ {page} のPDF・画像を追加",
+            title=f"試験ページ {page} のPDF・画像を追加（複数選択可）",
             filetypes=[
                 ("PDF・画像", "*.pdf *.png *.jpg *.jpeg *.bmp *.tif *.tiff"),
                 ("すべてのファイル", "*.*"),
             ],
-            parent=window,
+            parent=window, initialdir=image_folder,
         ))
         if not paths:
             return
@@ -1032,48 +1111,40 @@ def run_multi_page_import_gui(
             _refresh()
 
     def _guided_import():
-        """ページ番号入力を省略し、ページ順にPDFを取り込む。"""
+        """ページ順に、ファイル選択ダイアログだけでまとめて取り込む。
+
+        1回の選択で複数ファイルをまとめて選べるため、案内・確認の
+        ポップアップは挟まずページごとに1回だけファイル選択を行う。
+        後から追加のファイルが必要になった場合は「答案画像ファイルを
+        追加」からいつでも追加できる。
+        """
         for page in sorted(expected_pages):
             already = any(batch.exam_page == page for batch in batches)
             if already:
                 continue
-            messagebox.showinfo(
-                "答案ファイルの追加",
-                f"試験ページ {page} のファイルを追加してください。\n"
-                "同じページが複数PDFに分かれている場合は、続けて追加できます。",
-                parent=window,
-            )
-            while True:
-                paths = list(filedialog.askopenfilenames(
-                    title=f"試験ページ {page} のPDF・画像を選択",
-                    filetypes=[
-                        ("PDF・画像", "*.pdf *.png *.jpg *.jpeg *.bmp *.tif *.tiff"),
-                        ("すべてのファイル", "*.*"),
-                    ], parent=window,
-                ))
-                if not paths:
-                    break
-                existing = {str(Path(path).resolve()) for batch in batches for path in batch.source_paths}
-                repeated = [path for path in paths if str(Path(path).resolve()) in existing]
-                if repeated:
-                    messagebox.showerror("重複する取込元", "既に取り込まれているファイルがあります。", parent=window)
-                    continue
-                try:
-                    status_var.set(f"試験ページ {page} を取り込んでいます…")
-                    window.update_idletasks()
-                    batch = import_files_as_batch(page, paths, str(managed_root))
-                    batches.append(batch)
-                    _save()
-                    _refresh(f"batch:{batch.batch_id}")
-                except Exception as exc:
-                    messagebox.showerror("取込エラー", str(exc), parent=window)
-                if not messagebox.askyesno(
-                    "同じページの追加", f"試験ページ {page} に、他のファイルもありますか？",
-                    parent=window,
-                ):
-                    break
-            if page < max(expected_pages):
+            paths = list(filedialog.askopenfilenames(
+                title=f"試験ページ {page} のPDF・画像を選択（複数選択可）",
+                filetypes=[
+                    ("PDF・画像", "*.pdf *.png *.jpg *.jpeg *.bmp *.tif *.tiff"),
+                    ("すべてのファイル", "*.*"),
+                ], parent=window, initialdir=image_folder,
+            ))
+            if not paths:
                 continue
+            existing = {str(Path(path).resolve()) for batch in batches for path in batch.source_paths}
+            repeated = [path for path in paths if str(Path(path).resolve()) in existing]
+            if repeated:
+                messagebox.showerror("重複する取込元", "既に取り込まれているファイルがあります。", parent=window)
+                continue
+            try:
+                status_var.set(f"試験ページ {page} を取り込んでいます…")
+                window.update_idletasks()
+                batch = import_files_as_batch(page, paths, str(managed_root))
+                batches.append(batch)
+                _save()
+                _refresh(f"batch:{batch.batch_id}")
+            except Exception as exc:
+                messagebox.showerror("取込エラー", str(exc), parent=window)
         _refresh()
 
     def _change_page():
@@ -1130,68 +1201,11 @@ def run_multi_page_import_gui(
             _save()
             _refresh()
 
-    def _prepare_selected_page():
-        page = _selected_page()
-        if page is None:
-            messagebox.showwarning("確認", "採点する試験ページを選択してください。", parent=window)
-            return
-        try:
-            active_page[0] = page
-            _save()
-            workspace_root = Path(image_folder) / '_multi_page_pages'
-            if shared_layout_var.get():
-                bootstrap_shared_layout_settings(
-                    image_folder, str(workspace_root),
-                )
-            workspace = prepare_exam_page_workspace(
-                _all_answers(), page,
-                str(workspace_root),
-                image_folder,
-                shared_layout=shared_layout_var.get(),
-            )
-        except Exception as exc:
-            messagebox.showerror("採点準備エラー", str(exc), parent=window)
-            return
-        if on_prepare_page is None:
-            messagebox.showinfo(
-                "採点準備",
-                f"試験ページ {page} の答案を準備しました。\n{workspace}",
-                parent=window,
-            )
-            return
-        window.destroy()
-        on_prepare_page(page, workspace)
-
-    tree.bind("<Double-1>", lambda _event: _prepare_selected_page())
-
-    buttons = tk.Frame(window)
-    buttons.pack(fill=tk.X, padx=12, pady=(0, 8))
     if not manifest_path.exists():
         window.after(50, _guided_import)
-    tk.Button(buttons, text="＋ 試験ページ（手動）", command=_add_page).pack(side=tk.LEFT, padx=(0, 4))
-    tk.Button(buttons, text="＋ PDF・画像を追加", command=_add_files, bg="#C8E6C9").pack(side=tk.LEFT, padx=4)
-    tk.Button(buttons, text="試験ページ変更", command=_change_page).pack(side=tk.LEFT, padx=4)
-    tk.Button(buttons, text="削除", command=_delete_selected).pack(side=tk.LEFT, padx=4)
-    tk.Button(
-        buttons, text="旧集計Excel統合", command=lambda: run_multi_page_merge_gui(window),
-    ).pack(side=tk.RIGHT, padx=4)
-
-    tk.Checkbutton(
-        window,
-        text="学籍番号欄・氏名欄・解答欄の初期設定を全ページで共通にする",
-        variable=shared_layout_var,
-        command=lambda: (_save(), _refresh()),
-        anchor=tk.W,
-        font=(UI_FONT, get_ui_font_size(9)),
-    ).pack(fill=tk.X, padx=12, pady=(0, 6))
-
-    tk.Button(
-        window, text="▶ この試験ページを開いて採点する",
-        command=_prepare_selected_page,
-        bg="#A5D6A7", fg="#263238",
-        activebackground="#81C784", activeforeground="#263238",
-        font=(UI_FONT, get_ui_font_size(10), 'bold'),
-    ).pack(fill=tk.X, padx=12, pady=(0, 6))
+    tk.Button(buttons, text="答案画像ファイルを追加", command=_add_files,
+              bg="#90CAF9", fg="#263238", font=(UI_FONT, get_ui_font_size(11), 'bold'),
+              height=3, wraplength=135).pack(fill=tk.X, pady=(0, 10))
 
     def _close():
         try:

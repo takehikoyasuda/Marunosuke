@@ -198,14 +198,13 @@ class TestGUIStateMachine:
             app._set_processing_state(True)
             buttons = [
                 app._btn_run_box,
-                app._btn_total_pos,
+                app._btn_step2_more,
                 app._btn_run_scoring,
                 app._btn_run_summary,
                 app.desc_setup_btn,
                 app.desc_scoring_btn,
                 app._btn_desc_review,
                 app._btn_select_folder,
-                app._btn_select_pdf,
             ]
             for btn in buttons:
                 assert str(btn["state"]) == "disabled", f"{btn['text']} should be disabled"
@@ -214,7 +213,7 @@ class TestGUIStateMachine:
             # ガード対象外のボタン (desc_setup_btn, フォルダ/PDF選択) のみ normal
             step_guarded_buttons = {
                 app._btn_run_box,       # Step 1
-                app._btn_total_pos,     # Step 2
+                app._btn_step2_more,     # Step 2
                 app._btn_run_scoring,   # Step 2
                 app._btn_run_summary,   # Step 3
                 app.desc_scoring_btn,   # Step 2
@@ -252,7 +251,8 @@ class TestGUIStateMachine:
         try:
             assert app.desc_setup_btn.winfo_manager() == "pack"
             assert app.desc_scoring_btn.winfo_manager() == "pack"
-            assert app._desc_status_frame.winfo_manager() == "pack"
+            # 採点状況の詳細は必要時の確認画面に移したため、トップ画面には常設しない。
+            assert app._desc_status_frame.winfo_manager() == ""
         finally:
             top.destroy()
 

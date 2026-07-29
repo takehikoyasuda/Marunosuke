@@ -649,7 +649,7 @@ class TestProcessingStateAndButtons:
         except tk.TclError:
             pytest.skip("Tkinter not available")
         try:
-            for attr in ("_btn_run_box", "_btn_total_pos",
+            for attr in ("_btn_run_box", "_btn_step2_more",
                          "_btn_run_scoring", "_btn_run_summary"):
                 assert hasattr(app, attr), f"Missing attribute: {attr}"
         finally:
@@ -711,15 +711,24 @@ class TestProcessingStateAndButtons:
             root.destroy()
 
     def test_button_order_step2(self):
-        """Step 2 のボタン順序: 合計点位置設定 → 採点済み答案を生成"""
+        """Step 2 の主要ボタンと、補助設定メニューの中身を確認する。
+
+        合計点位置設定・描画の詳細設定は使用頻度が低いため常設ボタンにせず、
+        _btn_step2_more から開く「⋯」メニューにまとめてある。
+        """
+        import inspect
         import tkinter as tk
         try:
             root, app = self._make_app()
         except tk.TclError:
             pytest.skip("Tkinter not available")
         try:
-            assert "合計点位置設定" in app._btn_total_pos["text"]
             assert "採点済み答案を出力" in app._btn_run_scoring["text"]
+            src = inspect.getsource(app._show_step2_more_menu)
+            assert "合計点位置設定" in src
+            assert "描画の詳細設定" in src
+            assert "self.setup_total_position" in src
+            assert "self._open_rendering_settings" in src
             # return_sheet_btn は廃止されたことを確認
             assert not hasattr(app, "return_sheet_btn")
         finally:

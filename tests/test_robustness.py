@@ -366,12 +366,10 @@ class TestProcessingStateButtons:
         # 処理開始
         app._set_processing_state(True)
         assert str(app._btn_select_folder['state']) == 'disabled'
-        assert str(app._btn_select_pdf['state']) == 'disabled'
 
         # 処理終了
         app._set_processing_state(False)
         assert str(app._btn_select_folder['state']) == 'normal'
-        assert str(app._btn_select_pdf['state']) == 'normal'
 
 
 # ================================================================

@@ -137,14 +137,14 @@ class TestStep1SetupWizard(unittest.TestCase):
 
         app = _make_stub_app(str(self.img_folder))
         with patch('roster_loader.select_roster_gui') as mock_gui:
-            app._wizard_step_roster(self.results_data)
+            app._wizard_step_roster()
         mock_gui.assert_not_called()
         self.assertTrue(any("スキップ" in m for m in app._log_messages))
 
     def test_roster_step_saves_when_selected(self):
         app = _make_stub_app(str(self.img_folder))
         with patch('roster_loader.select_roster_gui', return_value={"1": "a"}):
-            app._wizard_step_roster(self.results_data)
+            app._wizard_step_roster()
         from roster_config import load_roster_config, ROSTER_CONFIG_FILE
         loaded = load_roster_config(str(self.results_data / ROSTER_CONFIG_FILE))
         self.assertEqual(loaded, {"1": "a"})
@@ -152,7 +152,7 @@ class TestStep1SetupWizard(unittest.TestCase):
     def test_roster_step_cancel_does_not_save(self):
         app = _make_stub_app(str(self.img_folder))
         with patch('roster_loader.select_roster_gui', return_value=None):
-            app._wizard_step_roster(self.results_data)
+            app._wizard_step_roster()
         from roster_config import load_roster_config, ROSTER_CONFIG_FILE
         self.assertIsNone(load_roster_config(str(self.results_data / ROSTER_CONFIG_FILE)))
 

@@ -136,12 +136,18 @@ class TestInitialState:
         assert "v0.1.0" in title
 
     def test_window_geometry(self):
-        """初期サイズが設定されている"""
+        """初期サイズが設定されている
+
+        main_gui.MarunosukeGUI.__init__ は create_widgets() の後に
+        fit_window_to_content(self.root, min_width=760, min_height=500) を
+        呼び、コンテンツ量に応じてウィンドウを実サイズへ合わせる（最小値は
+        そのfit_window_to_content呼び出しの引数と一致させること）。
+        """
         # geometry は "WxH+X+Y" 形式
         geom = self.root.geometry()
         w, rest = geom.split("x", 1)
         h = rest.split("+")[0]
-        assert int(w) >= 1000, f"幅が小さすぎます: {w}"
+        assert int(w) >= 760, f"幅が小さすぎます: {w}"
         assert int(h) >= 500, f"高さが小さすぎます: {h}"
 
     def test_brand_icon_is_shown_in_header(self):
@@ -153,7 +159,7 @@ class TestInitialState:
     def test_main_action_buttons_exist(self):
         """主要アクションボタンが存在する"""
         assert hasattr(self.app, '_btn_run_box')
-        assert hasattr(self.app, '_btn_total_pos')
+        assert hasattr(self.app, '_btn_step2_more')
         assert hasattr(self.app, '_btn_run_scoring')
         assert hasattr(self.app, '_btn_run_summary')
         assert hasattr(self.app, 'desc_setup_btn')
@@ -161,10 +167,9 @@ class TestInitialState:
 
     def test_button_labels(self):
         """ボタンのテキストが期待通り"""
-        assert "画像準備" in self.app._btn_run_box["text"]
-        assert "初期設定" in self.app.desc_setup_btn["text"]
-        assert self.app.desc_scoring_btn["text"] == "✏ 採点を開始"
-        assert "合計点位置" in self.app._btn_total_pos["text"]
+        assert "採点準備" in self.app._btn_run_box["text"]
+        assert "採点準備をやり直す" in self.app.desc_setup_btn["text"]
+        assert "採点実行" in self.app.desc_scoring_btn["text"]
         assert "採点済み答案" in self.app._btn_run_scoring["text"]
         assert "集計" in self.app._btn_run_summary["text"]
 
@@ -185,7 +190,7 @@ class TestInitialState:
         step2_buttons = [
             self.app.desc_scoring_btn,
             self.app._btn_desc_review,
-            self.app._btn_total_pos,
+            self.app._btn_step2_more,
             self.app._btn_run_scoring,
         ]
         for btn in step2_buttons:
@@ -210,10 +215,14 @@ class TestInitialState:
         assert self.app.descriptive_enabled.get() is True
 
     def test_descriptive_buttons_visible_by_default(self):
-        """記述式のみモードでは記述ボタンが常に表示される"""
+        """記述式のみモードでは記述ボタンが常に表示される。
+
+        採点状況の詳細（_desc_status_frame）は、必要時の確認画面に
+        移したためトップ画面には常設しない。
+        """
         assert self.app.desc_setup_btn.winfo_manager() == "pack"
         assert self.app.desc_scoring_btn.winfo_manager() == "pack"
-        assert self.app._desc_status_frame.winfo_manager() == "pack"
+        assert self.app._desc_status_frame.winfo_manager() == ""
 
     def test_log_text_exists(self):
         """ログテキストウィジェットが存在する"""
@@ -550,7 +559,7 @@ class TestProcessingState:
         self.root.update_idletasks()
 
         assert self.app._processing is True
-        for btn in [self.app._btn_run_box, self.app._btn_total_pos,
+        for btn in [self.app._btn_run_box, self.app._btn_step2_more,
                      self.app._btn_run_scoring, self.app._btn_run_summary,
                      self.app.desc_setup_btn, self.app.desc_scoring_btn]:
             assert str(btn["state"]) == "disabled"
@@ -576,21 +585,24 @@ class TestProcessingState:
         assert self.app._progress_bar.winfo_manager() == ""
 
     def test_processing_area_height_does_not_change(self):
-        """処理開始・終了でトップ画面のレイアウトを上下へ動かさない。"""
+        """処理開始・終了で処理状況エリアの確保済み高さを変えない。
+
+        処理状況エリア（log_frame）自体は詳細ログを別ウィンドウへ
+        移したためトップ画面には常設しない。それでも、内部の
+        _processing_frame は表示時にレイアウトが上下しないよう、
+        高さ42を要求し続けることを確認する。
+        """
         self.root.update_idletasks()
-        idle_height = self.app._processing_frame.winfo_height()
-        idle_root_height = self.root.winfo_height()
+        idle_height = self.app._processing_frame.winfo_reqheight()
 
         self.app._set_processing_state(True)
         self.root.update_idletasks()
-        busy_height = self.app._processing_frame.winfo_height()
-        busy_root_height = self.root.winfo_height()
+        busy_height = self.app._processing_frame.winfo_reqheight()
 
         self.app._set_processing_state(False)
         self.root.update_idletasks()
 
         assert idle_height == busy_height == 42
-        assert idle_root_height == busy_root_height == self.root.winfo_height()
 
 
 # ================================================================
@@ -614,35 +626,99 @@ class TestSelectFolderChain:
         assert self.app.image_folder_path.get() == ""
 
     @patch("main_gui.filedialog")
-    def test_folder_selected_triggers_chain(self, mock_fd):
-        """フォルダ選択後、_try_auto_restore が呼ばれ、フォルダパスが反映される"""
+    def test_folder_selected_only_sets_path(self, mock_fd):
+        """フォルダ選択は作業スペースの反映と _try_auto_restore のみ行い、
+        画像準備・複数ページ管理は開始しない（Step3で明示的に進める）。
+        """
         tmpdir = tempfile.mkdtemp()
         try:
             Path(tmpdir, "answer.png").touch()
             mock_fd.askdirectory.return_value = tmpdir
             with patch.object(self.app, '_try_auto_restore') as mock_restore, \
-                 patch.object(self.app, '_prepare_images_for_descriptive') as mock_prepare:
+                 patch.object(self.app, '_prepare_images_for_descriptive') as mock_prepare, \
+                 patch.object(self.app, 'run_multi_page_merge') as mock_multi_page:
                 self.app.select_folder()
                 assert self.app.image_folder_path.get() == tmpdir
                 mock_restore.assert_called_once()
-                mock_prepare.assert_called_once_with(auto_start_setup=True)
+                mock_prepare.assert_not_called()
+                mock_multi_page.assert_not_called()
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
-    @patch("main_gui.filedialog")
-    def test_pdf_only_folder_opens_multi_page_manager(self, mock_fd):
-        """PDFだけのフォルダはエラーにせず複数ページ管理へ進む"""
+
+# ================================================================
+# 11. _start_answer_prep — Step3「答案ファイル追加＆採点準備」の分岐
+# ================================================================
+
+class TestStartAnswerPrep:
+    """_start_answer_prep が画像案件・PDF案件を正しく振り分けるか"""
+
+    def setup_method(self):
+        self.root, self.app = _make_gui()
+
+    def teardown_method(self):
+        _destroy_gui(self.root)
+
+    @patch("main_gui.messagebox")
+    def test_requires_folder(self, mock_mb):
+        """作業スペース未選択 → エラー"""
+        self.app._start_answer_prep()
+        mock_mb.showerror.assert_called_once()
+
+    @patch("main_gui.messagebox")
+    def test_requires_pages_confirmed(self, mock_mb):
+        """ページ数未確定 → エラー"""
+        tmpdir = tempfile.mkdtemp()
+        try:
+            self.app.image_folder_path.set(tmpdir)
+            self.app._start_answer_prep()
+            mock_mb.showerror.assert_called_once()
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_image_folder_prepares_directly(self):
+        """画像案件は追加画面を開かず、そのまま採点準備を実行する"""
+        tmpdir = tempfile.mkdtemp()
+        try:
+            Path(tmpdir, "answer.png").touch()
+            self.app.image_folder_path.set(tmpdir)
+            self.app._pages_confirmed = True
+            with patch.object(self.app, '_prepare_images_for_descriptive') as mock_prepare, \
+                 patch.object(self.app, 'run_multi_page_merge') as mock_multi_page:
+                self.app._start_answer_prep()
+                mock_prepare.assert_called_once_with(auto_start_setup=True)
+                mock_multi_page.assert_not_called()
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_pdf_folder_without_import_opens_add_dialog(self):
+        """PDF案件で何も取り込まれていなければ、追加専用画面を開く"""
         tmpdir = tempfile.mkdtemp()
         try:
             Path(tmpdir, "page1.pdf").touch()
-            mock_fd.askdirectory.return_value = tmpdir
-            with patch.object(self.app, '_try_auto_restore'), \
-                 patch.object(self.app, '_prepare_images_for_descriptive') as mock_prepare, \
-                 patch.object(self.app, 'run_multi_page_merge') as mock_multi_page, \
-                 patch.object(self.root, 'after', side_effect=lambda _delay, callback: callback()):
-                self.app.select_folder()
-                assert self.app.image_folder_path.get() == tmpdir
+            self.app.image_folder_path.set(tmpdir)
+            self.app._pages_confirmed = True
+            with patch.object(self.app, '_prepare_images_for_descriptive') as mock_prepare, \
+                 patch.object(self.app, 'run_multi_page_merge') as mock_multi_page:
+                self.app._start_answer_prep()
                 mock_prepare.assert_not_called()
                 mock_multi_page.assert_called_once()
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_pdf_folder_with_import_skips_dialog(self):
+        """PDF案件で既に答案が取り込まれていれば、追加画面を開かず直接
+        採点準備（アクティブページのワークスペース準備）へ進む。
+        """
+        tmpdir = tempfile.mkdtemp()
+        try:
+            Path(tmpdir, "page1.pdf").touch()
+            self.app.image_folder_path.set(tmpdir)
+            self.app._pages_confirmed = True
+            with patch.object(self.app, '_try_continue_multi_page_prep', return_value=True) as mock_continue, \
+                 patch.object(self.app, 'run_multi_page_merge') as mock_multi_page:
+                self.app._start_answer_prep()
+                mock_continue.assert_called_once()
+                mock_multi_page.assert_not_called()
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
