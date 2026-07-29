@@ -80,34 +80,6 @@
 - **用途**: PDF → 画像変換（PDF 入力機能）
 - **⚠ 備考**: AGPL-3.0 ライセンスのため、本パッケージを組み込んだ成果物（exe 版を含む）は AGPL-3.0 の条件に従う必要があります。ソースコードの開示義務が生じます。
 
-### matplotlib
-
-- **ライセンス**: Matplotlib License (PSF ベース、BSD 互換)
-- **著作権**: Copyright (c) 2012- Matplotlib Development Team
-- **URL**: https://github.com/matplotlib/matplotlib
-- **用途**: CTT 分析レポートのグラフ生成
-
-### ReportLab
-
-- **ライセンス**: BSD 3-Clause License
-- **著作権**: Copyright (c) 2000-2026 ReportLab Europe Ltd.
-- **URL**: https://www.reportlab.com/
-- **用途**: CTT 分析 PDF レポート生成
-
----
-
-## ビルドツール
-
-### PyInstaller
-
-- **ライセンス**: GPL-2.0-or-later (Bootloader Exception 付き)
-- **著作権**: Copyright (c) 2010-2026 PyInstaller Development Team
-- **URL**: https://github.com/pyinstaller/pyinstaller
-- **用途**: exe ファイルのビルド
-- **備考**: Bootloader Exception により、PyInstaller で生成された成果物に GPL の制約は及びません
-
----
-
 ## 開発用ツール（配布物には含まれません）
 
 ### pytest

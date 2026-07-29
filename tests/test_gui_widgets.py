@@ -206,9 +206,8 @@ class TestInitialState:
     def test_default_option_values(self):
         """オプションのデフォルト値が正しい"""
         assert self.app.skip_questions.get() == "4"
-        # 記述式のみモードでは記述採点・分析への統合が常に有効
+        # 記述式のみモードでは記述採点が常に有効
         assert self.app.descriptive_enabled.get() is True
-        assert self.app.include_descriptive_in_analysis.get() is True
 
     def test_descriptive_buttons_visible_by_default(self):
         """記述式のみモードでは記述ボタンが常に表示される"""
@@ -225,12 +224,6 @@ class TestInitialState:
     def test_processing_flag_false(self):
         """初期状態で処理中フラグが False"""
         assert self.app._processing is False
-
-    def test_checkbutton_include_desc_analysis_exists(self):
-        """記述採点を分析に含むチェックボックスが存在し、常に disabled(固定ON)"""
-        assert hasattr(self.app, '_chk_include_desc_analysis')
-        assert str(self.app._chk_include_desc_analysis["state"]) == "disabled"
-
 
 # ================================================================
 # 2. validate_inputs — 入力バリデーション

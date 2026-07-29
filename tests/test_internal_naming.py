@@ -11,14 +11,6 @@ def test_gui_class_legacy_aliases():
     assert Mark2GUI is MarunosukeGUI
 
 
-def test_smoke_test_environment_variable_compatibility():
-    from saitensamurai import _smoke_test_requested
-
-    assert _smoke_test_requested({"MARUNOSUKE_SMOKE_TEST": "1"})
-    assert _smoke_test_requested({"SAITENSAMURAI_SMOKE_TEST": "1"})
-    assert not _smoke_test_requested({})
-
-
 def test_new_log_filename(tmp_path):
     from constants import setup_logging
 

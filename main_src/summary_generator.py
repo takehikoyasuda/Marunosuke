@@ -24,10 +24,7 @@ from constants import (
     FINAL_REPORT_FOLDER,
     STUDENT_SUMMARY_FILE,
     EXAM_SUMMARY_FILE,
-    CTT_ANALYSIS_EXCEL_FILE,
-    CTT_ANALYSIS_PDF_FILE,
     SCORED_PDF_FILE,
-    R_EXPORT_FOLDER,
     escape_excel_formula,
     get_excel_font_family,
 )
@@ -356,45 +353,12 @@ def process_descriptive_only_summary(
             except Exception as pdf_e:
                 logger.warning("統合PDF生成エラー: %s", pdf_e)
 
-        # CTT分析レポート生成（記述のみモード: マーク問題なし）
-        ctt_excel_path = final_report / CTT_ANALYSIS_EXCEL_FILE
-        ctt_pdf_path = final_report / CTT_ANALYSIS_PDF_FILE
-        ctt_result = None
-        try:
-            from ctt_analyzer import generate_ctt_analysis
-            ctt_result = generate_ctt_analysis(
-                excel_output_path=ctt_excel_path,
-                pdf_output_path=ctt_pdf_path,
-                descriptive_config=descriptive_config,
-                descriptive_scores=descriptive_scores,
-            )
-        except Exception as ctt_e:
-            logger.warning("CTT分析レポート生成エラー: %s", ctt_e, exc_info=True)
-
-        # R連携エクスポート（記述のみモード）
-        r_export_result = None
-        try:
-            from r_export import export_r_analysis_kit
-            r_export_result = export_r_analysis_kit(
-                output_folder=final_report,
-                descriptive_config=descriptive_config,
-                descriptive_scores=descriptive_scores,
-            )
-        except Exception as r_e:
-            logger.warning("R連携エクスポートエラー: %s", r_e, exc_info=True)
-
         logger.info("")
         logger.info("=" * 60)
         logger.info("サマリー生成完了（記述のみモード）")
         logger.info("=" * 60)
         logger.info("✓ 学生別サマリー: %s", student_summary_path.name)
         logger.info("✓ 試験統計: %s", exam_summary_path.name)
-        if ctt_result and ctt_result.get('success'):
-            logger.info("✓ CTT分析Excel: %s", ctt_excel_path.name)
-            if ctt_result.get('pdf_success'):
-                logger.info("✓ CTT分析PDF: %s", ctt_pdf_path.name)
-        if r_export_result and r_export_result.get('success'):
-            logger.info("✓ R分析キット: %s/", R_EXPORT_FOLDER)
 
         result = {
             "success": True,
@@ -402,16 +366,9 @@ def process_descriptive_only_summary(
             "exam_summary_path": str(exam_summary_path),
             "stats": exam_stats,
         }
-        if ctt_result and ctt_result.get('success'):
-            result['ctt_excel_path'] = str(ctt_excel_path)
-            if ctt_result.get('pdf_success'):
-                result['ctt_pdf_path'] = str(ctt_pdf_path)
-        if r_export_result and r_export_result.get('success'):
-            result['r_export_dir'] = r_export_result['output_dir']
         return result
 
     except Exception as e:
         logger.error("エラー: %s", e, exc_info=True)
         return {"success": False, "error": str(e)}
-
 

@@ -201,8 +201,6 @@ from constants import (
     SCORED_FOLDER, FINAL_REPORT_FOLDER,
     ANSWER_KEY_FILE,
     STUDENT_SUMMARY_FILE, EXAM_SUMMARY_FILE,
-    CTT_ANALYSIS_EXCEL_FILE, CTT_ANALYSIS_PDF_FILE,
-    R_EXPORT_FOLDER,
     READING_RESULTS_FOLDER_NAME, SESSION_STATE_FILE,
     get_rendering_settings, DEFAULT_RENDERING_SETTINGS,
     resource_path,
@@ -312,11 +310,6 @@ class MarunosukeGUI:
                 self._app_icon = tk.PhotoImage(file=icon_png_path)
                 self.root.iconphoto(True, self._app_icon)
 
-            # Windowsではタスクバーとタイトルバー用にICOも指定する。
-            if sys.platform == "win32":
-                icon_ico_path = resource_path("resources/marunosuke-icon.ico")
-                if Path(icon_ico_path).exists():
-                    self.root.iconbitmap(icon_ico_path)
         except Exception:
             pass  # アイコンが見つからない場合はデフォルトのまま
 
@@ -331,9 +324,6 @@ class MarunosukeGUI:
 
         # 記述式のみモード固定のため常にON
         self.descriptive_enabled = tk.BooleanVar(value=True)
-        # 記述採点の結果を分析ファイル（CTT/R）に含むか（常にON）
-        self.include_descriptive_in_analysis = tk.BooleanVar(value=True)
-
         # 採点結果描画の詳細設定（セッション保存/復元対象）
         self.rendering_settings = get_rendering_settings()
 
@@ -658,16 +648,6 @@ class MarunosukeGUI:
             font=(UI_FONT, get_ui_font_size(8)), anchor=tk.W, cursor="hand2"
         ).pack(fill=tk.X, pady=(0, 3))
 
-        # 記述採点を分析に含むチェックボックス（常にON固定）
-        self._chk_include_desc_analysis = tk.Checkbutton(
-            step3, text="採点結果を分析ファイルに含む",
-            variable=self.include_descriptive_in_analysis, bg=SECTION_BG,
-            font=(UI_FONT, get_ui_font_size(8)), anchor=tk.W, cursor="hand2"
-        )
-        self.include_descriptive_in_analysis.set(True)
-        self._chk_include_desc_analysis.config(state=tk.DISABLED)
-        self._chk_include_desc_analysis.pack(fill=tk.X, pady=(0, 3))
-
         # --- 集計実行 + 結果フォルダ（横並び） ---
         self._step3_run_row = tk.Frame(step3, bg=SECTION_BG)
         self._step3_run_row.pack(fill=tk.X, pady=5)
@@ -976,21 +956,12 @@ class MarunosukeGUI:
     def select_pdf(self):
         """PDFファイルを選択し、画像に展開する"""
         if not HAS_PYMUPDF:
-            if getattr(sys, 'frozen', False):
-                messagebox.showerror(
-                    "エラー",
-                    "この実行ファイルではPDF入力機能が利用できません。\n\n"
-                    "PDFを画像に変換してからお使いください。\n"
-                    "（Windowsの「PrintScreen」やPDF閲覧ソフトの\n"
-                    "「画像として保存」機能をご利用ください）"
-                )
-            else:
-                messagebox.showerror(
-                    "エラー",
-                    "PDF入力にはPyMuPDFが必要です。\n\n"
-                    "pip install PyMuPDF\n\n"
-                    "でインストールしてください。"
-                )
+            messagebox.showerror(
+                "エラー",
+                "PDF入力にはPyMuPDFが必要です。\n\n"
+                "pip install PyMuPDF\n\n"
+                "でインストールしてください。"
+            )
             return
         
         pdf_files = filedialog.askopenfilenames(
@@ -2492,12 +2463,6 @@ class MarunosukeGUI:
                     f"・{STUDENT_SUMMARY_FILE} (学生別得点)\n"
                     f"・{EXAM_SUMMARY_FILE} (試験統計)"
                 )
-                if result.get('ctt_excel_path'):
-                    summary += f"\n・{CTT_ANALYSIS_EXCEL_FILE} (古典テスト理論分析Excel)"
-                if result.get('ctt_pdf_path'):
-                    summary += f"\n・{CTT_ANALYSIS_PDF_FILE} (古典テスト理論分析PDF)"
-                if result.get('r_export_dir'):
-                    summary += f"\n・{R_EXPORT_FOLDER}/ (R連携分析キット)"
                 self.root.after(0, lambda: messagebox.showinfo("完了", summary))
             else:
                 err = result.get("error", "不明なエラー") if result else "不明なエラー"

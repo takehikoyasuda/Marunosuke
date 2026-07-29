@@ -13,10 +13,6 @@ joblib>=1.5.0
 # --- Optional: PDF I/O ---
 PyMuPDF>=1.20.0
 
-# --- Optional: CTT Analysis Reports ---
-matplotlib>=3.4.0
-reportlab>=3.6.0
-
 # --- Dev / Test ---
 pytest>=7.0.0
 pytest-cov>=4.0.0

@@ -68,10 +68,7 @@ FINAL_REPORT_FOLDER = "03_Final_Report" # サマリーExcel、統合PDF
 ANSWER_KEY_FILE = "answer_key.xlsx"
 STUDENT_SUMMARY_FILE = "001_student_summary.xlsx"
 EXAM_SUMMARY_FILE = "002_exam_summary.xlsx"
-CTT_ANALYSIS_EXCEL_FILE = "003_CTT_analysis_report.xlsx"   # 古典テスト理論による分析(Excel)
-CTT_ANALYSIS_PDF_FILE = "004_CTT_analysis_report.pdf"      # 古典テスト理論による分析(PDF)
 SCORED_PDF_FILE = "005_scored_all.pdf"   # 統合PDF（採点済み画像まとめ）
-R_EXPORT_FOLDER = "006_R_analysis_kit"   # R連携エクスポート（exametrika分析キット）
 READING_RESULTS_FOLDER_NAME = "reading_results"  # 01_Results内のOMR結果サブフォルダ
 SESSION_STATE_FILE = "session_state.json"         # セッション状態保存ファイル
 
@@ -362,31 +359,6 @@ def get_excel_font_family():
     return "Hiragino Sans" if sys.platform == 'darwin' else "Yu Gothic"
 
 
-# matplotlibで日本語表示に使うフォント候補（先頭から探索し最初に見つかったものを使う）
-JAPANESE_FONT_CANDIDATES = [
-    'Yu Gothic', 'Yu Gothic UI', 'Meiryo', 'MS Gothic',
-    'Hiragino Sans', 'Hiragino Kaku Gothic Pro', 'Hiragino Kaku Gothic ProN',
-    'IPAexGothic', 'Noto Sans CJK JP',
-]
-
-
-def setup_japanese_matplotlib_font():
-    """インストール済みフォントから日本語表示可能なものを選び matplotlib に設定する。
-
-    候補が1つも見つからない場合は sans-serif にフォールバックする
-    （グラフ生成自体は継続し、日本語ラベルが文字化けするだけに留める）。
-    """
-    import matplotlib.font_manager as fm
-    from matplotlib import rcParams
-    available = {f.name for f in fm.fontManager.ttflist}
-    for candidate in JAPANESE_FONT_CANDIDATES:
-        if candidate in available:
-            rcParams['font.family'] = candidate
-            return candidate
-    rcParams['font.family'] = 'sans-serif'
-    return 'sans-serif'
-
-
 # ========================================
 # 汎用ユーティリティ関数
 # ========================================
@@ -484,10 +456,7 @@ def normalize_value(value):
 
 
 def normalize_zero_ten(value):
-    """マークシート選択肢の "10" を "0" に正規化する（0⇔10の後方互換ヘルパー）。
-
-    CTT分析(ctt_analyzer)で使用する。詳細な経緯は ctt_analyzer.py 参照。
-    """
+    """マークシート選択肢の "10" を "0" に正規化する後方互換ヘルパー。"""
     s = str(value).strip()
     return '0' if s == '10' else s
 

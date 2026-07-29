@@ -39,8 +39,6 @@ EXPECTED_SYMBOLS = [
     "ANSWER_KEY_FILE",
     "STUDENT_SUMMARY_FILE",
     "EXAM_SUMMARY_FILE",
-    "CTT_ANALYSIS_EXCEL_FILE",
-    "CTT_ANALYSIS_PDF_FILE",
     "READING_RESULTS_FOLDER_NAME",
     "SESSION_STATE_FILE",
     # --- image_alignment.py ---
@@ -50,30 +48,10 @@ EXPECTED_SYMBOLS = [
     "compute_output_scale",
     # --- summary_generator.py ---
     "process_descriptive_only_summary",
-    # --- ctt_analyzer.py ---
-    "convert_mark2_to_ctt_data",
-    "_sort_choices",
-    "_is_invalid_response",
-    "_is_no_answer",
-    "CTTAnalyzer",
-    "CTTPlotGenerator",
-    "CTTExcelExporter",
-    "CTTPDFReporter",
-    "generate_ctt_analysis",
-    # --- r_export.py ---
-    "export_r_analysis_kit",
-    "R_EXPORT_FOLDER",
-    "R_DATA_CSV",
-    "R_ITEM_INFO_CSV",
-    "R_SCRIPT_FILE",
-    "R_RMD_TEMPLATE_FILE",
     # --- main_gui.py ---
     "SaitenSamuraiGUI",
     "MarunosukeGUI",
     "Mark2GUI",
-    # --- フラグ ---
-    "HAS_MATPLOTLIB",
-    "HAS_REPORTLAB",
 ]
 
 

@@ -14,7 +14,6 @@
 - [Git 運用ガイド（初心者向け）](#git-運用ガイド初心者向け)
 - [コーディング規約](#コーディング規約)
 - [コミット禁止物](#コミット禁止物)
-- [exe ビルド](#exe-ビルド)
 
 ---
 
@@ -111,8 +110,6 @@ Appleが`/Library/Developer/CommandLineTools/`等に同梱している古いTcl/
 │   ├── descriptive_renderer.py  # 記述式採点描画
 │   ├── name_trimmer.py          # 氏名トリミング
 │   ├── summary_generator.py     # Excel サマリー生成
-│   ├── ctt_analyzer.py          # CTT 分析
-│   ├── r_export.py              # R 連携エクスポート
 │   ├── gui_components.py        # サブウィンドウ GUI
 │   └── main_gui.py              # メイン統合 GUI
 ├── tests/                       # pytest テスト（25 ファイル）
@@ -120,12 +117,9 @@ Appleが`/Library/Developer/CommandLineTools/`等に同梱している古いTcl/
 │   └── test_*.py
 ├── resources/                   # アプリリソース
 │   ├── marunosuke-icon.png      # GUIウィンドウ用アイコン
-│   ├── marunosuke-icon.ico      # Windows配布用アイコン
 │   ├── marunosuke-icon.icns     # macOS配布用アイコン
 │   └── marunosuke-logo.png      # README・広報用ロゴ
 ├── .github/workflows/test.yml   # GitHub Actions CI
-├── marunosuke.spec              # PyInstaller 設定
-├── build_exe.bat                # exe ビルドスクリプト
 ├── requirements.txt             # 依存パッケージ定義
 ├── pyrightconfig.json           # 型チェック設定（basic モード）
 ├── LICENSE                      # GPL-3.0
@@ -147,15 +141,12 @@ omr_engine.py             ← constants
 threshold_calibrator.py   ← constants, omr_engine
 mark_checker.py           ← constants, omr_engine
 name_trimmer.py           ← constants
-r_export.py               ← constants            [lazy: ctt_analyzer]
-ctt_analyzer.py           ← constants, scoring_engine
 image_renderer.py         ← constants, scoring_engine, omr_engine
                                                    [lazy: descriptive_scorer]
 descriptive_scorer.py     ← constants, name_trimmer
 descriptive_gui.py        ← constants, descriptive_scorer, name_trimmer
 descriptive_renderer.py   ← constants, descriptive_scorer
 summary_generator.py      ← constants, scoring_engine
-                                                   [lazy: ctt_analyzer, r_export]
 gui_components.py         ← constants, mark_checker, threshold_calibrator
                                                    [lazy: scoring_engine, omr_engine]
 main_gui.py               ← 全モジュール
@@ -304,8 +295,6 @@ marunosuke.run() → saitensamurai.run() → main()
   mark2結果Excelのセル・正答表記・描画はすべて記号側で統一。
 - **データモデル**: `load_template` は先頭行intキーのまま `'span'`（消費行数）と
   `'group_label'`（"1-3"）を付与。グループ2行目以降のエントリは作られません。
-- **CTT/R**: グループ=1項目（項目ID=範囲表記）。key_df の `ExactMatch` 列が True の項目は
-  正答文字列との完全一致で0/1化されます（ctt_analyzer / r_export 共通）。
 - **セッション**: `session_state.json` に `mark_format` を保存。
   形式が一致しないセッションの復元はエラーで中止されます。
 
@@ -484,7 +473,7 @@ git stash pop
 - **エンコーディング**: UTF-8（BOM なし）
 - **docstring**: モジュール先頭に概要と主な機能を記述
 - **ログ出力**: Python 標準 `logging` モジュール経由。各モジュールで `logger = logging.getLogger(__name__)` を定義
-- **パス操作**: `pathlib.Path` を推奨、`resource_path()` で PyInstaller 互換を確保
+- **パス操作**: `pathlib.Path` を推奨し、アプリ内リソースは `resource_path()` で解決
 
 ### 命名
 
@@ -503,7 +492,7 @@ except ImportError:
     HAS_PYMUPDF = False
 ```
 
-PyMuPDF, matplotlib, reportlab はオプション扱いです。
+PyMuPDF はオプション扱いです。
 未インストール時はフラグで分岐し、該当機能を無効化してください。
 
 ---
@@ -519,118 +508,8 @@ PyMuPDF, matplotlib, reportlab はオプション扱いです。
 | `template_coordinates.csv` | 座標パース時のデバッグ CSV |
 | `tmp_checking_dm_nm.csv` | Checker 一時ファイル |
 | `sample_bigfiles/` | 大容量テストデータ |
-| `venv_build/` | exe ビルド用仮想環境 |
-| `dist/` | ビルド出力 |
-| `build/` | PyInstaller 中間出力 |
 | `*.log` | クラッシュログ等 |
 | `tests/tmp_output/` | テスト一時出力 |
 | `.vscode/` | エディタ設定 |
 
 ---
-
-## exe ビルド（Windows 向け）
-
-> **macOS 向けパッケージについて**: 以下は Windows 版 exe のビルド手順です。macOS 向けの単体アプリ配布は現状未対応で、`python main_src/marunosuke.py` でのソース実行のみとなります。
-
-### ビルド手順
-
-```bash
-build_exe.bat
-```
-
-出力: `dist/Marunosuke_v<バージョン>.exe`
-
-### 仕組み
-
-1. `venv_build/` にビルド専用仮想環境を作成
-2. requirements.txt + pyinstaller をインストール
-3. `marunosuke.spec` に従って PyInstaller でビルド
-
-### spec ファイルの構成 (`marunosuke.spec`)
-
-- **エントリポイント**: `main_src/marunosuke.py`
-- **同梱データ**: `resources/marunosuke-icon.*`, `resources/marunosuke-logo.png`
-- **hiddenimports**: main_src の全モジュール + オプション依存
-- **excludes**: 不要なバックエンド (GTK/Qt/Wx)、テスト、開発ツール等
-- **バイナリ除外**: AVIF/WebP プラグイン DLL、FFmpeg DLL
-- **データ除外**: haarcascade XML、matplotlib サンプルデータ
-
-### 軽量化のポイント
-
-- `opencv-python-headless` を使用（highgui/FFmpeg 不要）
-- matplotlib は `backend_agg` と `backend_tkagg` のみ残す
-- matplotlib フォントは DejaVuSans のみ残し、AFM・STIX・CM 等を除外
-- Pillow の未使用フォーマットプラグインを除外
-- 不要な標準ライブラリ (`sqlite3`, `xmlrpc`, `ftplib` 等) を除外
-- ネットワーク系パッケージ (`certifi`, `urllib3`, `requests`) を除外
-
-### リリースビルドの依存関係に関する注意（重要）
-
-`.github/workflows/release.yml` の `Install dependencies` ステップに列挙する
-パッケージは **`requirements.txt` と手動で同期**させる必要がある。
-
-過去に `scikit-learn` がこのリストから漏れていたことがあり、
-`marunosuke.spec` の `collect_all('sklearn')` が「パッケージが
-インストールされていない」ため全て `not found` を返しているにも関わらず
-**PyInstaller のビルド自体は正常終了してしまい**、K-means クラスタリング
-機能が同梱されない壊れた exe がそのまま GitHub Release として公開される
-という事故が起きた（v4.5.1 で発生、v4.5.2 で修正）。
-
-ビルドの exit code だけでは検知できないため、新しい依存を追加した際や
-sklearn 関連の不具合を疑うときは、以下の手順で **exe を実際に起動して
-確認する**こと。
-
-**1. `main_src/saitensamurai.py` に組み込み済みの自己診断フック**
-
-環境変数 `MARUNOSUKE_SMOKE_TEST=1` を設定して exe を起動すると、
-GUI を開かずに `sklearn.cluster.KMeans` を実際に fit し、結果を
-exe と同じフォルダの `smoke_test_result.txt` に書き出して終了する
-（`OK` または `FAIL: <例外内容>`）。console=False ビルドのため
-標準出力ではなくファイル経由で結果を返す。
-旧 `SAITENSAMURAI_SMOKE_TEST=1` も後方互換のため引き続き受け付ける。
-
-**2. release.yml に一時的に追加して使う検証ステップ（v4.5.2 で実際に使用・動作確認済み）**
-
-```powershell
-- name: Smoke test (sklearn/joblib bundling)
-  run: |
-    $exePath = "${{ steps.exe-name.outputs.EXE_PATH }}"
-    $resultPath = Join-Path (Split-Path $exePath) "smoke_test_result.txt"
-    if (Test-Path $resultPath) { Remove-Item $resultPath -Force }
-
-    $env:MARUNOSUKE_SMOKE_TEST = "1"
-    $proc = Start-Process -FilePath $exePath -PassThru
-
-    $waited = 0
-    while (-not (Test-Path $resultPath) -and $waited -lt 60) {
-      Start-Sleep -Seconds 1
-      $waited++
-    }
-
-    if (-not $proc.HasExited) {
-      Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-    }
-
-    if (-not (Test-Path $resultPath)) {
-      Write-Error "スモークテスト結果ファイルが生成されませんでした（${waited}秒待機）。exeの起動に失敗した可能性があります。"
-      exit 1
-    }
-
-    $result = Get-Content $resultPath -Raw
-    Write-Host "Smoke test result: $result"
-    if ($result -notmatch "^OK") {
-      Write-Error "スモークテスト失敗: $result"
-      exit 1
-    }
-```
-
-`Detect exe name` ステップの直後・`Create Release` ステップの直前に挿入する
-（失敗時は exit 1 で job が止まり、Release が作成されないようにするため）。
-恒久的には release.yml に含めず、疑わしいときだけ一時的に追加して確認し、
-確認後は削除する運用とする。
-
-**3. ビルドログでの簡易確認**
-
-exe を起動できない環境では、`Build exe` ステップのログで
-`Hidden import 'sklearn...' not found` が出ていないかを grep するだけでも
-一次確認になる（ただし exe が実際に動作することの保証にはならない）。

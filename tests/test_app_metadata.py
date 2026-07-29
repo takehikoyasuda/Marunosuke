@@ -28,7 +28,6 @@ def test_marunosuke_brand_assets_exist():
     expected_assets = {
         "marunosuke-logo.png",
         "marunosuke-icon.png",
-        "marunosuke-icon.ico",
         "marunosuke-icon.icns",
     }
     assert expected_assets <= {path.name for path in RESOURCE_DIR.iterdir()}
