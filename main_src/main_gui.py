@@ -1870,54 +1870,68 @@ class MarunosukeGUI:
     # ---------------------------------------------------------
 
     def _open_descriptive_review(self):
-        """記述採点の確認ウィンドウを開く"""
+        """記述採点の確認ウィンドウを開く。
+
+        複数ページ案件では、ウィンドウ内の前後ページボタンで閉じずに
+        別の試験ページへ切り替えられるよう、ループして開き直す。
+        """
         if not self.image_folder_path.get():
             messagebox.showerror("エラー", "画像フォルダを選択してください")
             return
 
-        results_data = Path(self.image_folder_path.get()) / RESULTS_FOLDER / RESULTS_DATA_FOLDER
-        config_path = results_data / "descriptive_config.json"
-        scores_path = results_data / "descriptive_scores.json"
-        boxed_folder = Path(self.image_folder_path.get()) / RESULTS_FOLDER / BOXED_FOLDER
+        while True:
+            current_folder = self.image_folder_path.get()
+            results_data = Path(current_folder) / RESULTS_FOLDER / RESULTS_DATA_FOLDER
+            config_path = results_data / "descriptive_config.json"
+            scores_path = results_data / "descriptive_scores.json"
+            boxed_folder = Path(current_folder) / RESULTS_FOLDER / BOXED_FOLDER
 
-        if not config_path.exists():
-            messagebox.showerror("エラー", "採点領域の設定が見つかりません。\n先に「⚙ 初期設定」を実行してください。")
-            return
-        try:
-            from descriptive_scorer import (
-                load_descriptive_config, load_descriptive_scores,
-                DescriptiveReviewGUI,
-            )
-            config = load_descriptive_config(str(config_path))
-            # 採点開始前は得点ファイルがまだ存在しない。設定済みの答案領域を
-            # レビューできるよう、空の得点データとして確認画面を開く。
-            scores_data = (
-                load_descriptive_scores(str(scores_path))
-                if scores_path.exists()
-                else {"version": 1, "scores": {}}
-            )
+            if not config_path.exists():
+                messagebox.showerror("エラー", "採点領域の設定が見つかりません。\n先に「⚙ 初期設定」を実行してください。")
+                return
+            try:
+                from descriptive_scorer import (
+                    load_descriptive_config, load_descriptive_scores,
+                    DescriptiveReviewGUI,
+                )
+                config = load_descriptive_config(str(config_path))
+                # 採点開始前は得点ファイルがまだ存在しない。設定済みの答案領域を
+                # レビューできるよう、空の得点データとして確認画面を開く。
+                scores_data = (
+                    load_descriptive_scores(str(scores_path))
+                    if scores_path.exists()
+                    else {"version": 1, "scores": {}}
+                )
 
-            if not config or scores_data is None:
-                messagebox.showerror("エラー", "設定またはスコアの読み込みに失敗しました。")
+                if not config or scores_data is None:
+                    messagebox.showerror("エラー", "設定またはスコアの読み込みに失敗しました。")
+                    return
+
+                reviewer = DescriptiveReviewGUI(
+                    parent=self.root,
+                    config=config,
+                    scores=scores_data.get("scores", {}),
+                    boxed_folder=str(boxed_folder),
+                    scores_save_path=str(scores_path),
+                    original_image_folder=current_folder,
+                )
+                if reviewer.modified:
+                    self.log_message("✓ 採点結果の確認・修正が完了しました")
+                    self._update_descriptive_status()
+                    self._save_session_state()
+            except Exception as e:
+                self.log_message(f"採点確認エラー: {e}")
+                import traceback
+                self.log_message(traceback.format_exc())
+                messagebox.showerror("エラー", f"採点確認中にエラーが発生しました:\n{e}")
                 return
 
-            reviewer = DescriptiveReviewGUI(
-                parent=self.root,
-                config=config,
-                scores=scores_data.get("scores", {}),
-                boxed_folder=str(boxed_folder),
-                scores_save_path=str(scores_path),
-                original_image_folder=self.image_folder_path.get(),
-            )
-            if reviewer.modified:
-                self.log_message("✓ 採点結果の確認・修正が完了しました")
-                self._update_descriptive_status()
-                self._save_session_state()
-        except Exception as e:
-            self.log_message(f"採点確認エラー: {e}")
-            import traceback
-            self.log_message(traceback.format_exc())
-            messagebox.showerror("エラー", f"採点確認中にエラーが発生しました:\n{e}")
+            offset = reviewer.pending_page_switch
+            if offset is None:
+                return
+            self._navigate_exam_page(offset)
+            if self.image_folder_path.get() == current_folder:
+                return  # 端のページで、これ以上移動できなかった
 
     def _update_descriptive_status(self):
         """記述ステータスパネルの内容を更新する"""
@@ -3038,6 +3052,49 @@ class MarunosukeGUI:
         )
         thread.start()
 
+    def _write_back_student_ids_to_manifest(self, image_folder, student_id_result):
+        """学籍番号OCR確認結果を、複数ページ案件のAnswerPageへ反映する。
+
+        ワークスペース内の画像ファイル名は image_id + 拡張子 なので、
+        student_id_result のキー（ファイル名）から拡張子を除いた文字列が
+        そのまま AnswerPage.image_id と一致する。単一ページ案件では何もしない。
+        """
+        if not student_id_result:
+            return
+        from multi_page_merger import (
+            MULTI_PAGE_MANIFEST_FILE, audit_answer_pages, get_exam_page_for_workspace,
+            load_multi_page_manifest, resolve_multi_page_project_folder,
+            save_multi_page_manifest,
+        )
+        exam_page = get_exam_page_for_workspace(image_folder)
+        if exam_page is None:
+            return
+        project_folder = resolve_multi_page_project_folder(image_folder)
+        manifest_path = (
+            Path(project_folder) / RESULTS_FOLDER / RESULTS_DATA_FOLDER / MULTI_PAGE_MANIFEST_FILE
+        )
+        if not manifest_path.is_file():
+            return
+        batches, audit = load_multi_page_manifest(str(manifest_path))
+        by_stem = {Path(fname).stem: info for fname, info in student_id_result.items()}
+        changed = False
+        for batch in batches:
+            for answer in batch.answer_pages:
+                if answer.exam_page != exam_page:
+                    continue
+                info = by_stem.get(answer.image_id)
+                if info and info.get('text'):
+                    answer.student_id = info['text']
+                    changed = True
+        if not changed:
+            return
+        new_audit = audit_answer_pages(
+            [a for b in batches for a in b.answer_pages], expected_pages=audit.exam_pages,
+        )
+        new_audit.shared_layout = audit.shared_layout
+        new_audit.active_exam_page = audit.active_exam_page
+        save_multi_page_manifest(batches, new_audit, str(manifest_path))
+
     def _run_summary_descriptive_only_thread(self, params, name_images=None, student_id_result=None, roster=None):
         """記述のみモード: サマリー生成スレッド"""
         try:
@@ -3081,6 +3138,7 @@ class MarunosukeGUI:
                     resolve_multi_page_project_folder,
                 )
                 project_folder = resolve_multi_page_project_folder(params['image_folder'])
+                self._write_back_student_ids_to_manifest(params['image_folder'], student_id_result)
                 combined = generate_combined_multi_page_summary(project_folder)
                 if combined.get('success'):
                     combined_note = (

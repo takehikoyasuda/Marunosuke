@@ -220,7 +220,10 @@ def prepare_exam_page_workspace(
     shared_layout: bool = False,
 ) -> str:
     """選択した試験ページの答案画像を既存採点フロー用フォルダへ同期する。"""
-    selected = [answer for answer in answer_pages if answer.exam_page == exam_page]
+    selected = [
+        answer for answer in answer_pages
+        if answer.exam_page == exam_page and getattr(answer, 'status', 'imported') != 'excluded'
+    ]
     if not selected:
         raise ValueError(f"試験ページ {exam_page} に答案画像がありません。")
 
@@ -421,6 +424,8 @@ def audit_answer_pages(
     同一ページ内で同じ学籍番号が複数ある場合は、誤った答案を採用しないよう、その
     ページの関連付けを確定しない。
     """
+    answer_pages = [a for a in answer_pages if getattr(a, 'status', 'imported') != 'excluded']
+
     if expected_pages is None:
         pages = sorted({answer.exam_page for answer in answer_pages})
     else:
@@ -484,6 +489,16 @@ def audit_answer_pages(
     )
 
 
+def toggle_answer_status(batches: List[ImportBatch], image_id: str) -> Optional[AnswerPage]:
+    """指定したAnswerPageの除外状態を切り替える（保存は呼び出し側の責務）。"""
+    for batch in batches:
+        for answer in batch.answer_pages:
+            if answer.image_id == image_id:
+                answer.status = 'imported' if getattr(answer, 'status', 'imported') == 'excluded' else 'excluded'
+                return answer
+    return None
+
+
 def save_multi_page_manifest(
     batches: List[ImportBatch],
     audit: MultiPageAudit,
@@ -536,7 +551,7 @@ def get_multi_page_project_status(folder: str) -> Optional[dict]:
     batches, audit = load_multi_page_manifest(str(manifest))
     answers_by_page = {
         page: [answer for batch in batches for answer in batch.answer_pages
-               if answer.exam_page == page]
+               if answer.exam_page == page and getattr(answer, 'status', 'imported') != 'excluded']
         for page in audit.exam_pages
     }
     page_states = []
@@ -1030,11 +1045,23 @@ def run_multi_page_import_gui(
             )
             for batch in page_batches:
                 names = ', '.join(Path(path).name for path in batch.source_paths)
+                batch_iid = f"batch:{batch.batch_id}"
                 tree.insert(
-                    page_iid, tk.END, iid=f"batch:{batch.batch_id}",
+                    page_iid, tk.END, iid=batch_iid,
                     text=f"取込 {batch.batch_id[:8]}",
                     values=(names, len(batch.answer_pages), '取込済み'),
                 )
+                for answer in batch.answer_pages:
+                    excluded = getattr(answer, 'status', 'imported') == 'excluded'
+                    tree.insert(
+                        batch_iid, tk.END, iid=f"answer:{answer.image_id}",
+                        text=Path(answer.source_path).name,
+                        values=(
+                            answer.student_id or '(未確認)',
+                            answer.exam_page,
+                            '除外中' if excluded else '取込済み',
+                        ),
+                    )
         audit = audit_answer_pages(_all_answers(), expected_pages=sorted(expected_pages))
         status_var.set(
             f"試験ページ: {len(expected_pages)}　取込バッチ: {len(batches)}　"
@@ -1210,11 +1237,83 @@ def run_multi_page_import_gui(
             _save()
             _refresh()
 
+    def _selected_answer():
+        selection = tree.selection()
+        if not selection or not selection[0].startswith('answer:'):
+            return None
+        image_id = selection[0].split(':', 1)[1]
+        return next(
+            (a for b in batches for a in b.answer_pages if a.image_id == image_id), None,
+        )
+
+    def _change_answer_exam_page():
+        answer = _selected_answer()
+        if answer is None:
+            messagebox.showwarning("確認", "変更する答案を選択してください。", parent=window)
+            return
+        page = simpledialog.askinteger(
+            "この答案だけページを変更", "変更後の試験ページ番号:",
+            initialvalue=answer.exam_page, minvalue=1, parent=window,
+        )
+        if page is None or page == answer.exam_page:
+            return
+        if page not in expected_pages:
+            expected_pages.append(page)
+        answer.exam_page = page
+        _save()
+        _refresh(f"answer:{answer.image_id}")
+
+    def _toggle_answer_excluded():
+        answer = _selected_answer()
+        if answer is None:
+            messagebox.showwarning("確認", "対象の答案を選択してください。", parent=window)
+            return
+        if getattr(answer, 'status', 'imported') != 'excluded':
+            if not messagebox.askyesno(
+                "答案を除外",
+                "採点・集計の対象から除外しますか？\n画像ファイルは削除されません。",
+                parent=window,
+            ):
+                return
+        toggle_answer_status(batches, answer.image_id)
+        _save()
+        _refresh(f"answer:{answer.image_id}")
+
+    def _change_page_dispatch():
+        selection = tree.selection()
+        if selection and selection[0].startswith('answer:'):
+            _change_answer_exam_page()
+        else:
+            _change_page()
+
+    def _delete_dispatch():
+        selection = tree.selection()
+        if selection and selection[0].startswith('answer:'):
+            _toggle_answer_excluded()
+        else:
+            _delete_selected()
+
     if not manifest_path.exists():
         window.after(50, _guided_import)
     tk.Button(buttons, text="答案画像ファイルを追加", command=_add_files,
               bg="#90CAF9", fg="#263238", font=(UI_FONT, get_ui_font_size(11), 'bold'),
               height=3, wraplength=135).pack(fill=tk.X, pady=(0, 10))
+    tk.Button(
+        buttons, text="ページを変更", command=_change_page_dispatch,
+        bg="#ECEFF1", fg="#37474F", font=(UI_FONT, get_ui_font_size(9), 'bold'),
+        wraplength=135,
+    ).pack(fill=tk.X, pady=(0, 4))
+    tk.Button(
+        buttons, text="削除／除外", command=_delete_dispatch,
+        bg="#ECEFF1", fg="#37474F", font=(UI_FONT, get_ui_font_size(9), 'bold'),
+        wraplength=135,
+    ).pack(fill=tk.X, pady=(0, 10))
+    tk.Button(
+        buttons, text="監査結果を確認",
+        command=lambda: show_multi_page_audit_dialog(window, image_folder, on_change=_refresh),
+        bg="#FFE082", fg="#5D4037", font=(UI_FONT, get_ui_font_size(9), 'bold'),
+        wraplength=135,
+    ).pack(fill=tk.X, pady=(0, 10))
 
     def _close():
         try:
@@ -1234,6 +1333,148 @@ def run_multi_page_import_gui(
     ).pack(fill=tk.X, padx=12, pady=(0, 12))
     window.protocol("WM_DELETE_WINDOW", _close)
     _refresh()
+
+
+def show_multi_page_audit_dialog(parent, project_folder: str, on_change=None) -> None:
+    """複数ページ答案の監査結果（不足・重複・未確認・想定外）を一覧表示する。
+
+    問題のある答案を選択して「除外／除外解除」で採点・集計の対象から外せる。
+    """
+    from constants import RESULTS_DATA_FOLDER, RESULTS_FOLDER
+
+    manifest_path = Path(project_folder) / RESULTS_FOLDER / RESULTS_DATA_FOLDER / MULTI_PAGE_MANIFEST_FILE
+    if not manifest_path.is_file():
+        messagebox.showinfo("監査結果", "複数ページ答案が設定されていません。", parent=parent)
+        return
+    batches, saved_audit = load_multi_page_manifest(str(manifest_path))
+
+    window = tk.Toplevel(parent)
+    window.title("監査結果を確認")
+
+    tk.Label(
+        window,
+        text=(
+            "ページ不足・重複・学籍番号未確認・想定外の答案を一覧表示します。\n"
+            "答案を選択して「除外／除外解除」を押すと、採点・集計の対象から外せます。"
+        ),
+        justify=tk.LEFT, anchor=tk.W, font=(UI_FONT, get_ui_font_size(9)),
+    ).pack(fill=tk.X, padx=12, pady=(10, 6))
+
+    tree = ttk.Treeview(window, columns=('detail',), show='tree headings')
+    tree.heading('#0', text='カテゴリ / 答案')
+    tree.heading('detail', text='詳細')
+    tree.column('#0', width=280)
+    tree.column('detail', width=380)
+    tree.pack(fill=tk.BOTH, expand=True, padx=12, pady=(0, 6))
+
+    status_var = tk.StringVar()
+    tk.Label(
+        window, textvariable=status_var, anchor=tk.W,
+        font=(UI_FONT, get_ui_font_size(9)), fg="#455A64",
+    ).pack(fill=tk.X, padx=12)
+
+    def _answer_by_id(image_id):
+        return next(
+            (a for b in batches for a in b.answer_pages if a.image_id == image_id), None,
+        )
+
+    def _current_audit():
+        return audit_answer_pages(
+            [a for b in batches for a in b.answer_pages], expected_pages=saved_audit.exam_pages,
+        )
+
+    def _refresh():
+        tree.delete(*tree.get_children())
+        audit = _current_audit()
+
+        missing_node = tree.insert('', tk.END, text="ページ不足", open=True)
+        for student_id, pages in audit.missing_pages.items():
+            tree.insert(
+                missing_node, tk.END,
+                text=student_id, values=(f"不足ページ: {', '.join(map(str, pages))}",),
+            )
+
+        dup_node = tree.insert('', tk.END, text="同一ページ内の重複", open=True)
+        for page, by_student in audit.duplicates.items():
+            for student_id, image_ids in by_student.items():
+                for image_id in image_ids:
+                    answer = _answer_by_id(image_id)
+                    detail = f"ページ{page} / 学籍番号{student_id}"
+                    if answer:
+                        detail += f" / {Path(answer.source_path).name}"
+                    tree.insert(
+                        dup_node, tk.END, iid=f"answer:{image_id}",
+                        text=image_id[:8], values=(detail,),
+                    )
+
+        unmatched_node = tree.insert('', tk.END, text="学籍番号未確認", open=True)
+        for image_id in audit.unmatched_image_ids:
+            answer = _answer_by_id(image_id)
+            detail = (
+                f"試験ページ{answer.exam_page} / {Path(answer.source_path).name}"
+                if answer else ""
+            )
+            tree.insert(
+                unmatched_node, tk.END, iid=f"answer:{image_id}",
+                text=image_id[:8], values=(detail,),
+            )
+
+        unexpected_node = tree.insert('', tk.END, text="名簿外ID・想定外ページ", open=True)
+        for student_id in audit.unexpected_student_ids:
+            tree.insert(unexpected_node, tk.END, text=f"名簿外ID: {student_id}", values=("",))
+        for image_id, page in audit.unexpected_exam_pages.items():
+            answer = _answer_by_id(image_id)
+            detail = (
+                f"想定外ページ{page} / {Path(answer.source_path).name}"
+                if answer else f"想定外ページ{page}"
+            )
+            tree.insert(
+                unexpected_node, tk.END, iid=f"answer:{image_id}",
+                text=image_id[:8], values=(detail,),
+            )
+
+        status_var.set(
+            f"ページ不足: {len(audit.missing_pages)}件　"
+            f"重複: {sum(len(v) for v in audit.duplicates.values())}件　"
+            f"学籍番号未確認: {len(audit.unmatched_image_ids)}件　"
+            f"名簿外/想定外: {len(audit.unexpected_student_ids) + len(audit.unexpected_exam_pages)}件"
+        )
+
+    def _toggle_selected():
+        selection = tree.selection()
+        if not selection or not selection[0].startswith('answer:'):
+            messagebox.showwarning("確認", "対象の答案を選択してください。", parent=window)
+            return
+        image_id = selection[0].split(':', 1)[1]
+        answer = _answer_by_id(image_id)
+        if answer is None:
+            return
+        if getattr(answer, 'status', 'imported') != 'excluded':
+            if not messagebox.askyesno(
+                "答案を除外",
+                "採点・集計の対象から除外しますか？\n画像ファイルは削除されません。",
+                parent=window,
+            ):
+                return
+        toggle_answer_status(batches, image_id)
+        new_audit = _current_audit()
+        new_audit.shared_layout = saved_audit.shared_layout
+        new_audit.active_exam_page = saved_audit.active_exam_page
+        save_multi_page_manifest(batches, new_audit, str(manifest_path))
+        _refresh()
+        if on_change is not None:
+            on_change()
+
+    btn_frame = tk.Frame(window)
+    btn_frame.pack(fill=tk.X, padx=12, pady=(0, 12))
+    tk.Button(
+        btn_frame, text="選択した答案を除外／除外解除", command=_toggle_selected,
+        bg="#FFCCBC", fg="#3E2723", font=(UI_FONT, get_ui_font_size(9), 'bold'),
+    ).pack(side=tk.LEFT)
+    tk.Button(btn_frame, text="閉じる", command=window.destroy).pack(side=tk.RIGHT)
+
+    _refresh()
+    fit_window_to_content(window, min_width=700, min_height=500)
 
 
 def run_multi_page_merge_gui(parent: Optional[tk.Tk] = None) -> Optional[str]:

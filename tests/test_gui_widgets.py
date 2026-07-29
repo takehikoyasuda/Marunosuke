@@ -925,3 +925,149 @@ class TestCombinedSummaryMissingStudentId:
                 mock_go.assert_called_once_with(1)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+# ================================================================
+# 15. 学籍番号OCR結果のAnswerPageへの書き戻し
+# ================================================================
+
+class TestWriteBackStudentIds:
+    """_write_back_student_ids_to_manifest() が複数ページ案件のAnswerPageへ
+    学籍番号OCR確認結果を正しく反映するか検証する"""
+
+    def setup_method(self):
+        self.root, self.app = _make_gui()
+
+    def teardown_method(self):
+        _destroy_gui(self.root)
+
+    def _setup_project(self, tmpdir):
+        from constants import RESULTS_DATA_FOLDER, RESULTS_FOLDER
+        from multi_page_merger import (
+            ImportBatch, MultiPageAudit, MULTI_PAGE_MANIFEST_FILE,
+            MULTI_PAGE_PROJECT_POINTER_FILE, AnswerPage, save_multi_page_manifest,
+        )
+        project = Path(tmpdir) / "project"
+        workspace = project / "_multi_page_pages" / "page_001"
+        workspace.mkdir(parents=True)
+        (workspace / MULTI_PAGE_PROJECT_POINTER_FILE).write_text(
+            json.dumps({
+                "version": 1, "project_folder": str(project.resolve()), "exam_page": 1,
+            }),
+            encoding="utf-8",
+        )
+        answer = AnswerPage(
+            image_id="abc123", image_path=str(workspace / "abc123.png"),
+            exam_page=1, batch_id="batch-1",
+            source_path=str(tmpdir / "scan.pdf"), source_page=1,
+        )
+        batch = ImportBatch(batch_id="batch-1", exam_page=1, answer_pages=[answer])
+        manifest_path = project / RESULTS_FOLDER / RESULTS_DATA_FOLDER / MULTI_PAGE_MANIFEST_FILE
+        save_multi_page_manifest([batch], MultiPageAudit(exam_pages=[1]), str(manifest_path))
+        return project, workspace, manifest_path
+
+    def test_writes_confirmed_student_id_into_manifest(self):
+        from multi_page_merger import load_multi_page_manifest
+        tmpdir = tempfile.mkdtemp()
+        try:
+            project, workspace, manifest_path = self._setup_project(Path(tmpdir))
+
+            self.app._write_back_student_ids_to_manifest(
+                str(workspace), {"abc123.png": {"text": "1001", "edited": True}},
+            )
+
+            batches, _ = load_multi_page_manifest(str(manifest_path))
+            assert batches[0].answer_pages[0].student_id == "1001"
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_single_page_project_is_not_touched(self):
+        """単一ページ案件（ポインタファイル無し）では何もしない"""
+        tmpdir = tempfile.mkdtemp()
+        try:
+            with patch('multi_page_merger.load_multi_page_manifest') as mock_load:
+                self.app._write_back_student_ids_to_manifest(
+                    tmpdir, {"abc123.png": {"text": "1001"}},
+                )
+                mock_load.assert_not_called()
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_empty_student_id_result_is_noop(self):
+        with patch('multi_page_merger.get_exam_page_for_workspace') as mock_get_page:
+            self.app._write_back_student_ids_to_manifest("/tmp/whatever", {})
+            mock_get_page.assert_not_called()
+
+
+# ================================================================
+# 16. 採点結果確認画面のページ切替（軽量案）
+# ================================================================
+
+class TestDescriptiveReviewPageSwitch:
+    """_open_descriptive_review が pending_page_switch を見てページを
+    切り替え、閉じずにループし続けるか検証する"""
+
+    def setup_method(self):
+        self.root, self.app = _make_gui()
+
+    def teardown_method(self):
+        _destroy_gui(self.root)
+
+    def test_switches_page_then_stops_when_pending_is_none(self):
+        from constants import RESULTS_DATA_FOLDER, RESULTS_FOLDER
+        tmpdir1 = tempfile.mkdtemp()
+        tmpdir2 = tempfile.mkdtemp()
+        try:
+            for folder in (tmpdir1, tmpdir2):
+                data = Path(folder, RESULTS_FOLDER, RESULTS_DATA_FOLDER)
+                data.mkdir(parents=True)
+                (data / "descriptive_config.json").write_text(
+                    '{"questions": []}', encoding="utf-8",
+                )
+            self.app.image_folder_path.set(tmpdir1)
+
+            reviewers = [
+                MagicMock(modified=False, pending_page_switch=1),
+                MagicMock(modified=False, pending_page_switch=None),
+            ]
+
+            def fake_navigate(offset):
+                self.app.image_folder_path.set(tmpdir2)
+
+            with patch('descriptive_scorer.DescriptiveReviewGUI', side_effect=reviewers) as mock_cls, \
+                 patch('descriptive_scorer.load_descriptive_config', return_value={"questions": []}), \
+                 patch('descriptive_scorer.load_descriptive_scores',
+                       return_value={"version": 1, "scores": {}}), \
+                 patch.object(self.app, '_navigate_exam_page', side_effect=fake_navigate) as mock_nav:
+                self.app._open_descriptive_review()
+
+            assert mock_cls.call_count == 2
+            mock_nav.assert_called_once_with(1)
+        finally:
+            shutil.rmtree(tmpdir1, ignore_errors=True)
+            shutil.rmtree(tmpdir2, ignore_errors=True)
+
+    def test_stops_when_navigation_cannot_move(self):
+        """端のページで_navigate_exam_pageが移動できなかった場合、
+        同じフォルダのまま再度開こうとせず終了する"""
+        from constants import RESULTS_DATA_FOLDER, RESULTS_FOLDER
+        tmpdir = tempfile.mkdtemp()
+        try:
+            data = Path(tmpdir, RESULTS_FOLDER, RESULTS_DATA_FOLDER)
+            data.mkdir(parents=True)
+            (data / "descriptive_config.json").write_text('{"questions": []}', encoding="utf-8")
+            self.app.image_folder_path.set(tmpdir)
+
+            reviewer = MagicMock(modified=False, pending_page_switch=1)
+
+            with patch('descriptive_scorer.DescriptiveReviewGUI', return_value=reviewer) as mock_cls, \
+                 patch('descriptive_scorer.load_descriptive_config', return_value={"questions": []}), \
+                 patch('descriptive_scorer.load_descriptive_scores',
+                       return_value={"version": 1, "scores": {}}), \
+                 patch.object(self.app, '_navigate_exam_page') as mock_nav:
+                self.app._open_descriptive_review()
+
+            assert mock_cls.call_count == 1
+            mock_nav.assert_called_once_with(1)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)

@@ -4000,6 +4000,7 @@ class DescriptiveReviewGUI:
         self.original_image_folder = original_image_folder
         self.questions = config.get("questions", [])
         self.modified = False
+        self.pending_page_switch: Optional[int] = None
         self._thumb_cache: dict = {}
         self._photo_refs: list = []
         self._thumb_size = self.THUMB_SIZE_DEFAULT  # スライダーで変更可能
@@ -4110,6 +4111,21 @@ class DescriptiveReviewGUI:
         tk.Label(zoom_bar, textvariable=self._review_zoom_label,
                  font=(UI_FONT, get_ui_font_size(9), "bold"), bg="#37474F", fg="#FFD54F",
                  width=8, anchor=tk.CENTER).pack(side=tk.LEFT, padx=2)
+
+        # 複数ページ案件のみ、ページを閉じずに前後の試験ページへ切り替えられる
+        # ボタンを表示する（単一ページ案件では原本フォルダにポインタファイルが
+        # 無いため get_exam_page_for_workspace が None を返し、表示されない）。
+        if self.original_image_folder:
+            from multi_page_merger import get_exam_page_for_workspace
+            if get_exam_page_for_workspace(self.original_image_folder) is not None:
+                tk.Button(
+                    zoom_bar, text="次ページ ▶", command=lambda: self._switch_page(1),
+                    font=(UI_FONT, get_ui_font_size(8)),
+                ).pack(side=tk.RIGHT, padx=(4, 0))
+                tk.Button(
+                    zoom_bar, text="◀ 前ページ", command=lambda: self._switch_page(-1),
+                    font=(UI_FONT, get_ui_font_size(8)),
+                ).pack(side=tk.RIGHT)
 
         # スクロール可能キャンバス
         self._canvas = tk.Canvas(right, bg="#FFFFFF", highlightthickness=0)
@@ -4691,27 +4707,44 @@ class DescriptiveReviewGUI:
             messagebox.showerror("保存エラー", f"保存に失敗しました:\n{e}", parent=self.win)
             return False
 
+    def _confirm_pending_changes(self) -> bool:
+        """未保存の変更があれば保存するか確認する。続行してよければTrue。"""
+        if not self.modified:
+            return True
+        answer = _ask_three_way_japanese(
+            "確認",
+            "変更が保存されていません。\n保存してから閉じますか？",
+            parent=self.win,
+            yes_text="保存して閉じる",
+            no_text="保存せず閉じる",
+            cancel_text="確認画面に戻る",
+        )
+        if answer is None:
+            # キャンセル → 何もしない
+            return False
+        if answer:
+            # 「はい」→ 保存試行、失敗なら続行しない
+            return self._save()
+        return True
+
     def _on_close(self):
         """ウィンドウを閉じる（保存失敗時は閉じない）"""
-        if self.modified:
-            answer = _ask_three_way_japanese(
-                "確認",
-                "変更が保存されていません。\n保存してから閉じますか？",
-                parent=self.win,
-                yes_text="保存して閉じる",
-                no_text="保存せず閉じる",
-                cancel_text="確認画面に戻る",
-            )
-            if answer is None:
-                # キャンセル → 何もしない
-                return
-            if answer:
-                # 「はい」→ 保存試行、失敗なら閉じない
-                if not self._save():
-                    return
+        if not self._confirm_pending_changes():
+            return
         # スクロールバインドの解除（残留するとTclError）
         try:
             self._canvas.unbind_all("<MouseWheel>")
         except Exception:
             pass
+        self.win.destroy()
+
+    def _switch_page(self, offset: int):
+        """未保存の変更を確認してから、前後の試験ページへ切り替える。"""
+        if not self._confirm_pending_changes():
+            return
+        try:
+            self._canvas.unbind_all("<MouseWheel>")
+        except Exception:
+            pass
+        self.pending_page_switch = offset
         self.win.destroy()

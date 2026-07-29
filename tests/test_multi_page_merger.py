@@ -163,6 +163,36 @@ class TestAnswerPageAudit(unittest.TestCase):
         self.assertEqual(audit.missing_pages["1001"], [1, 2])
         self.assertEqual(audit.missing_pages["1002"], [1])
 
+    def test_excluded_answers_are_ignored_by_audit(self):
+        """status='excluded' の答案は監査対象から除外される"""
+        from multi_page_merger import audit_answer_pages
+        excluded_duplicate = self._answer("b", 1, "1001", batch_id="batch-2")
+        excluded_duplicate.status = 'excluded'
+        answers = [
+            self._answer("a", 1, "1001"),
+            excluded_duplicate,
+        ]
+
+        audit = audit_answer_pages(answers, expected_pages=[1])
+
+        self.assertTrue(audit.is_ready)
+        self.assertEqual(audit.associations["1001"], {"1": "a"})
+        self.assertEqual(audit.duplicates, {})
+
+    def test_toggle_answer_status_excludes_and_restores(self):
+        from multi_page_merger import ImportBatch, toggle_answer_status
+        answer = self._answer("a", 1, "1001")
+        batch = ImportBatch(batch_id="batch-1", exam_page=1, answer_pages=[answer])
+
+        toggled = toggle_answer_status([batch], "a")
+        self.assertIs(toggled, answer)
+        self.assertEqual(answer.status, 'excluded')
+
+        toggle_answer_status([batch], "a")
+        self.assertEqual(answer.status, 'imported')
+
+        self.assertIsNone(toggle_answer_status([batch], "does-not-exist"))
+
     def test_roster_detects_absent_and_unknown_students(self):
         from multi_page_merger import audit_answer_pages
         answers = [
@@ -255,6 +285,28 @@ class TestAnswerPageAudit(unittest.TestCase):
         self.assertEqual([path.name for path in images], ["answer-2.png"])
         self.assertEqual(resolve_multi_page_project_folder(workspace), str(project.resolve()))
 
+    def test_excluded_answer_is_not_copied_to_workspace(self):
+        from PIL import Image
+        from multi_page_merger import prepare_exam_page_workspace
+        project = self.test_dir / "project"
+        project.mkdir()
+        source1 = self.test_dir / "p1.png"
+        source2 = self.test_dir / "p2.png"
+        Image.new("RGB", (4, 4), "red").save(source1)
+        Image.new("RGB", (4, 4), "blue").save(source2)
+        kept = self._answer("kept", 1, "1001")
+        excluded = self._answer("excluded", 1, "1002")
+        kept.image_path = str(source1)
+        excluded.image_path = str(source2)
+        excluded.status = 'excluded'
+
+        workspace = prepare_exam_page_workspace(
+            [kept, excluded], 1, str(project / "_multi_page_pages"), str(project),
+        )
+
+        images = list(Path(workspace).glob("*.png"))
+        self.assertEqual([path.name for path in images], ["kept.png"])
+
     def test_shared_layout_is_published_and_applied_to_another_page(self):
         from constants import RESULTS_DATA_FOLDER, RESULTS_FOLDER
         from multi_page_merger import (
@@ -324,6 +376,23 @@ class TestAnswerPageAudit(unittest.TestCase):
         self.assertTrue(
             (page2 / RESULTS_FOLDER / RESULTS_DATA_FOLDER / "descriptive_config.json").exists()
         )
+
+    def test_excluded_answers_are_not_counted_in_project_status(self):
+        from constants import RESULTS_DATA_FOLDER, RESULTS_FOLDER
+        from multi_page_merger import (
+            MultiPageAudit, create_import_batch, get_multi_page_project_status,
+            save_multi_page_manifest,
+        )
+        project = self.test_dir / "project"
+        manifest = project / RESULTS_FOLDER / RESULTS_DATA_FOLDER / "multi_page_manifest.json"
+        batch = create_import_batch(1, {"p1.pdf": ["a.png", "b.png"]}, batch_id="b1")
+        batch.answer_pages[1].status = 'excluded'
+        audit = MultiPageAudit(exam_pages=[1], active_exam_page=1)
+        save_multi_page_manifest([batch], audit, str(manifest))
+
+        status = get_multi_page_project_status(str(project))
+
+        self.assertEqual(status['pages'][0]['answers'], 1)
 
     def test_all_page_summaries_are_combined_automatically(self):
         from constants import FINAL_REPORT_FOLDER, RESULTS_DATA_FOLDER, RESULTS_FOLDER, STUDENT_SUMMARY_FILE
