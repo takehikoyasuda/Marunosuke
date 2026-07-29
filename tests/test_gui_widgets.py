@@ -618,6 +618,7 @@ class TestSelectFolderChain:
         """フォルダ選択後、_try_auto_restore が呼ばれ、フォルダパスが反映される"""
         tmpdir = tempfile.mkdtemp()
         try:
+            Path(tmpdir, "answer.png").touch()
             mock_fd.askdirectory.return_value = tmpdir
             with patch.object(self.app, '_try_auto_restore') as mock_restore, \
                  patch.object(self.app, '_prepare_images_for_descriptive') as mock_prepare:
@@ -625,5 +626,23 @@ class TestSelectFolderChain:
                 assert self.app.image_folder_path.get() == tmpdir
                 mock_restore.assert_called_once()
                 mock_prepare.assert_called_once_with(auto_start_setup=True)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    @patch("main_gui.filedialog")
+    def test_pdf_only_folder_opens_multi_page_manager(self, mock_fd):
+        """PDFだけのフォルダはエラーにせず複数ページ管理へ進む"""
+        tmpdir = tempfile.mkdtemp()
+        try:
+            Path(tmpdir, "page1.pdf").touch()
+            mock_fd.askdirectory.return_value = tmpdir
+            with patch.object(self.app, '_try_auto_restore'), \
+                 patch.object(self.app, '_prepare_images_for_descriptive') as mock_prepare, \
+                 patch.object(self.app, 'run_multi_page_merge') as mock_multi_page, \
+                 patch.object(self.root, 'after', side_effect=lambda _delay, callback: callback()):
+                self.app.select_folder()
+                assert self.app.image_folder_path.get() == tmpdir
+                mock_prepare.assert_not_called()
+                mock_multi_page.assert_called_once()
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)

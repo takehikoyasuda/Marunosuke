@@ -153,7 +153,7 @@ def draw_descriptive_on_image(
     for q in config["questions"]:
         q_id = q["id"]
         region = q["region"]  # [left, top, right, bottom]
-        aspect = q["aspect"]
+        aspect = q.get("aspect", 1)
         max_score = q["max_score"]
         score = scores_for_image.get(q_id)
 
@@ -208,7 +208,7 @@ def draw_descriptive_on_image(
         # 表示項目の決定
         d_show_mark = rs.get('descriptive_show_mark', True)
         d_show_score = rs.get('descriptive_show_score', True)
-        d_show_aspect = rs.get('descriptive_show_aspect', True)
+        d_show_aspect = False
         
         score_text = str(score)
         aspect_text = number_to_circled(aspect)
@@ -335,7 +335,7 @@ def draw_combined_total(
     aspect_max_scores = dict(mark_scoring_result['aspect_max_scores'])
 
     for q in config["questions"]:
-        asp = q["aspect"]
+        asp = q.get("aspect", 1)
         if asp not in aspect_max_scores:
             aspect_max_scores[asp] = 0
         if asp not in aspect_scores:

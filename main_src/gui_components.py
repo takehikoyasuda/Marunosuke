@@ -168,7 +168,6 @@ class RenderingSettingsGUI:
         for text, var in [
             ("○×△マークを表示", self.var_desc_show_mark),
             ("得点を表示", self.var_desc_show_score),
-            ("観点を表示", self.var_desc_show_aspect),
             ("生徒向けコメントを表示", self.var_desc_show_comment),
         ]:
             tk.Checkbutton(desc_chk_frame, text=text, variable=var,
@@ -231,7 +230,7 @@ class RenderingSettingsGUI:
             'descriptive_opacity': self.var_desc_opacity.get(),
             'descriptive_show_mark': self.var_desc_show_mark.get(),
             'descriptive_show_score': self.var_desc_show_score.get(),
-            'descriptive_show_aspect': self.var_desc_show_aspect.get(),
+            'descriptive_show_aspect': False,
             'descriptive_show_comment': self.var_desc_show_comment.get(),
         }
 
@@ -247,4 +246,3 @@ class RenderingSettingsGUI:
         """キャンセル — 変更せずに閉じる"""
         self.window.grab_release()
         self.window.destroy()
-

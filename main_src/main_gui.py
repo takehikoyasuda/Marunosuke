@@ -519,6 +519,56 @@ class MarunosukeGUI:
             "全画像の同じ位置をOCRして多数決と異なるものを警告表示します。",
         )
 
+        # 複数ページ案件ダッシュボード（ファイル読込段階から常時確認可能）
+        self._multi_page_dashboard = tk.Frame(input_group, bg="#E8EAF6", padx=8, pady=6)
+        self._multi_page_dashboard.pack(fill=tk.X, pady=(5, 1))
+        tk.Label(
+            self._multi_page_dashboard, text="複数ページ答案",
+            bg="#E8EAF6", fg="#283593", font=FONT_BOLD,
+        ).pack(side=tk.LEFT, padx=(0, 8))
+        self._btn_prev_exam_page = tk.Button(
+            self._multi_page_dashboard, text="◀ 前ページ",
+            command=lambda: self._navigate_exam_page(-1),
+            bg="#C5CAE9", fg="#263238", relief=tk.FLAT, font=FONT_NORMAL,
+            state=tk.DISABLED,
+        )
+        self._btn_prev_exam_page.pack(side=tk.LEFT, padx=2)
+        self._btn_next_exam_page = tk.Button(
+            self._multi_page_dashboard, text="次ページ ▶",
+            command=lambda: self._navigate_exam_page(1),
+            bg="#C5CAE9", fg="#263238", relief=tk.FLAT, font=FONT_NORMAL,
+            state=tk.DISABLED,
+        )
+        self._btn_next_exam_page.pack(side=tk.LEFT, padx=2)
+        self._multi_page_status_label = tk.Label(
+            self._multi_page_dashboard,
+            text="未設定 — PDFフォルダを選ぶか、右の管理ボタンから開始",
+            bg="#E8EAF6", fg="#455A64", anchor=tk.W,
+            font=(UI_FONT, get_ui_font_size(8)),
+        )
+        self._multi_page_status_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=8)
+        self._btn_multi_page_merge = tk.Button(
+            self._multi_page_dashboard, text="📚 ページを管理",
+            command=self.run_multi_page_merge,
+            bg="#C5CAE9", fg="#263238",
+            activebackground="#9FA8DA", activeforeground="#263238",
+            relief=tk.FLAT, font=FONT_BOLD,
+        )
+        self._btn_multi_page_merge.pack(side=tk.RIGHT)
+        self._btn_combined_summary = tk.Button(
+            self._multi_page_dashboard, text="📊 全ページ集計",
+            command=self._generate_or_explain_combined_summary,
+            bg="#FFE082", fg="#3E2723",
+            activebackground="#FFD54F", activeforeground="#3E2723",
+            relief=tk.FLAT, font=FONT_BOLD,
+        )
+        self._btn_combined_summary.pack(side=tk.RIGHT, padx=(0, 5))
+        _ToolTip(
+            self._btn_combined_summary,
+            "全ページのページ別集計が揃ったら、学籍番号をキーに\n"
+            "得点・総合計・全ページ試験統計を1つのExcelへ統合します。",
+        )
+
         # ---------------------------------------------------------
         # 2. アクションパイプライン (3カラム)
         # ---------------------------------------------------------
@@ -656,20 +706,6 @@ class MarunosukeGUI:
         self.open_results_btn = tk.Button(self._step3_run_row, text="📁", command=self.open_results_folder, bg=BTN_GRAY, relief=tk.FLAT, state=tk.DISABLED, width=3, font=(UI_FONT, get_ui_font_size(10)))
         self.open_results_btn.pack(side=tk.LEFT, padx=(3, 0), fill=tk.Y)
 
-        # --- 複数ページ統合（既存の集計Excel同士を学籍番号で統合する単発ツール） ---
-        self._btn_multi_page_merge = tk.Button(
-            step3, text="🔗 複数ページ統合（補助）", command=self.run_multi_page_merge,
-            bg="#ECEFF1", fg="#455A64", relief=tk.FLAT, font=FONT_NORMAL,
-        )
-        self._btn_multi_page_merge.pack(fill=tk.X, pady=(5, 0))
-        _ToolTip(
-            self._btn_multi_page_merge,
-            "1人の学生が複数ページ提出する場合、ページ番号ごとに\n"
-            "別々に生成した集計Excel（学籍番号OCR確認済み）を、\n"
-            "学籍番号をキーに1つに統合します。\n"
-            "画像フォルダの選択状態とは無関係に使えます。",
-        )
-
         # --- 初期化完了後の処理 ---
         # Step2/3 のボタンを初期状態で無効化（Step進行ガード）
         self._update_step_availability()
@@ -714,6 +750,7 @@ class MarunosukeGUI:
             self._set_step2_enabled(False)
             self._set_step3_enabled(False)
             self._update_progress_guide()
+            self._update_multi_page_dashboard()
             return
 
         base = Path(img_folder)
@@ -747,6 +784,136 @@ class MarunosukeGUI:
             self.last_results_folder = str(final)
             self.open_results_btn.config(state=tk.NORMAL)
         self._update_progress_guide()
+        self._update_multi_page_dashboard()
+
+    def _update_multi_page_dashboard(self):
+        """トップ画面の複数ページ数・現在ページ・進捗を更新する。"""
+        if not hasattr(self, '_multi_page_status_label'):
+            return
+        folder = self.image_folder_path.get()
+        if not folder:
+            self._multi_page_status_label.config(
+                text="未設定 — PDFフォルダを選ぶか、右の管理ボタンから開始"
+            )
+            return
+        try:
+            from multi_page_merger import get_multi_page_project_status
+            status = get_multi_page_project_status(folder)
+        except Exception as exc:
+            self._multi_page_status_label.config(text=f"進捗を読み込めません: {exc}")
+            return
+        if not status:
+            self._multi_page_status_label.config(
+                text="単一ページ案件　｜　複数ページの場合は「ページを管理」"
+            )
+            self._btn_prev_exam_page.config(state=tk.DISABLED)
+            self._btn_next_exam_page.config(state=tk.DISABLED)
+            return
+        pages = status['pages']
+        active = status.get('active_page')
+        page_texts = [
+            f"{item['page']}:{item['state']}" + ("●" if item['page'] == active else "")
+            for item in pages
+        ]
+        combined_done = Path(status['combined_summary_path']).is_file()
+        combined_text = "　｜　✅ 全ページ集計済み" if combined_done else ""
+        self._multi_page_status_label.config(
+            text=f"全{len(pages)}ページ　｜　" + "　".join(page_texts) + combined_text
+        )
+        page_numbers = [item['page'] for item in pages]
+        if active in page_numbers:
+            index = page_numbers.index(active)
+            self._btn_prev_exam_page.config(state=tk.NORMAL if index > 0 else tk.DISABLED)
+            self._btn_next_exam_page.config(
+                state=tk.NORMAL if index < len(page_numbers) - 1 else tk.DISABLED
+            )
+        else:
+            state = tk.NORMAL if page_numbers else tk.DISABLED
+            self._btn_prev_exam_page.config(state=tk.DISABLED)
+            self._btn_next_exam_page.config(state=state)
+
+    def _navigate_exam_page(self, offset):
+        """現在ページの前後へワンクリックで切り替える。"""
+        from multi_page_merger import activate_exam_page, get_multi_page_project_status
+        status = get_multi_page_project_status(self.image_folder_path.get())
+        if not status or not status['pages']:
+            return
+        pages = [item['page'] for item in status['pages']]
+        active = status.get('active_page')
+        if active in pages:
+            target_index = pages.index(active) + offset
+        else:
+            target_index = 0
+        if not 0 <= target_index < len(pages):
+            return
+        target = pages[target_index]
+        try:
+            workspace = activate_exam_page(status['project_folder'], target)
+        except Exception as exc:
+            messagebox.showerror("ページ切替エラー", str(exc))
+            return
+        self._prepare_multi_page_exam_page(target, workspace)
+
+    def _generate_or_explain_combined_summary(self):
+        """全ページ統合Excelを生成し、未集計なら次の作業を案内する。"""
+        folder = self.image_folder_path.get()
+        if not folder:
+            messagebox.showinfo(
+                "全ページ集計",
+                "先に複数ページ答案のPDFフォルダを選択してください。",
+            )
+            return
+        from multi_page_merger import (
+            activate_exam_page,
+            generate_combined_multi_page_summary,
+            get_multi_page_project_status,
+        )
+        status = get_multi_page_project_status(folder)
+        if not status:
+            messagebox.showinfo(
+                "全ページ集計",
+                "複数ページ答案が設定されていません。\n"
+                "「ページを管理」から試験ページとPDFを追加してください。",
+            )
+            return
+        result = generate_combined_multi_page_summary(status['project_folder'])
+        if result.get('success'):
+            output_path = Path(result['output_path'])
+            self.last_results_folder = str(output_path.parent)
+            self.open_results_btn.config(state=tk.NORMAL)
+            messagebox.showinfo(
+                "全ページ集計 完了",
+                f"全ページの採点結果を統合しました。\n\n"
+                f"ファイル: {output_path.name}\n"
+                f"統合人数: {result['student_count']}名\n\n"
+                f"保存先: {output_path.parent}",
+            )
+            open_in_file_manager(output_path.parent)
+            self._update_multi_page_dashboard()
+            return
+
+        pending = result.get('pending_pages')
+        if pending:
+            pending_text = "、".join(f"ページ{page}" for page in pending)
+            move = messagebox.askyesno(
+                "全ページ集計はまだ作成できません",
+                "次のページでStep 3の「確認して集計を実行」が必要です。\n\n"
+                f"未集計: {pending_text}\n\n"
+                f"最初の未集計ページ（ページ{pending[0]}）を開きますか？",
+            )
+            if move:
+                try:
+                    workspace = activate_exam_page(status['project_folder'], pending[0])
+                    self._prepare_multi_page_exam_page(pending[0], workspace)
+                except Exception as exc:
+                    messagebox.showerror("ページ切替エラー", str(exc))
+            return
+
+        messagebox.showerror(
+            "全ページ集計エラー",
+            f"統合Excelを作成できませんでした。\n\n{result.get('error', '不明なエラー')}\n\n"
+            "各ページの集計時に学籍番号OCRを完了しているか確認してください。",
+        )
 
     def _update_progress_guide(self):
         """トップ画面の準備状況と次の操作を更新する。"""
@@ -867,7 +1034,28 @@ class MarunosukeGUI:
         self._try_auto_restore()
         self._update_step1_availability()
         self._update_step_availability()
-        self._prepare_images_for_descriptive(auto_start_setup=True)
+        source_folder = Path(folder)
+        image_files = [
+            path for path in source_folder.iterdir()
+            if path.is_file() and path.suffix.lower()
+            in ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff')
+        ]
+        pdf_files = [
+            path for path in source_folder.iterdir()
+            if path.is_file() and path.suffix.lower() == '.pdf'
+        ]
+        if image_files:
+            self._prepare_images_for_descriptive(auto_start_setup=True)
+        elif pdf_files:
+            self.log_message(
+                f"✓ PDFのみのフォルダを選択: {len(pdf_files)}件。複数ページ答案の管理を開きます。"
+            )
+            self.root.after(0, self.run_multi_page_merge)
+        else:
+            messagebox.showerror(
+                "エラー",
+                "フォルダに対応する画像ファイルまたはPDFが見つかりません",
+            )
 
     # ---------------------------------------------------------
     # 記述のみモード: 画像準備
@@ -889,10 +1077,23 @@ class MarunosukeGUI:
         # 画像ファイルの存在チェック
         image_files = sorted(
             [f for f in img_folder.iterdir()
-             if f.suffix.lower() in ('.jpg', '.jpeg', '.png')]
+             if f.suffix.lower() in ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff')]
         )
         if not image_files:
-            messagebox.showerror("エラー", "画像フォルダに画像ファイル（JPG/PNG）が見つかりません")
+            pdf_files = [
+                path for path in img_folder.iterdir()
+                if path.is_file() and path.suffix.lower() == '.pdf'
+            ]
+            if pdf_files:
+                self.log_message(
+                    f"PDFファイルを{len(pdf_files)}件検出しました。複数ページ答案の管理を開きます。"
+                )
+                self.run_multi_page_merge()
+            else:
+                messagebox.showerror(
+                    "エラー",
+                    "フォルダに対応する画像ファイルまたはPDFが見つかりません",
+                )
             return
 
         self._set_processing_state(True)
@@ -951,6 +1152,22 @@ class MarunosukeGUI:
     def _continue_setup_after_prepare(self):
         """画像準備の完了後、そのまま初期設定ウィザードを開始する。"""
         self._set_processing_state(False)
+        from multi_page_merger import shared_layout_was_applied
+        if shared_layout_was_applied(self.image_folder_path.get()):
+            results_data = (
+                Path(self.image_folder_path.get()) / RESULTS_FOLDER / RESULTS_DATA_FOLDER
+            )
+            self._wizard_step_roster(results_data)
+            from id_area_config import ID_AREA_CONFIG_FILE
+            if (results_data / ID_AREA_CONFIG_FILE).exists():
+                self.student_id_ocr_enabled.set(True)
+            self.log_message(
+                "✓ 全ページ共通の学籍番号欄・氏名欄・解答欄設定を適用しました"
+            )
+            self._update_descriptive_status()
+            self._save_session_state()
+            self._update_step_availability()
+            return
         self._run_step1_setup_wizard()
     
     def select_pdf(self):
@@ -1022,13 +1239,40 @@ class MarunosukeGUI:
         check_page_numbers(image_folder, parent=self.root)
 
     def run_multi_page_merge(self):
-        """複数ページ統合ツールを実行する（単発、集計処理とは独立）。
+        """複数ページ答案の試験ページ・取込バッチ管理画面を開く。"""
+        image_folder = self.image_folder_path.get()
+        if not image_folder or not Path(image_folder).exists():
+            messagebox.showerror("エラー", "先に画像フォルダを選択してください。")
+            return
+        from multi_page_merger import (
+            resolve_multi_page_project_folder,
+            run_multi_page_import_gui,
+        )
+        project_folder = resolve_multi_page_project_folder(image_folder)
+        run_multi_page_import_gui(
+            project_folder,
+            parent=self.root,
+            on_prepare_page=self._prepare_multi_page_exam_page,
+            on_project_change=self._update_multi_page_dashboard,
+        )
 
-        ページ番号ごとに別々に生成した集計Excel（記述のみモード、学籍番号OCR
-        確認済み）を、教員が順番に指定すると、学籍番号をキーに1つに統合する。
-        """
-        from multi_page_merger import run_multi_page_merge_gui
-        run_multi_page_merge_gui(parent=self.root)
+    def _prepare_multi_page_exam_page(self, exam_page, workspace):
+        """選択した試験ページを現在の作業対象にして採点準備を開始する。"""
+        self.image_folder_path.set(str(workspace))
+        self.student_id_ocr_enabled.set(True)
+        self.log_message(f"✓ 試験ページ {exam_page} を作業対象に設定: {workspace}")
+        self._update_step1_availability()
+        self._update_step_availability()
+        workspace_path = Path(workspace)
+        boxed = workspace_path / RESULTS_FOLDER / BOXED_FOLDER
+        config = workspace_path / RESULTS_FOLDER / RESULTS_DATA_FOLDER / "descriptive_config.json"
+        if boxed.exists() and config.exists():
+            self._update_descriptive_status()
+            self._update_multi_page_dashboard()
+        elif boxed.exists():
+            self._run_step1_setup_wizard()
+        else:
+            self._prepare_images_for_descriptive(auto_start_setup=True)
 
     def open_boxed_folder(self):
         """枠描画結果フォルダを開く"""
@@ -1784,7 +2028,6 @@ class MarunosukeGUI:
         try:
             results_data_folder = Path(self.image_folder_path.get()) / RESULTS_FOLDER / RESULTS_DATA_FOLDER
             desc_config_path = results_data_folder / "descriptive_config.json"
-            aspect_max = {}
             total_max = 0
 
             if desc_config_path.exists():
@@ -1792,9 +2035,7 @@ class MarunosukeGUI:
                 desc_config = load_descriptive_config(str(desc_config_path))
                 if desc_config:
                     for q in desc_config.get("questions", []):
-                        asp = q.get("aspect", 1)
                         ms = q.get("max_score", 0)
-                        aspect_max[asp] = aspect_max.get(asp, 0) + ms
                         total_max += ms
 
             if total_max == 0:
@@ -1802,14 +2043,7 @@ class MarunosukeGUI:
                 recommended_w, recommended_h = 200, 50
             else:
                 line1 = f"得点：{total_max} / {total_max}"
-                sorted_aspects = sorted(aspect_max.keys())
-                parts = []
-                for asp in sorted_aspects:
-                    circled = number_to_circled(asp)
-                    mx = aspect_max[asp]
-                    parts.append(f"観点{circled}：{mx}/{mx}")
-                line2 = "(" + " ".join(parts) + ")"
-                preview_text = line1 + "\n" + line2
+                preview_text = line1
                 try:
                     font14 = ImageFont.truetype("C:/Windows/Fonts/msgothic.ttc", 14)
                     font12 = ImageFont.truetype("C:/Windows/Fonts/msgothic.ttc", 12)
@@ -1819,9 +2053,8 @@ class MarunosukeGUI:
                 tmp_img = Image.new('RGB', (800, 200))
                 tmp_draw = ImageDraw.Draw(tmp_img)
                 bbox1 = tmp_draw.textbbox((0, 0), line1, font=font14)
-                bbox2 = tmp_draw.textbbox((0, 0), line2, font=font12)
-                text_w = max(bbox1[2] - bbox1[0], bbox2[2] - bbox2[0])
-                text_h = (bbox1[3] - bbox1[1]) + (bbox2[3] - bbox2[1]) + 4
+                text_w = bbox1[2] - bbox1[0]
+                text_h = bbox1[3] - bbox1[1]
                 recommended_w = text_w + 16
                 recommended_h = text_h + 12
 
@@ -1999,6 +2232,12 @@ class MarunosukeGUI:
             )
             if config:
                 self.log_message(f"✓ 初期設定完了: {len(config['questions'])}問")
+                from multi_page_merger import publish_shared_layout_settings
+                shared_files = publish_shared_layout_settings(self.image_folder_path.get())
+                if shared_files:
+                    self.log_message(
+                        "✓ 学籍番号欄・氏名欄・解答欄の設定を全ページ共通として保存しました"
+                    )
                 self._update_descriptive_status()
                 self._save_session_state()
             else:
@@ -2448,6 +2687,29 @@ class MarunosukeGUI:
                 self.last_results_folder = str(final_report)
                 self.root.after(0, lambda: self.open_results_btn.config(state=tk.NORMAL))
 
+                from multi_page_merger import (
+                    generate_combined_multi_page_summary,
+                    resolve_multi_page_project_folder,
+                )
+                project_folder = resolve_multi_page_project_folder(params['image_folder'])
+                combined = generate_combined_multi_page_summary(project_folder)
+                if combined.get('success'):
+                    combined_note = (
+                        f"\n\n【全ページ統合集計】\n"
+                        f"・{Path(combined['output_path']).name}\n"
+                        f"・統合人数: {combined['student_count']}名"
+                    )
+                    self.last_results_folder = str(Path(combined['output_path']).parent)
+                elif combined.get('pending_pages'):
+                    pages = "、".join(str(page) for page in combined['pending_pages'])
+                    combined_note = (
+                        f"\n\n全ページ統合集計は、ページ {pages} の集計完了後に自動生成されます。"
+                    )
+                elif project_folder != params['image_folder']:
+                    combined_note = f"\n\n全ページ統合集計を生成できませんでした:\n{combined.get('error', '不明なエラー')}"
+                else:
+                    combined_note = ""
+
                 stats = result["stats"]
                 summary = (
                     f"サマリー生成が正常に完了しました！\n\n"
@@ -2462,8 +2724,10 @@ class MarunosukeGUI:
                     f"生成されたファイル:\n"
                     f"・{STUDENT_SUMMARY_FILE} (学生別得点)\n"
                     f"・{EXAM_SUMMARY_FILE} (試験統計)"
+                    f"{combined_note}"
                 )
                 self.root.after(0, lambda: messagebox.showinfo("完了", summary))
+                self.root.after(0, self._update_multi_page_dashboard)
             else:
                 err = result.get("error", "不明なエラー") if result else "不明なエラー"
                 self.root.after(0, lambda: messagebox.showerror("エラー", f"サマリー生成に失敗しました:\n{err}"))

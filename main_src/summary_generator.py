@@ -2,7 +2,7 @@
 summary_generator.py - サマリー生成モジュール
 
 記述式採点結果をもとに、学生別得点サマリー(記述式のみモード)を
-Excelファイルとして生成する。観点別・設問別の統計を出力する。
+Excelファイルとして生成し、設問別の統計を出力する。
 """
 
 from pathlib import Path
@@ -371,4 +371,3 @@ def process_descriptive_only_summary(
     except Exception as e:
         logger.error("エラー: %s", e, exc_info=True)
         return {"success": False, "error": str(e)}
-

@@ -776,7 +776,7 @@ class TestSetupDescriptiveRegionsResume:
         assert result["questions"][1]["id"] == "D2"
 
     def test_resume_adds_question_from_correct_number(self, tmp_path, sample_image):
-        """既存2問あれば「記述3」から追加が始まる"""
+        """既存問題があれば次の「問題N」から追加が始まる"""
         from unittest.mock import patch, MagicMock, call
 
         config_path = str(tmp_path / "descriptive_config.json")
@@ -800,9 +800,9 @@ class TestSetupDescriptiveRegionsResume:
             from descriptive_scorer import setup_descriptive_regions
             result = setup_descriptive_regions(str(tmp_path), config_path, parent=None)
 
-        # 記述2 の番号で呼ばれるべき (既存1問 + 1)
+        # 問題2 の番号で呼ばれるべき (既存1問 + 1)
         select_call = mock_select.call_args
-        assert "記述2" in select_call.kwargs.get("label_text", select_call[1].get("label_text", ""))
+        assert "問題2" in select_call.kwargs.get("label_text", select_call[1].get("label_text", ""))
 
         assert len(result["questions"]) == 2
         assert result["questions"][1]["id"] == "D2"

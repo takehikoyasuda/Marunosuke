@@ -134,7 +134,7 @@ def setup_descriptive_regions(
     記述問題の領域設定を対話的に行う。
 
     select_region_on_image() を繰り返し呼び、各問題の
-    領域・配点・観点を設定する。問題数に上限はない。
+    領域と配点を設定する。問題数に上限はない。
     2問目以降は既に設定した領域を画像上にオーバーレイ表示する。
 
     Args:
@@ -184,10 +184,10 @@ def setup_descriptive_regions(
         region = select_region_on_image(
             display_image,
             parent=parent,
-            title=f"記述問題 {question_count} — 領域をドラッグで選択してください",
-            label_text=f"記述{question_count}",
+            title=f"問題 {question_count} — 領域をドラッグで選択してください",
+            label_text=f"問題{question_count}",
             instruction_text=(
-                f"記述問題 {question_count} の\n"
+                f"問題 {question_count} の\n"
                 "解答エリアを\n"
                 "ドラッグで囲んで\n"
                 "ください。\n\n"
@@ -218,7 +218,6 @@ def setup_descriptive_regions(
             "id": f"D{question_count}",
             "name": q_info["name"],
             "max_score": q_info["max_score"],
-            "aspect": q_info["aspect"],
             "region": list(region),
             "rubric_memo": q_info.get("rubric_memo", ""),
         })
@@ -260,7 +259,7 @@ def _ask_add_more(
     result = [False]
 
     dialog = tk.Toplevel(parent)
-    dialog.title("記述問題の追加")
+    dialog.title("問題の追加")
     dialog.resizable(False, False)
     dialog.transient(parent)
     dialog.grab_set()
@@ -270,7 +269,7 @@ def _ask_add_more(
 
     tk.Label(
         frame,
-        text=f"記述{question_number}「{question_name}」を登録しました。",
+        text=f"問題{question_number}「{question_name}」を登録しました。",
         font=(UI_FONT, get_ui_font_size(10)),
         wraplength=320,
     ).pack(pady=(0, 15))
@@ -447,7 +446,7 @@ class IntegratedDescriptiveSetup:
 
         # ウィンドウ構築
         self.win = tk.Toplevel(parent)
-        self.win.title("📝 記述問題の設定")
+        self.win.title("📝 問題の設定")
         self.win.transient(parent)
         self.win.grab_set()
         self.win.focus_set()
@@ -548,17 +547,15 @@ class IntegratedDescriptiveSetup:
                  font=(UI_FONT, get_ui_font_size(11), "bold"), bg=BG, fg="#333").pack(anchor=tk.W, pady=(0, 5))
 
         # Treeview（問題リスト）
-        cols = ("id", "name", "score", "aspect")
+        cols = ("id", "name", "score")
         self._tree = ttk.Treeview(right, columns=cols, show="headings", height=15,
                                   selectmode="browse")
         self._tree.heading("id", text="#")
         self._tree.heading("name", text="問題名")
         self._tree.heading("score", text="配点")
-        self._tree.heading("aspect", text="観点")
         self._tree.column("id", width=36, anchor="center")
         self._tree.column("name", width=100)
-        self._tree.column("score", width=46, anchor="center")
-        self._tree.column("aspect", width=46, anchor="center")
+        self._tree.column("score", width=74, anchor="center")
 
         tree_scroll = tk.Scrollbar(right, orient=tk.VERTICAL, command=self._tree.yview)
         self._tree.configure(yscrollcommand=tree_scroll.set)
@@ -682,9 +679,8 @@ class IntegratedDescriptiveSetup:
         qid = f"D{next_num}"
         q = {
             "id": qid,
-            "name": f"記述{next_num}",
-            "max_score": 5,
-            "aspect": 1,
+            "name": f"問題{next_num}",
+            "max_score": 0,
             "region": region,
             "rubric_memo": "",
         }
@@ -770,9 +766,11 @@ class IntegratedDescriptiveSetup:
         """Treeviewの内容を再構築"""
         for item in self._tree.get_children():
             self._tree.delete(item)
+        self._tree.tag_configure("score_missing", background="#FFCDD2", foreground="#B71C1C")
         for q in self._questions:
+            tags = ("score_missing",) if q.get("max_score", 0) < 1 else ()
             self._tree.insert("", tk.END, iid=q["id"],
-                              values=(q["id"], q["name"], q["max_score"], q["aspect"]))
+                              values=(q["id"], q["name"], q["max_score"]), tags=tags)
 
     def _on_tree_double_click(self, event):
         """Treeview のセルをダブルクリックで編集"""
@@ -782,7 +780,7 @@ class IntegratedDescriptiveSetup:
             return
 
         col_idx = int(col.replace("#", "")) - 1
-        col_keys = ["id", "name", "score", "aspect"]
+        col_keys = ["id", "name", "score"]
         if col_idx == 0:
             return  # ID列は編集不可
 
@@ -810,12 +808,7 @@ class IntegratedDescriptiveSetup:
                         q["name"] = new_val or q["name"]
                     elif col_idx == 2:  # max_score
                         try:
-                            q["max_score"] = max(0, int(new_val))
-                        except ValueError:
-                            pass
-                    elif col_idx == 3:  # aspect
-                        try:
-                            q["aspect"] = max(1, int(new_val))
+                            q["max_score"] = max(1, int(new_val))
                         except ValueError:
                             pass
                     break
@@ -881,13 +874,33 @@ class IntegratedDescriptiveSetup:
     def _update_status(self):
         n = len(self._questions)
         total_score = sum(q.get("max_score", 0) for q in self._questions)
-        self._status_label.config(text=f"登録済み: {n} 問  |  合計配点: {total_score} 点")
+        missing = sum(1 for q in self._questions if q.get("max_score", 0) < 1)
+        if missing:
+            self._status_label.config(
+                text=f"⚠ 配点未入力: {missing}問　|　登録済み: {n}問　|　合計配点: {total_score}点",
+                fg="#C62828",
+            )
+        else:
+            self._status_label.config(
+                text=f"登録済み: {n} 問  |  合計配点: {total_score} 点", fg="#555",
+            )
 
     # ─── 保存・キャンセル ───
 
     def _on_save(self):
         if not self._questions:
-            messagebox.showwarning("問題未登録", "記述問題を1つ以上追加してください。", parent=self.win)
+            messagebox.showwarning("問題未登録", "問題を1つ以上追加してください。", parent=self.win)
+            return
+        missing_scores = [q.get("name", q.get("id", "")) for q in self._questions
+                          if q.get("max_score", 0) < 1]
+        if missing_scores:
+            messagebox.showwarning(
+                "配点が未入力です",
+                "次の問題の配点を入力してください。\n\n"
+                + "\n".join(f"・{name}" for name in missing_scores)
+                + "\n\n設問一覧の配点セルをダブルクリックして入力できます。",
+                parent=self.win,
+            )
             return
 
         config = {
@@ -1200,10 +1213,10 @@ def _ask_question_info(
     question_number: int,
 ) -> Optional[dict]:
     """
-    問題情報（名前・配点・観点）を入力させるモーダルダイアログ。
+    問題情報（名前・配点）を入力させるモーダルダイアログ。
 
     Returns:
-        {"name": str, "max_score": int, "aspect": int} or None (キャンセル)
+        {"name": str, "max_score": int} or None (キャンセル)
     """
     result = [None]
 
@@ -1216,7 +1229,7 @@ def _ask_question_info(
         root = parent
 
     dialog = tk.Toplevel(root)
-    dialog.title(f"記述{question_number} の設定")
+    dialog.title(f"問題{question_number} の設定")
     dialog.resizable(True, True)
     dialog.transient(root)
 
@@ -1225,7 +1238,7 @@ def _ask_question_info(
 
     tk.Label(
         frame,
-        text=f"記述問題 {question_number} の情報を入力",
+        text=f"問題 {question_number} の情報を入力",
         font=(UI_FONT, get_ui_font_size(11), "bold"),
     ).pack(pady=(0, 15))
 
@@ -1233,24 +1246,25 @@ def _ask_question_info(
     row1 = tk.Frame(frame)
     row1.pack(fill=tk.X, pady=3)
     tk.Label(row1, text="問題名:", width=8, anchor=tk.W, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT)
-    name_var = tk.StringVar(value=f"記述{question_number}")
+    name_var = tk.StringVar(value=f"問題{question_number}")
     tk.Entry(row1, textvariable=name_var, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT, fill=tk.X, expand=True)
 
     # 配点
-    row2 = tk.Frame(frame)
-    row2.pack(fill=tk.X, pady=3)
-    tk.Label(row2, text="配点:", width=8, anchor=tk.W, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT)
-    max_score_var = tk.StringVar(value="5")
-    tk.Entry(row2, textvariable=max_score_var, width=5, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT)
-    tk.Label(row2, text="点", font=(UI_FONT, get_ui_font_size(8)), fg="gray").pack(side=tk.LEFT, padx=5)
-
-    # 観点
-    row3 = tk.Frame(frame)
-    row3.pack(fill=tk.X, pady=3)
-    tk.Label(row3, text="観点:", width=8, anchor=tk.W, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT)
-    aspect_var = tk.StringVar(value="1")
-    tk.Entry(row3, textvariable=aspect_var, width=5, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT)
-    tk.Label(row3, text="(1以上の整数)", font=(UI_FONT, get_ui_font_size(8)), fg="gray").pack(side=tk.LEFT, padx=5)
+    row2 = tk.Frame(frame, bg="#FFF3E0", padx=8, pady=8)
+    row2.pack(fill=tk.X, pady=6)
+    tk.Label(
+        row2, text="必須・配点:", width=10, anchor=tk.W,
+        bg="#FFF3E0", fg="#C62828", font=(UI_FONT, get_ui_font_size(9), "bold"),
+    ).pack(side=tk.LEFT)
+    max_score_var = tk.StringVar(value="")
+    max_score_entry = tk.Entry(
+        row2, textvariable=max_score_var, width=7,
+        font=(UI_FONT, get_ui_font_size(11), "bold"),
+        bg="#FFFDE7", highlightthickness=2,
+        highlightbackground="#EF6C00", highlightcolor="#E65100",
+    )
+    max_score_entry.pack(side=tk.LEFT)
+    tk.Label(row2, text="点", bg="#FFF3E0", font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT, padx=5)
 
     tk.Label(frame, text="採点基準メモ（教員用）:",
              font=(UI_FONT, get_ui_font_size(9))).pack(anchor=tk.W, pady=(8, 2))
@@ -1273,22 +1287,19 @@ def _ask_question_info(
     def _ok():
         try:
             ms = int(max_score_var.get())
-            asp = int(aspect_var.get())
         except ValueError:
-            messagebox.showwarning("入力エラー", "配点と観点は整数で入力してください。", parent=dialog)
+            messagebox.showwarning("配点が未入力です", "配点を1以上の整数で入力してください。", parent=dialog)
+            max_score_entry.focus_set()
             return
 
-        if ms < 0:
-            messagebox.showwarning("入力エラー", "配点は0以上の整数で入力してください。", parent=dialog)
-            return
-        if asp < 1:
-            messagebox.showwarning("入力エラー", "観点は1以上の整数で入力してください。", parent=dialog)
+        if ms < 1:
+            messagebox.showwarning("入力エラー", "配点は1以上の整数で入力してください。", parent=dialog)
+            max_score_entry.focus_set()
             return
 
         result[0] = {
-            "name": name_var.get().strip() or f"記述{question_number}",
+            "name": name_var.get().strip() or f"問題{question_number}",
             "max_score": ms,
-            "aspect": asp,
             "rubric_memo": rubric_text.get("1.0", "end-1c"),
         }
         dialog.destroy()
@@ -1478,7 +1489,7 @@ class DescriptiveScorerGUI:
             q_row.pack(fill=tk.X)
             q_row.grid_columnconfigure(0, weight=1)
 
-            info_text = f"{q['name']}  (配点:{q['max_score']}点  観点:{q['aspect']})"
+            info_text = f"{q['name']}  (配点:{q['max_score']}点)"
             info_label = tk.Label(
                 q_row, text=info_text,
                 font=(UI_FONT, get_ui_font_size(9)), anchor=tk.W,
@@ -1503,9 +1514,9 @@ class DescriptiveScorerGUI:
             ).grid(row=0, column=2, padx=(0, 2))
 
             tk.Button(
-                q_row, text="設定",
+                q_row, text="配点・設定",
                 command=lambda qid=q_id: self._edit_question(qid),
-                width=3, font=(UI_FONT, get_ui_font_size(8)),
+                width=8, font=(UI_FONT, get_ui_font_size(8), "bold"),
                 bg="#FFE082", relief=tk.FLAT, cursor="hand2",
             ).grid(row=0, column=3)
 
@@ -1580,11 +1591,11 @@ class DescriptiveScorerGUI:
         for q in self.config["questions"]:
             q_id = q["id"]
             if q_id in self._info_labels:
-                info_text = f"{q['name']}  (配点:{q['max_score']}点  観点:{q['aspect']})"
+                info_text = f"{q['name']}  (配点:{q['max_score']}点)"
                 self._info_labels[q_id].config(text=info_text)
 
     def _edit_question(self, question_id: str):
-        """問題の設定（名前・配点・観点）を編集するダイアログ。
+        """問題の設定（名前・配点）を編集するダイアログ。
 
         配点を下げた場合、既存スコアが新配点を超えるものがあれば
         警告してキャップ（新配点にクリップ）するか確認する。
@@ -1620,19 +1631,23 @@ class DescriptiveScorerGUI:
         tk.Entry(row1, textvariable=name_var, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         # 配点
-        row2 = tk.Frame(frame)
-        row2.pack(fill=tk.X, pady=3)
-        tk.Label(row2, text="配点:", width=8, anchor=tk.W, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT)
+        row2 = tk.Frame(frame, bg="#FFF3E0", padx=8, pady=8)
+        row2.pack(fill=tk.X, pady=6)
+        tk.Label(
+            row2, text="必須・配点:", width=10, anchor=tk.W,
+            bg="#FFF3E0", fg="#C62828", font=(UI_FONT, get_ui_font_size(9), "bold"),
+        ).pack(side=tk.LEFT)
         max_score_var = tk.StringVar(value=str(q_config["max_score"]))
-        tk.Entry(row2, textvariable=max_score_var, width=5, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT)
-        tk.Label(row2, text=f"点  (現在: {q_config['max_score']}点)", font=(UI_FONT, get_ui_font_size(8)), fg="gray").pack(side=tk.LEFT, padx=5)
-
-        # 観点
-        row3 = tk.Frame(frame)
-        row3.pack(fill=tk.X, pady=3)
-        tk.Label(row3, text="観点:", width=8, anchor=tk.W, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT)
-        aspect_var = tk.StringVar(value=str(q_config["aspect"]))
-        tk.Entry(row3, textvariable=aspect_var, width=5, font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT)
+        max_score_entry = tk.Entry(
+            row2, textvariable=max_score_var, width=7,
+            font=(UI_FONT, get_ui_font_size(11), "bold"), bg="#FFFDE7",
+            highlightthickness=2, highlightbackground="#EF6C00", highlightcolor="#E65100",
+        )
+        max_score_entry.pack(side=tk.LEFT)
+        tk.Label(
+            row2, text=f"点  (現在: {q_config['max_score']}点)",
+            bg="#FFF3E0", font=(UI_FONT, get_ui_font_size(8)), fg="#555",
+        ).pack(side=tk.LEFT, padx=5)
 
         tk.Label(frame, text="採点基準メモ（教員用）:",
                  font=(UI_FONT, get_ui_font_size(9))).pack(anchor=tk.W, pady=(8, 2))
@@ -1696,15 +1711,11 @@ class DescriptiveScorerGUI:
         def _ok():
             try:
                 new_max = int(max_score_var.get())
-                new_asp = int(aspect_var.get())
             except ValueError:
-                messagebox.showwarning("入力エラー", "配点と観点は整数で入力してください。", parent=dialog)
+                messagebox.showwarning("入力エラー", "配点は1以上の整数で入力してください。", parent=dialog)
                 return
-            if new_max < 0:
-                messagebox.showwarning("入力エラー", "配点は0以上の整数で入力してください。", parent=dialog)
-                return
-            if new_asp < 1:
-                messagebox.showwarning("入力エラー", "観点は1以上の整数で入力してください。", parent=dialog)
+            if new_max < 1:
+                messagebox.showwarning("入力エラー", "配点は1以上の整数で入力してください。", parent=dialog)
                 return
 
             old_max = q_config["max_score"]
@@ -1734,7 +1745,7 @@ class DescriptiveScorerGUI:
             # 設定を更新
             q_config["name"] = name_var.get().strip() or q_config["name"]
             q_config["max_score"] = new_max
-            q_config["aspect"] = new_asp
+            q_config.pop("aspect", None)
             q_config["rubric_memo"] = rubric_text.get("1.0", "end-1c")
 
             # config を保存

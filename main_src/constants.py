@@ -101,7 +101,7 @@ DEFAULT_RENDERING_SETTINGS = {
     'descriptive_opacity': 0.50,   # 透過率
     'descriptive_show_mark': True,  # ○×△マーク
     'descriptive_show_score': True, # 得点
-    'descriptive_show_aspect': True, # 観点番号
+    'descriptive_show_aspect': False, # 旧設定との互換用（観点表示は廃止）
     'descriptive_show_comment': True, # 生徒向けコメント
 }
 
