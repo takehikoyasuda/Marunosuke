@@ -53,6 +53,93 @@ def _askyesno_japanese(title, message, **kwargs):
 # アプリ内の確認ダイアログは日本語ボタンを統一して使う。
 messagebox.askyesno = _askyesno_japanese
 
+
+class ColoredButton(tk.Frame):
+    """MacのAquaテーマに左右されない、Frame/Labelベースのボタン。"""
+
+    def __init__(self, parent, text="", command=None, bg="#1976D2", fg="white",
+                 activebackground=None, disabledbackground="#ECEFF1", disabledforeground="#90A4AE",
+                 font=None, state=tk.NORMAL, padx=8, pady=5, **kwargs):
+        kwargs.setdefault("cursor", "hand2")
+        super().__init__(parent, bg=bg, highlightthickness=0, bd=0, **kwargs)
+        self._text = text
+        self._command = command
+        self._normal_bg = bg
+        self._normal_fg = fg
+        self._active_bg = activebackground or bg
+        self._disabled_bg = disabledbackground
+        self._disabled_fg = disabledforeground
+        self._state = state
+        self._label = tk.Label(self, text=text, bg=bg, fg=fg, font=font,
+                               padx=padx, pady=pady, cursor="hand2")
+        self._label.pack(fill=tk.BOTH, expand=True)
+        for widget in (self, self._label):
+            widget.bind("<Button-1>", self._on_click)
+            widget.bind("<Enter>", self._on_enter)
+            widget.bind("<Leave>", self._on_leave)
+        self._apply_state()
+
+    def _on_click(self, _event=None):
+        if self._state != tk.DISABLED and self._command:
+            self._command()
+
+    def _on_enter(self, _event=None):
+        if self._state != tk.DISABLED:
+            self._label.config(bg=self._active_bg)
+            self.config(bg=self._active_bg)
+
+    def _on_leave(self, _event=None):
+        self._apply_state()
+
+    def _apply_state(self):
+        enabled = self._state != tk.DISABLED
+        bg = self._normal_bg if enabled else self._disabled_bg
+        fg = self._normal_fg if enabled else self._disabled_fg
+        cursor = "hand2" if enabled else "arrow"
+        # config() 経由にすると _apply_state() を再度呼んで再帰するため、
+        # Tk の基底クラスへ直接設定する。
+        tk.Frame.config(self, bg=bg, cursor=cursor)
+        self._label.config(bg=bg, fg=fg, cursor=cursor)
+
+    def config(self, cnf=None, **kwargs):
+        for key in ("text", "command", "state", "activebackground", "bg", "fg"):
+            if key in kwargs:
+                value = kwargs.pop(key)
+                if key == "text":
+                    self._text = value
+                    if hasattr(self, "_label"):
+                        self._label.config(text=value)
+                elif key == "command":
+                    self._command = value
+                elif key == "state":
+                    self._state = value
+                elif key == "activebackground":
+                    self._active_bg = value
+                elif key == "bg":
+                    self._normal_bg = value
+                elif key == "fg":
+                    self._normal_fg = value
+        result = super().config(cnf, **kwargs)
+        if hasattr(self, "_label"):
+            self._apply_state()
+        return result
+
+    configure = config
+
+    def cget(self, key):
+        if key == "text":
+            return self._text
+        if key == "command":
+            return self._command
+        if key == "state":
+            return self._state
+        return super().cget(key)
+
+    def invoke(self):
+        if self._state != tk.DISABLED and self._command:
+            return self._command()
+
+
 # 共通定数・ユーティリティ（constants.pyから）
 from constants import (
     safe_print, extract_pdf_to_images, combine_images_to_pdf,
@@ -292,33 +379,45 @@ class MarunosukeGUI:
             font=(UI_FONT, get_ui_font_size(8)), bg="#E3F2FD", relief=tk.FLAT, cursor="hand2",
         ).pack(side=tk.RIGHT, padx=(10, 0))
 
-        # 進捗ガイド（処理の状態をトップ画面だけで確認できるようにする）
+        # 進捗ガイド（横一列にして、画面の主役を作業ボタンに戻す）
         self._progress_guide_frame = tk.LabelFrame(
-            controls_frame, text="現在の進捗", padx=10, pady=6,
+            controls_frame, text="進捗", padx=10, pady=5,
             font=FONT_BOLD, bg=SECTION_BG, fg=HEADER_TEXT, relief=tk.FLAT,
         )
         self._progress_guide_frame.pack(fill=tk.X, pady=(0, 8))
         self._progress_guide_labels = {}
-        for key, title in (
+        progress_items = (
             ("source", "準備"), ("setup", "問題設定"),
             ("scoring", "採点"), ("review", "採点確認"), ("summary", "集計"),
-        ):
-            row = tk.Frame(self._progress_guide_frame, bg=SECTION_BG)
-            row.pack(fill=tk.X, pady=1)
-            marker = tk.Label(row, text="○", width=3, anchor=tk.W,
+        )
+        progress_row = tk.Frame(self._progress_guide_frame, bg=SECTION_BG)
+        progress_row.pack(fill=tk.X)
+        for index, (key, title) in enumerate(progress_items):
+            item = tk.Frame(progress_row, bg=SECTION_BG)
+            item.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            marker = tk.Label(item, text="○", width=2, anchor=tk.E,
                               font=FONT_BOLD, bg=SECTION_BG, fg="#90A4AE")
             marker.pack(side=tk.LEFT)
-            tk.Label(row, text=title, width=10, anchor=tk.W,
-                     font=FONT_NORMAL, bg=SECTION_BG, fg="#455A64").pack(side=tk.LEFT)
-            status = tk.Label(row, text="未完了", anchor=tk.W,
+            status = tk.Label(item, text=title, anchor=tk.W,
                               font=FONT_NORMAL, bg=SECTION_BG, fg="#78909C")
-            status.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            status.pack(side=tk.LEFT, padx=(3, 0))
             self._progress_guide_labels[key] = (marker, status)
+            if index < len(progress_items) - 1:
+                tk.Label(progress_row, text="→", font=FONT_NORMAL,
+                         bg=SECTION_BG, fg="#CFD8DC").pack(side=tk.LEFT, padx=2)
+
+        next_row = tk.Frame(self._progress_guide_frame, bg="#FFF8E1")
+        next_row.pack(fill=tk.X, pady=(5, 0))
         self._progress_next_label = tk.Label(
-            self._progress_guide_frame, text="次の操作: 画像フォルダを選択してください",
-            anchor=tk.W, font=FONT_BOLD, bg="#FFF8E1", fg="#795548", padx=6, pady=3,
+            next_row, text="次にすること：画像フォルダを選択してください",
+            anchor=tk.W, font=FONT_BOLD, bg="#FFF8E1", fg="#795548", padx=7, pady=4,
         )
-        self._progress_next_label.pack(fill=tk.X, pady=(5, 0))
+        self._progress_next_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self._progress_next_button = ColoredButton(
+            next_row, text="フォルダを選択", command=self.select_folder,
+            font=FONT_BOLD, bg="#FFCC80", relief=tk.FLAT, cursor="hand2", padx=8,
+        )
+        self._progress_next_button.pack(side=tk.RIGHT, padx=4, pady=3)
 
         # ---------------------------------------------------------
         # 1. データソース & 設定 (横並び)
@@ -381,9 +480,10 @@ class MarunosukeGUI:
         step1_run_row = tk.Frame(step1, bg=SECTION_BG)
         step1_run_row.pack(fill=tk.X, pady=(0, 5))
 
-        self._btn_run_box = tk.Button(step1_run_row, text="▶ 画像準備",
-                                      command=self._prepare_images_for_descriptive,
-                                      bg="#B39DDB", font=FONT_BOLD, height=2,
+        self._btn_run_box = ColoredButton(step1_run_row, text="▶ 採点準備を開始（画像準備）",
+                                      command=lambda: self._prepare_images_for_descriptive(auto_start_setup=True),
+                                      bg="#1976D2", fg="white", activebackground="#1565C0",
+                                      font=FONT_BOLD, height=2,
                                       relief=tk.FLAT, cursor="hand2")
         self._btn_run_box.pack(side=tk.LEFT, fill=tk.X, expand=True)
         # 初期状態: フォルダ未選択なので無効化
@@ -392,10 +492,10 @@ class MarunosukeGUI:
         self.open_boxed_btn.pack(side=tk.LEFT, padx=(3, 0), fill=tk.Y)
 
         # 初期設定
-        self.desc_setup_btn = tk.Button(
-            step1, text="⚙ 初期設定",
+        self.desc_setup_btn = ColoredButton(
+            step1, text="⚙ 初期設定をやり直す",
             command=self._run_step1_setup_wizard,
-            bg="#CE93D8", font=FONT_BOLD, height=2, relief=tk.FLAT, cursor="hand2",
+            bg="#ECEFF1", fg="#455A64", font=FONT_NORMAL, height=1, relief=tk.FLAT, cursor="hand2",
         )
         self.desc_setup_btn.pack(fill=tk.X, pady=(5, 0))
 
@@ -407,10 +507,10 @@ class MarunosukeGUI:
         BTN_STYLE = dict(font=FONT_BOLD, height=2, relief=tk.FLAT, cursor="hand2")
 
         # 記述採点ボタン
-        self.desc_scoring_btn = tk.Button(
-            step2, text="✏ 採点",
+        self.desc_scoring_btn = ColoredButton(
+            step2, text="✏ 記述採点を開始",
             command=self.run_descriptive_scoring,
-            bg="#B39DDB", **BTN_STYLE,
+            bg="#1976D2", fg="white", activebackground="#1565C0", **BTN_STYLE,
         )
         self.desc_scoring_btn.pack(fill=tk.X, pady=3)
 
@@ -434,21 +534,21 @@ class MarunosukeGUI:
         self._desc_status_frame.pack(fill=tk.X, pady=(3, 0))
 
         # --- 採点確認ボタン（α: 記述採点の確認機能） ---
-        self._btn_desc_review = tk.Button(
-            step2, text="🔎 採点の確認",
+        self._btn_desc_review = ColoredButton(
+            step2, text="🔎 採点結果を確認",
             command=self._open_descriptive_review,
-            bg="#E1BEE7", **BTN_STYLE,
+            bg="#90CAF9", **BTN_STYLE,
         )
         self._btn_desc_review.pack(fill=tk.X, pady=3)
 
         # --- 合計点位置設定（出力の直前）---
-        self._btn_total_pos = tk.Button(step2, text="📐 合計点位置設定", command=self.setup_total_position, bg="#90CAF9", **BTN_STYLE)
+        self._btn_total_pos = ColoredButton(step2, text="📐 合計点位置設定（補助）", command=self.setup_total_position, bg="#ECEFF1", fg="#455A64", font=FONT_NORMAL, pady=3)
         self._btn_total_pos.pack(fill=tk.X, pady=3)
 
         # --- 詳細設定リンク ---
         self._link_detailed_settings = tk.Label(
-            step2, text="⚙ 詳細設定...",
-            font=(UI_FONT, get_ui_font_size(8), "underline"), fg="#1976D2",
+            step2, text="⚙ 描画の詳細設定（補助）",
+            font=(UI_FONT, get_ui_font_size(8), "underline"), fg="#607D8B",
             bg=SECTION_BG, cursor="hand2", anchor=tk.E,
         )
         self._link_detailed_settings.pack(fill=tk.X, pady=(0, 2))
@@ -459,7 +559,7 @@ class MarunosukeGUI:
         # 採点済み答案を生成 + 結果フォルダ（横並び）
         step2_run_row = tk.Frame(step2, bg=SECTION_BG)
         step2_run_row.pack(fill=tk.X, pady=(3, 5))
-        self._btn_run_scoring = tk.Button(step2_run_row, text="▶ 採点済み答案を生成", command=self.run_scoring, bg=BTN_BLUE, **BTN_STYLE)
+        self._btn_run_scoring = ColoredButton(step2_run_row, text="▶ 採点済み答案を出力", command=self.run_scoring, bg="#90CAF9", fg="#263238", font=FONT_NORMAL, pady=3)
         self._btn_run_scoring.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.open_scored_btn = tk.Button(step2_run_row, text="📁", command=self.open_scored_folder, bg=BTN_GRAY, relief=tk.FLAT, state=tk.DISABLED, width=3, font=(UI_FONT, get_ui_font_size(10)))
         self.open_scored_btn.pack(side=tk.LEFT, padx=(3, 0), fill=tk.Y)
@@ -497,15 +597,15 @@ class MarunosukeGUI:
         # --- 集計実行 + 結果フォルダ（横並び） ---
         self._step3_run_row = tk.Frame(step3, bg=SECTION_BG)
         self._step3_run_row.pack(fill=tk.X, pady=5)
-        self._btn_run_summary = tk.Button(self._step3_run_row, text="▶ 集計実行", command=self.run_summary_generation, bg=BTN_AMBER, font=FONT_BOLD, height=2, relief=tk.FLAT, cursor="hand2")
+        self._btn_run_summary = ColoredButton(self._step3_run_row, text="▶ 確認して集計を実行", command=self.run_summary_generation, bg="#1976D2", fg="white", activebackground="#1565C0", font=FONT_BOLD, pady=7)
         self._btn_run_summary.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.open_results_btn = tk.Button(self._step3_run_row, text="📁", command=self.open_results_folder, bg=BTN_GRAY, relief=tk.FLAT, state=tk.DISABLED, width=3, font=(UI_FONT, get_ui_font_size(10)))
         self.open_results_btn.pack(side=tk.LEFT, padx=(3, 0), fill=tk.Y)
 
         # --- 複数ページ統合（既存の集計Excel同士を学籍番号で統合する単発ツール） ---
         self._btn_multi_page_merge = tk.Button(
-            step3, text="🔗 複数ページ統合", command=self.run_multi_page_merge,
-            bg=BTN_GRAY, relief=tk.FLAT, font=FONT_NORMAL,
+            step3, text="🔗 複数ページ統合（補助）", command=self.run_multi_page_merge,
+            bg="#ECEFF1", fg="#455A64", relief=tk.FLAT, font=FONT_NORMAL,
         )
         self._btn_multi_page_merge.pack(fill=tk.X, pady=(5, 0))
         _ToolTip(
@@ -623,20 +723,21 @@ class MarunosukeGUI:
         for key, (done, text) in states.items():
             marker, label = self._progress_guide_labels[key]
             marker.config(text="✓" if done else "○", fg="#2E7D32" if done else "#90A4AE")
-            label.config(text=text, fg="#2E7D32" if done else "#78909C")
+            label.config(fg="#2E7D32" if done else "#78909C")
         if not source:
-            next_text = "次の操作: 画像フォルダを選択してください"
+            next_text, button_text, command, button_bg = "次にすること：画像フォルダを選択してください", "フォルダを選択", self.select_folder, "#FFCC80"
         elif not boxed:
-            next_text = "次の操作: 画像準備を実行してください"
+            next_text, button_text, command, button_bg = "次にすること：採点準備を実行してください", "採点準備", lambda: self._prepare_images_for_descriptive(auto_start_setup=True), "#1976D2"
         elif not setup:
-            next_text = "次の操作: 初期設定を実行してください"
+            next_text, button_text, command, button_bg = "次にすること：初期設定を実行してください", "初期設定", self._run_step1_setup_wizard, "#CE93D8"
         elif not reviewed:
-            next_text = "次の操作: 記述採点を実行してください"
+            next_text, button_text, command, button_bg = "次にすること：記述採点を開始してください", "記述採点", self.run_descriptive_scoring, "#90CAF9"
         elif not summary:
-            next_text = "次の操作: 採点確認後に集計を実行してください"
+            next_text, button_text, command, button_bg = "次にすること：採点結果を確認して集計してください", "集計", self.run_summary_generation, "#FFE082"
         else:
-            next_text = "次の操作: 必要に応じて採点結果を確認・再集計できます"
+            next_text, button_text, command, button_bg = "次にすること：採点結果を確認・再集計できます", "採点確認", self._open_descriptive_review, "#E1BEE7"
         self._progress_next_label.config(text=next_text)
+        self._progress_next_button.config(text=button_text, command=command, bg=button_bg)
 
     def _set_step2_enabled(self, enabled: bool):
         """Step2 の操作ボタン群を有効化/無効化する"""
