@@ -38,4 +38,14 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run tests
-        run: python -m pytest tests/ -q --timeout=60 -p no:warnings -rf
+        # pytest終了後、Tkinterの残存オブジェクトのガベージコレクションが
+        # 原因とみられる終了処理の異常な遅延（数分単位のハング）が
+        # macOSランナーで発生したため、os._exit()で通常の終了処理を
+        # 省略して即座にプロセスを終了させる。
+        run: |
+          python -c "
+          import os
+          import pytest
+          code = pytest.main(['tests/', '-q', '--timeout=60', '-p', 'no:warnings', '-rf'])
+          os._exit(code)
+          "
