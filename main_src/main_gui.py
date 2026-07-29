@@ -504,6 +504,12 @@ class MarunosukeGUI:
         )
         input_group.pack(fill=tk.BOTH, expand=True)
 
+        tk.Label(
+            input_group, text="作業スペースとページ数は、この案件で最初に1回だけ設定します。",
+            bg=SECTION_BG, fg="#607D8B", font=(UI_FONT, get_ui_font_size(8)),
+            justify=tk.CENTER,
+        ).pack(fill=tk.X, pady=(0, 4))
+
         # 画像フォルダ
         row1 = tk.Frame(input_group, bg=SECTION_BG)
         row1.pack(fill=tk.X, pady=2)
@@ -576,10 +582,20 @@ class MarunosukeGUI:
         pipeline_frame.pack(fill=tk.X, pady=(10, 0))
         pipeline_frame.columnconfigure(0, weight=1)
 
+        tk.Label(
+            pipeline_frame,
+            text=(
+                "Step3〜5は1ページ分の作業です。ページ数分、繰り返します。\n"
+                "次のページに進むときも、もう一度「答案ファイルを追加＆採点準備」から始めてください。"
+            ),
+            bg=SECTION_BG, fg="#607D8B", font=(UI_FONT, get_ui_font_size(8)),
+            justify=tk.CENTER,
+        ).grid(row=0, column=0, sticky="ew", pady=(0, 6))
+
         # 複数ページ案件ダッシュボード（Step3〜5すべてが対象にする「今のページ」を
         # 切り替える場所なので、案件設定(Step1・2)側ではなくこの枠の先頭に置く）
         self._multi_page_dashboard = tk.Frame(pipeline_frame, bg="#E8EAF6", padx=8, pady=6)
-        self._multi_page_dashboard.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        self._multi_page_dashboard.grid(row=1, column=0, sticky="ew", pady=(0, 8))
         tk.Label(
             self._multi_page_dashboard, text="複数ページ答案",
             bg="#E8EAF6", fg="#283593", font=FONT_BOLD,
@@ -632,7 +648,7 @@ class MarunosukeGUI:
 
         # Step 1: 答案ファイル追加＆採点準備
         step1 = create_step_frame(pipeline_frame, "答案ファイル追加＆採点準備", BTN_GREEN, 3)
-        step1.grid(row=1, column=0, sticky="ew", pady=0)
+        step1.grid(row=2, column=0, sticky="ew", pady=0)
         self._step1_frame = step1  # toggle用に保持
 
         # 画像準備 + 結果フォルダ
@@ -665,7 +681,7 @@ class MarunosukeGUI:
 
         # Step 2: 採点実行
         step2 = create_step_frame(pipeline_frame, "採点実行", BTN_BLUE, 4)
-        step2.grid(row=2, column=0, sticky="ew", pady=0)
+        step2.grid(row=3, column=0, sticky="ew", pady=0)
         self._step2_frame = step2  # toggle用に保持
 
         BTN_STYLE = dict(font=FONT_BOLD, height=2, relief=tk.FLAT, cursor="hand2")
@@ -726,7 +742,7 @@ class MarunosukeGUI:
 
         # Step 3: サマリー
         step3 = create_step_frame(pipeline_frame, "集計", BTN_AMBER, 5)
-        step3.grid(row=3, column=0, sticky="ew", pady=0)
+        step3.grid(row=4, column=0, sticky="ew", pady=0)
 
         self._btn_run_summary = ColoredButton(step3._main_header, text="集計", command=self.run_summary_generation, bg="#1976D2", fg="white", font=(UI_FONT, get_ui_font_size(11), "bold"), width=220, height=58, padx=20, pady=9)
         self._btn_run_summary.pack_propagate(False)
