@@ -54,6 +54,7 @@ def test_cancel_at_existing_config_prompt_stops_setup(tmp_path):
 
 
 def test_selected_source_starts_automatic_image_preparation(tmp_path):
+    (tmp_path / "answer.png").touch()
     app = object.__new__(Mark2GUI)
     app.image_folder_path = MagicMock()
     app.log_message = MagicMock()
