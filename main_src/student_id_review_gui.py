@@ -71,9 +71,13 @@ SINGLE_THUMB_WIDTH = 420
 class StudentIdReviewGUI:
     """学籍番号OCR候補の確認・修正画面。"""
 
-    def __init__(self, parent, ocr_results: Dict[str, Dict], roster: Optional[Dict[str, str]] = None):
+    def __init__(
+        self, parent, ocr_results: Dict[str, Dict], roster: Optional[Dict[str, str]] = None,
+        exam_page: Optional[int] = None,
+    ):
         self.parent = parent
         self.roster = roster or {}
+        self.exam_page = exam_page  # 複数ページ案件のみ設定される
         self._photo_refs = []  # ImageTk.PhotoImage の参照保持(GC対策)
 
         self._filenames: List[str] = sorted(ocr_results.keys())
@@ -122,7 +126,10 @@ class StudentIdReviewGUI:
         self._current_index = 0
 
         self.window = tk.Toplevel(parent)
-        self.window.title("学籍番号OCR候補の確認")
+        title = "学籍番号OCR候補の確認"
+        if self.exam_page is not None:
+            title += f"（試験ページ {self.exam_page}）"
+        self.window.title(title)
         self.window.geometry("900x650")
         self.window.protocol("WM_DELETE_WINDOW", self._finish)
 

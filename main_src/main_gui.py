@@ -97,7 +97,7 @@ class ColoredButton(tk.Frame):
 
     def __init__(self, parent, text="", command=None, bg="#1976D2", fg="white",
                  activebackground=None, disabledbackground="#ECEFF1", disabledforeground="#90A4AE",
-                 font=None, state=tk.NORMAL, padx=8, pady=5, **kwargs):
+                 font=None, state=tk.NORMAL, padx=8, pady=5, wraplength=0, **kwargs):
         kwargs.setdefault("cursor", "hand2")
         super().__init__(parent, bg=bg, highlightthickness=0, bd=0, **kwargs)
         self._text = text
@@ -109,8 +109,14 @@ class ColoredButton(tk.Frame):
         self._disabled_fg = disabledforeground
         self._state = state
         self._hovered = False
+        # wraplength(px)を指定すると、環境ごとのフォント実測幅の差（同じフォント
+        # サイズでも文字の描画幅がディスプレイ・システム設定によって変わることが
+        # ある）で固定幅ボタンから文字がはみ出す代わりに、自動で折り返す。
+        # tk.Labelは既定でボタン枠を超えて文字を描画してしまう（横方向に
+        # クリップされない）ため、幅が固定されたボタンでは必須の対策。
         self._label = tk.Label(self, text=text, bg=bg, fg=fg, font=font,
-                               padx=padx, pady=pady, cursor="hand2")
+                               padx=padx, pady=pady, cursor="hand2",
+                               wraplength=wraplength, justify=tk.CENTER)
         self._label.pack(fill=tk.BOTH, expand=True)
         # Label が全面を覆うため、ポインターイベントは Label だけで受け取る。
         # Frame と Label の両方に Enter/Leave を設定すると、境界をまたぐ際に
@@ -296,7 +302,7 @@ class MarunosukeGUI:
         self._restore_session_path = restore_session_path  # 起動時復元用
 
         self.root.title(APP_TITLE)
-        self.root.geometry("1100x600")
+        self.root.geometry("900x600")
         self.root.lift()
         self.root.attributes("-topmost", True)
         self.root.after(250, lambda: self.root.attributes("-topmost", False))
@@ -331,7 +337,7 @@ class MarunosukeGUI:
         self.rendering_settings = get_rendering_settings()
 
         self.create_widgets()
-        fit_window_to_content(self.root, min_width=760, min_height=500)
+        self._fit_root_window()
 
         # ウィンドウ閉じるハンドラ（処理中のデータ保護）
         self.root.protocol("WM_DELETE_WINDOW", self._on_window_close)
@@ -357,7 +363,43 @@ class MarunosukeGUI:
             pass  # 保存失敗は許容
 
         self.root.destroy()
-        
+
+    # 横方向はスクロールを付けていないため、採点ワークフローの各行に並ぶ
+    # ボタン群が収まる幅（実測で最大約860px）を下回らないようにする。
+    # 縦方向はcreate_widgets()で全体を縦スクロール可能にしたため、横ほど
+    # 厳しくする必要はない。
+    _MIN_ROOT_WIDTH = 880
+    _MIN_ROOT_HEIGHT = 480
+
+    def _fit_root_window(self):
+        """初期ウィンドウサイズと最小サイズを、実コンテンツに基づいて設定する。
+
+        create_widgets()で本文全体を縦スクロール可能なCanvasの中に入れたため、
+        root自体のwinfo_reqwidth/reqheightはCanvasの既定値（コンテンツと無関係な
+        小さい値）になってしまい使えない。実コンテンツを持つ self._content_host
+        （main_container）を計測し、それを初期サイズの目安にする。
+        最小サイズ(minsize)は初期サイズよりも小さい固定値にすることで、
+        ウィンドウを縮めても縦はスクロールで、横はボタンが収まる幅を保ったまま
+        操作できるようにする。
+        """
+        self.root.update_idletasks()
+        content_w = self._content_host.winfo_reqwidth()
+        content_h = self._content_host.winfo_reqheight()
+
+        screen_w = max(1, self.root.winfo_screenwidth())
+        screen_h = max(1, self.root.winfo_screenheight())
+        margin_x = min(40, max(12, screen_w // 40))
+        margin_y = min(60, max(12, screen_h // 30))
+        max_w = max(1, screen_w - margin_x * 2)
+        max_h = max(1, screen_h - margin_y * 2)
+
+        # スクロールバー分の余白を少し確保する。
+        default_w = min(max(self._MIN_ROOT_WIDTH, content_w + 20), max_w)
+        default_h = min(max(self._MIN_ROOT_HEIGHT, content_h), max_h)
+
+        self.root.geometry(f"{default_w}x{default_h}")
+        self.root.minsize(min(self._MIN_ROOT_WIDTH, max_w), min(self._MIN_ROOT_HEIGHT, max_h))
+
     def create_widgets(self):
         """ウィジェットの作成（パステルカラー・シンプルデザイン）"""
         # カラーパレット定義
@@ -379,9 +421,51 @@ class MarunosukeGUI:
         # ルートウィンドウの背景設定
         self.root.configure(bg=BG_COLOR)
 
+        # ウィンドウを縦に縮めても内容が完全に見えなくなることがないよう、
+        # 全体を縦スクロール可能なCanvasの中に構築する（横方向は最小幅
+        # (minsize)で確保するため、横スクロールは付けない）。
+        outer_canvas = tk.Canvas(self.root, bg=BG_COLOR, highlightthickness=0)
+        v_scrollbar = tk.Scrollbar(self.root, orient=tk.VERTICAL, command=outer_canvas.yview)
+        outer_canvas.configure(yscrollcommand=v_scrollbar.set)
+        outer_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self._root_scrollbar = v_scrollbar
+
+        scroll_host = tk.Frame(outer_canvas, bg=BG_COLOR)
+        canvas_window = outer_canvas.create_window((0, 0), window=scroll_host, anchor="nw")
+
+        def _on_scroll_host_configure(_event=None):
+            outer_canvas.configure(scrollregion=outer_canvas.bbox("all"))
+        scroll_host.bind("<Configure>", _on_scroll_host_configure)
+
+        def _on_canvas_configure(event):
+            # 内側フレームの幅をcanvas幅に追従させる（横方向は追従、縦方向のみ
+            # スクロールで対応する）。
+            outer_canvas.itemconfig(canvas_window, width=event.width)
+        outer_canvas.bind("<Configure>", _on_canvas_configure)
+
+        def _on_mousewheel(event):
+            outer_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        # bind_all()はアプリ全体（"all"バインドタグ）に対する登録であり、ウィジェット
+        # のdestroy()では自動的に解除されない。マウスポインタがこのCanvas上に
+        # ある間だけ有効化・退出時に解除することで、他のウィンドウのスクロールを
+        # 妨げず、bind_allの登録が使い捨てのまま蓄積することも防ぐ。
+        def _bind_mousewheel(_event=None):
+            outer_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+        def _unbind_mousewheel(_event=None):
+            outer_canvas.unbind_all("<MouseWheel>")
+
+        outer_canvas.bind("<Enter>", _bind_mousewheel)
+        outer_canvas.bind("<Leave>", _unbind_mousewheel)
+
         # メインコンテナ
-        main_container = tk.Frame(self.root, padx=10, pady=10, bg=BG_COLOR)
+        main_container = tk.Frame(scroll_host, padx=10, pady=10, bg=BG_COLOR)
         main_container.pack(fill=tk.BOTH, expand=True)
+        # Canvasでラップした後はroot自体のwinfo_reqwidth/reqheightがCanvasの
+        # 既定値になってしまい使えないため、実際のコンテンツサイズの計測用に
+        # 保持しておく（__init__側の初期ウィンドウサイズ計算で使う）。
+        self._content_host = main_container
 
         # =============================================================================
         # 下部: 処理状況（詳細ログ本文は別ウィンドウで表示）
@@ -521,7 +605,7 @@ class MarunosukeGUI:
             row1, text="作業スペース選択", command=self.select_folder,
             bg="#1976D2", fg="white",
             font=(UI_FONT, get_ui_font_size(11), "bold"),
-            width=220, height=58, padx=20, pady=8,
+            width=205, height=56, padx=16, pady=7,
         )
         self._btn_select_folder.pack_propagate(False)
         self._btn_select_folder.pack(side=tk.LEFT, padx=(0, 8))
@@ -596,39 +680,51 @@ class MarunosukeGUI:
         # 切り替える場所なので、案件設定(Step1・2)側ではなくこの枠の先頭に置く）
         self._multi_page_dashboard = tk.Frame(pipeline_frame, bg="#E8EAF6", padx=8, pady=6)
         self._multi_page_dashboard.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+
+        _mpd_row1 = tk.Frame(self._multi_page_dashboard, bg="#E8EAF6")
+        _mpd_row1.pack(fill=tk.X)
         tk.Label(
-            self._multi_page_dashboard, text="複数ページ答案",
+            _mpd_row1, text="複数ページ答案",
             bg="#E8EAF6", fg="#283593", font=FONT_BOLD,
         ).pack(side=tk.LEFT, padx=(0, 8))
         self._btn_prev_exam_page = tk.Button(
-            self._multi_page_dashboard, text="◀ 前ページ",
+            _mpd_row1, text="◀ 前ページ",
             command=lambda: self._navigate_exam_page(-1),
             bg="#C5CAE9", fg="#263238", relief=tk.FLAT, font=FONT_NORMAL,
             state=tk.DISABLED,
         )
         self._btn_prev_exam_page.pack(side=tk.LEFT, padx=2)
         self._btn_next_exam_page = tk.Button(
-            self._multi_page_dashboard, text="次ページ ▶",
+            _mpd_row1, text="次ページ ▶",
             command=lambda: self._navigate_exam_page(1),
             bg="#C5CAE9", fg="#263238", relief=tk.FLAT, font=FONT_NORMAL,
             state=tk.DISABLED,
         )
         self._btn_next_exam_page.pack(side=tk.LEFT, padx=2)
         self._multi_page_status_label = tk.Label(
-            self._multi_page_dashboard,
+            _mpd_row1,
             text="未設定 — PDFを選択して複数ページ答案の取込を開始",
-            bg="#FFF3CD", fg="#5D4037", anchor=tk.W,
+            bg="#FFF3CD", fg="#5D4037", anchor=tk.W, justify=tk.LEFT,
             font=(UI_FONT, get_ui_font_size(8), 'bold'),
+            # 状態によって文字数が伸びても、右側の「ページを管理」ボタンを
+            # 押し出さないよう、一定幅で折り返す（はみ出す代わりに複数行になる）。
+            wraplength=260,
         )
         self._multi_page_status_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=8)
         self._btn_multi_page_merge = tk.Button(
-            self._multi_page_dashboard, text="📚 ページを管理",
+            _mpd_row1, text="📚 ページを管理",
             command=self.run_multi_page_merge,
             bg="#C5CAE9", fg="#263238",
             activebackground="#9FA8DA", activeforeground="#263238",
             relief=tk.FLAT, font=FONT_BOLD,
         )
         self._btn_multi_page_merge.pack(side=tk.RIGHT)
+
+        # 各ページの進捗を常時見えるコンパクトなチップ列として表示する
+        # （それまでは「今見ているページ」の状態しか出ておらず、他ページが
+        # どこまで進んでいるかはトップ画面から分からなかった）。
+        self._page_progress_row = tk.Frame(self._multi_page_dashboard, bg="#E8EAF6")
+        self._page_progress_row.pack(fill=tk.X, pady=(4, 0))
 
         # 共通スタイル
         def create_step_frame(parent, title, color_bar, number):
@@ -657,7 +753,8 @@ class MarunosukeGUI:
         self._btn_run_box = ColoredButton(step1_run_row, text="答案ファイルを追加\n＆ 採点準備",
                                       command=self._start_answer_prep,
                                       bg="#1976D2", fg="white",
-                                      font=(UI_FONT, get_ui_font_size(11), "bold"), width=220, height=58, padx=20, pady=8,
+                                      font=(UI_FONT, get_ui_font_size(11), "bold"), width=250, height=95, padx=20, pady=8,
+                                      wraplength=225,
                                       relief=tk.FLAT, cursor="hand2")
         self._btn_run_box.pack_propagate(False)
         self._btn_run_box.pack(side=tk.LEFT, padx=(0, 3))
@@ -674,7 +771,9 @@ class MarunosukeGUI:
         self.desc_setup_btn = ColoredButton(
             step1_run_row, text="採点準備をやり直す",
             command=self._run_step1_setup_wizard,
-            bg="#ECEFF1", fg="#455A64", font=(UI_FONT, get_ui_font_size(8), "bold"), width=130, height=32, padx=8, pady=4, relief=tk.FLAT, cursor="hand2",
+            bg="#ECEFF1", fg="#455A64", font=(UI_FONT, get_ui_font_size(8), "bold"),
+            width=165, height=42, padx=8, pady=4, wraplength=145,
+            relief=tk.FLAT, cursor="hand2",
         )
         self.desc_setup_btn.pack_propagate(False)
         self.desc_setup_btn.pack(side=tk.LEFT, padx=(16, 0))
@@ -690,7 +789,7 @@ class MarunosukeGUI:
         self.desc_scoring_btn = ColoredButton(
             step2._main_header, text="採点実行",
             command=self.run_descriptive_scoring,
-            bg="#1976D2", fg="white", font=(UI_FONT, get_ui_font_size(11), "bold"), width=220, height=58, padx=20, pady=9,
+            bg="#1976D2", fg="white", font=(UI_FONT, get_ui_font_size(11), "bold"), width=205, height=56, padx=16, pady=7,
         )
         self.desc_scoring_btn.pack_propagate(False)
         self.desc_scoring_btn.pack(side=tk.LEFT, pady=3)
@@ -744,7 +843,7 @@ class MarunosukeGUI:
         step3 = create_step_frame(pipeline_frame, "集計", BTN_AMBER, 5)
         step3.grid(row=4, column=0, sticky="ew", pady=0)
 
-        self._btn_run_summary = ColoredButton(step3._main_header, text="集計", command=self.run_summary_generation, bg="#1976D2", fg="white", font=(UI_FONT, get_ui_font_size(11), "bold"), width=220, height=58, padx=20, pady=9)
+        self._btn_run_summary = ColoredButton(step3._main_header, text="集計", command=self.run_summary_generation, bg="#1976D2", fg="white", font=(UI_FONT, get_ui_font_size(11), "bold"), width=205, height=56, padx=16, pady=7)
         self._btn_run_summary.pack_propagate(False)
         self._btn_run_summary.pack(side=tk.LEFT, pady=3)
 
@@ -925,6 +1024,7 @@ class MarunosukeGUI:
         except Exception as exc:
             self._multi_page_dashboard.grid()
             self._multi_page_status_label.config(text=f"進捗を読み込めません: {exc}")
+            self._build_page_progress_chips([], None)
             return
         show_dashboard = bool(status and status['pages']) or (not has_images and has_pdfs)
         if not show_dashboard:
@@ -937,13 +1037,14 @@ class MarunosukeGUI:
             )
             self._btn_prev_exam_page.config(state=tk.DISABLED)
             self._btn_next_exam_page.config(state=tk.DISABLED)
+            self._build_page_progress_chips([], None)
             return
         pages = status['pages']
         active = status.get('active_page')
         active_state = next((p['state'] for p in pages if p['page'] == active), None)
         state_text = f"　｜　{active_state}" if active_state else ""
         combined_done = Path(status['combined_summary_path']).is_file()
-        combined_text = "　｜　✅ 全ページ集計済み" if combined_done else ""
+        combined_text = "　✅ 全ページ集計済み" if combined_done else ""
         self._multi_page_status_label.config(
             text=(f"作業ページ：{active or '未選択'} / {len(pages)}ページ"
                   + state_text + combined_text)
@@ -959,6 +1060,50 @@ class MarunosukeGUI:
             state = tk.NORMAL if page_numbers else tk.DISABLED
             self._btn_prev_exam_page.config(state=tk.DISABLED)
             self._btn_next_exam_page.config(state=state)
+        self._build_page_progress_chips(pages, active)
+
+    # ページ状態文字列 → (背景色, アイコン) のスタイル対応。
+    # '採点中 N/M' のような可変テキストは前方一致で個別処理する。
+    _PAGE_STATE_STYLE = {
+        '集計済み': ('#A5D6A7', '✅'),
+        '採点完了': ('#C8E6C9', '☑'),
+        '初期設定済み': ('#B3E5FC', '⚙'),
+        '取込済み': ('#CFD8DC', '📥'),
+        '未取込': ('#ECEFF1', '⬜'),
+    }
+
+    def _build_page_progress_chips(self, pages, active_page):
+        """各ページの進捗を、常時見えるコンパクトなチップ列として描画する。
+
+        トップ画面の状態表示は従来「今見ているページ」の状態しか出ておらず、
+        他ページがどこまで進んでいるかはページを移動しないと分からなかった。
+        ここでは全ページ分を1行に並べ、現在の作業ページには▶マークと太枠を
+        付けて区別する。
+        """
+        if not hasattr(self, '_page_progress_row'):
+            return
+        for child in self._page_progress_row.winfo_children():
+            child.destroy()
+        if not pages:
+            return
+        for item in pages:
+            state = item['state']
+            if state.startswith('採点中'):
+                bg, icon = '#FFE082', '▶'
+                detail = state[len('採点中 '):]
+            else:
+                bg, icon = self._PAGE_STATE_STYLE.get(state, ('#ECEFF1', '?'))
+                detail = ''
+            is_active = (item['page'] == active_page)
+            chip_text = f"{'▶' if is_active else ''}P{item['page']} {icon}{(' ' + detail) if detail else ''}"
+            chip = tk.Label(
+                self._page_progress_row, text=chip_text, bg=bg, fg='#263238',
+                font=(UI_FONT, get_ui_font_size(8), 'bold' if is_active else 'normal'),
+                relief=tk.SOLID if is_active else tk.FLAT,
+                bd=2 if is_active else 1, padx=5, pady=1,
+            )
+            chip.pack(side=tk.LEFT, padx=2)
+            _ToolTip(chip, f"ページ{item['page']}: {state}")
 
     def _on_multi_page_project_change(self):
         """答案取込画面を閉じた後、トップ画面の工程状態を再評価する。
@@ -1119,7 +1264,12 @@ class MarunosukeGUI:
                     page_base = Path(page['workspace']) / RESULTS_FOLDER
                     if not has_images(page_base / BOXED_FOLDER):
                         all_boxed = False
-                    if not self._check_descriptive_completeness(page['workspace'])[0]:
+                    # page['state']（get_multi_page_project_status）は監査で除外
+                    # された答案を採点対象から除いた上で完了判定している。
+                    # _check_descriptive_completeness はboxed_folder内の画像を
+                    # 単純に数えるため、除外済みの答案ファイルが残っていると
+                    # 常に未完了と誤判定してしまう。ここでは前者を使う。
+                    if page['state'] not in ('採点完了', '集計済み'):
                         all_scored = False
                     if not (page_base / FINAL_REPORT_FOLDER).exists():
                         all_summary = False
@@ -1873,6 +2023,24 @@ class MarunosukeGUI:
         finally:
             self.root.after(0, self._set_processing_state, False)
 
+    def _current_exam_page(self, folder: str = None):
+        """指定フォルダ（省略時は現在の画像フォルダ）が複数ページ案件の
+        ページ別ワークスペースなら、その試験ページ番号を返す。単一ページ
+        案件やワークスペース外なら None。
+
+        採点実行・採点確認・学籍番号OCR確認など、ページ単位で開く別ウィンドウの
+        タイトルに「試験ページ N」を表示し、複数ウィンドウが並んでいても
+        今どのページの作業か分かるようにするために使う。
+        """
+        folder = folder or self.image_folder_path.get()
+        if not folder:
+            return None
+        try:
+            from multi_page_merger import get_exam_page_for_workspace
+            return get_exam_page_for_workspace(folder)
+        except Exception:
+            return None
+
     # ---------------------------------------------------------
     # α: 記述採点の確認機能
     # ---------------------------------------------------------
@@ -1922,6 +2090,7 @@ class MarunosukeGUI:
                     boxed_folder=str(boxed_folder),
                     scores_save_path=str(scores_path),
                     original_image_folder=current_folder,
+                    exam_page=self._current_exam_page(current_folder),
                 )
                 if reviewer.modified:
                     self.log_message("✓ 採点結果の確認・修正が完了しました")
@@ -2773,6 +2942,7 @@ class MarunosukeGUI:
                 image_folder=image_folder_for_desc,
                 scores_save_path=str(scores_path),
                 original_image_folder=orig_folder,
+                exam_page=self._current_exam_page(),
             )
             result = scorer.run()
 
@@ -2946,7 +3116,9 @@ class MarunosukeGUI:
                     self.log_message(f"✓ 名簿読込: {len(roster)}件")
 
             from student_id_review_gui import StudentIdReviewGUI
-            review = StudentIdReviewGUI(self.root, ocr_results, roster)
+            review = StudentIdReviewGUI(
+                self.root, ocr_results, roster, exam_page=self._current_exam_page(image_folder),
+            )
             student_id_result = review.run()
             self.log_message(f"✓ 学籍番号OCR確認完了: {len(student_id_result)}枚")
             return False, student_id_result, roster, ocr_trimmer

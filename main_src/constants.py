@@ -313,7 +313,7 @@ def get_ui_font_family():
     return "Hiragino Sans" if sys.platform == 'darwin' else "Yu Gothic UI"
 
 
-MAC_FONT_SCALE = 1.6
+MAC_FONT_SCALE = 1.3
 
 
 def get_ui_font_size(base_size):
@@ -322,7 +322,8 @@ def get_ui_font_size(base_size):
     tkinterの正の整数フォントサイズは「ポイント」指定だが、WindowsのTkは
     96dpi、MacのTkは72dpi換算でピクセルに変換するため、同じ数値を指定しても
     Macでは約25%小さく表示される（tk scalingでは補正できないことを実機検証済み）。
-    実機での見え方を踏まえ、96/72(約1.33倍)よりさらに大きい1.6倍を採用している。
+    理論値の96/72(約1.33倍)に近い1.3倍を採用している（以前は視認性を優先して
+    1.6倍まで拡大していたが、画面全体が大きくなりすぎるとの声を受けて縮小した）。
     """
     if sys.platform == 'darwin':
         return round(base_size * MAC_FONT_SCALE)
