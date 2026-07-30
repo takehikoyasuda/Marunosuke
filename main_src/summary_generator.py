@@ -83,6 +83,50 @@ def _build_roster_row_specs(all_files, student_id_result, roster):
     return specs
 
 
+def _scored_pdf_order(scored_files, student_id_result, roster):
+    """採点済み答案PDFにまとめる際のページ順を決める。
+
+    名簿があれば名簿の並び順、名簿は無くても学籍番号OCRの確認結果があれば
+    確認済み学籍番号の昇順で並べる。どちらも無い場合はNoneを返し、
+    呼び出し側（combine_images_to_pdf）のファイル名順フォールバックに委ねる。
+
+    Args:
+        scored_files: 対象フォルダに実在するファイル名のリスト
+        student_id_result: {filename: {'text': 学籍番号, ...}}
+        roster: {学籍番号: 氏名} の dict（挿入順=名簿の並び順）
+
+    Returns:
+        並び替え済みのファイル名リスト。scored_filesに含まれる全件を含む
+        （名簿・学籍番号に対応しないファイルは末尾に自然順で追加）。
+        名簿・学籍番号OCR結果のどちらも無ければNone。
+    """
+    if roster:
+        sid_to_files = {}
+        for fname, info in (student_id_result or {}).items():
+            sid = (info.get('text') or '').strip()
+            if sid:
+                sid_to_files.setdefault(sid, []).append(fname)
+        scored_set = set(scored_files)
+        ordered = []
+        seen = set()
+        for sid in roster.keys():
+            for fname in sid_to_files.get(sid, []):
+                if fname in scored_set and fname not in seen:
+                    ordered.append(fname)
+                    seen.add(fname)
+        remaining = sorted(f for f in scored_files if f not in seen)
+        ordered.extend(remaining)
+        return ordered
+
+    if student_id_result:
+        def _key(fname):
+            sid = (student_id_result.get(fname, {}).get('text') or '').strip()
+            return (0, sid) if sid else (1, fname)
+        return sorted(scored_files, key=_key)
+
+    return None
+
+
 def process_descriptive_only_summary(
     image_folder,
     descriptive_config,
@@ -343,14 +387,27 @@ def process_descriptive_only_summary(
         wb_exam.save(str(exam_summary_path))
         logger.info("✓ 試験統計: %s", exam_summary_path.name)
 
-        # 統合PDF
+        # 統合PDF（名簿があれば名簿順、無くても学籍番号OCR結果があれば
+        # 確認済み学籍番号の昇順、どちらも無ければファイル名順で並べる）
         scored_folder = results_folder / SCORED_FOLDER
         scored_pdf_path = final_report / SCORED_PDF_FILE
+        scored_pdf_result_path = None
+        scored_pdf_error = None
         if scored_folder.exists():
             try:
-                combine_images_to_pdf(scored_folder, scored_pdf_path)
-                logger.info("✓ 統合PDF: %s", scored_pdf_path.name)
+                scored_files = sorted(
+                    f.name for f in scored_folder.iterdir()
+                    if f.suffix.lower() in ('.jpg', '.png')
+                )
+                ordered_filenames = _scored_pdf_order(scored_files, student_id_result, roster)
+                generated = combine_images_to_pdf(scored_folder, scored_pdf_path, ordered_filenames=ordered_filenames)
+                if generated:
+                    scored_pdf_result_path = str(scored_pdf_path)
+                    logger.info("✓ 統合PDF: %s", scored_pdf_path.name)
+                else:
+                    logger.info("統合PDF: 採点済み答案の画像が無いためスキップしました")
             except Exception as pdf_e:
+                scored_pdf_error = str(pdf_e)
                 logger.warning("統合PDF生成エラー: %s", pdf_e)
 
         logger.info("")
@@ -364,6 +421,8 @@ def process_descriptive_only_summary(
             "success": True,
             "student_summary_path": str(student_summary_path),
             "exam_summary_path": str(exam_summary_path),
+            "scored_pdf_path": scored_pdf_result_path,
+            "scored_pdf_error": scored_pdf_error,
             "stats": exam_stats,
         }
         return result

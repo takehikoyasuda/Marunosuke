@@ -1386,12 +1386,14 @@ class DescriptiveScorerGUI:
         image_folder: str,
         scores_save_path: str,
         original_image_folder: Optional[str] = None,
+        exam_page: Optional[int] = None,
     ):
         self.parent = parent
         self.config = config
         self.image_folder = image_folder
         self.scores_save_path = scores_save_path
         self.original_image_folder = original_image_folder
+        self.exam_page = exam_page  # 複数ページ案件のみ設定される
 
         # 既存スコアの読み込み
         existing = load_descriptive_scores(scores_save_path)
@@ -1447,7 +1449,10 @@ class DescriptiveScorerGUI:
     def _show_question_list(self):
         """問題一覧・採点進捗画面（モーダル）"""
         win = tk.Toplevel(self.parent)
-        win.title("採点")
+        title = "採点"
+        if self.exam_page is not None:
+            title += f"（試験ページ {self.exam_page}）"
+        win.title(title)
         win.resizable(True, True)
         win.transient(self.parent)
         self._list_win = win
@@ -1917,6 +1922,7 @@ class DescriptiveScorerGUI:
             rubric_save_callback=self._save_rubric_config,
             annotations=self.annotations,
             annotations_save_callback=self._save_annotations,
+            exam_page=self.exam_page,
         )
         updated = scorer.run()
 
@@ -2008,11 +2014,13 @@ class _SingleQuestionScorer:
         annotations: Optional[dict] = None,
         annotations_save_callback: Optional[Callable[[], None]] = None,
         initial_filename: Optional[str] = None,
+        exam_page: Optional[int] = None,
     ):
         self.parent = parent
         self.q_config = question_config
         self.q_id = question_config["id"]
         self.max_score = question_config["max_score"]
+        self.exam_page = exam_page  # 複数ページ案件のみ設定される
         self.use_entry = self.max_score > MAX_KEYBOARD_SCORE
         self.image_paths = image_paths
         self.existing_scores = existing_scores
@@ -2052,7 +2060,10 @@ class _SingleQuestionScorer:
             return None
 
         win = tk.Toplevel(self.parent)
-        win.title(f"採点: {self.q_config['name']} (配点:{self.max_score}点)")
+        title = f"採点: {self.q_config['name']} (配点:{self.max_score}点)"
+        if self.exam_page is not None:
+            title += f"（試験ページ {self.exam_page}）"
+        win.title(title)
         # 画面サイズに合わせたウィンドウサイズ（切れ防止）
         screen_h = win.winfo_screenheight()
         win_h = min(700, screen_h - 100)
@@ -4095,12 +4106,14 @@ class DescriptiveReviewGUI:
         boxed_folder: str,
         scores_save_path: str,
         original_image_folder: Optional[str] = None,
+        exam_page: Optional[int] = None,
     ):
         self.parent = parent
         self.config = config
         self.scores = {k: dict(v) for k, v in scores.items()}  # deep copy
         self.boxed_folder = Path(boxed_folder)
         self.scores_save_path = scores_save_path
+        self.exam_page = exam_page  # 複数ページ案件のみ設定される
         self.annotations_path = str(Path(scores_save_path).parent / DESCRIPTIVE_ANNOTATIONS_FILE)
         self.annotations = load_descriptive_annotations(self.annotations_path)
         try:
@@ -4135,7 +4148,10 @@ class DescriptiveReviewGUI:
 
     def _build_gui(self):
         self.win = tk.Toplevel(self.parent)
-        self.win.title("🔎 採点の確認・修正")
+        title = "🔎 採点の確認・修正"
+        if self.exam_page is not None:
+            title += f"（試験ページ {self.exam_page}）"
+        self.win.title(title)
         self.win.geometry("1100x700")
         self.win.configure(bg="#F5F7FA")
         self.win.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -4794,6 +4810,7 @@ class DescriptiveReviewGUI:
             annotations_save_callback=lambda: save_descriptive_annotations(
                 self.annotations_path, self.annotations),
             initial_filename=fname,
+            exam_page=self.exam_page,
         )
         result = scorer.run()
         if result is not None:

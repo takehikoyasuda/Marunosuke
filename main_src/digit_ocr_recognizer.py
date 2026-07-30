@@ -20,7 +20,7 @@ alpha_positions 参照)。数字マスと英字マスの分類器を分けてい
 
 import logging
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import joblib
 import numpy as np
@@ -40,6 +40,10 @@ class DigitOcrCandidate:
     value: Optional[str]  # 認識した数字列。1桁でも空欄・認識失敗ならNone
     confidence: float  # 平均確信度 (0.0-1.0)
     per_digit: List[Tuple[str, float]] = field(default_factory=list)  # 各桁の (文字, 確信度)
+    # 各桁の「文字→確信度」全クラス分布。名簿照合(roster_matcher)で、1位候補が
+    # 誤っていても正しい文字にどれだけ確率が乗っているかを見るために使う。
+    # 空欄・認識失敗の桁は空dict。
+    per_digit_proba: List[Dict[str, float]] = field(default_factory=list)
 
 
 class LocalDigitOcrRecognizer:
@@ -95,6 +99,7 @@ class LocalDigitOcrRecognizer:
         digits: List[str] = []
         confidences: List[float] = []
         per_digit: List[Tuple[str, float]] = []
+        per_digit_proba: List[Dict[str, float]] = []
 
         for i, image in enumerate(digit_images):
             is_alpha = bool(alpha_mask[i]) if alpha_mask is not None else False
@@ -105,6 +110,7 @@ class LocalDigitOcrRecognizer:
                 digits.append("")
                 confidences.append(0.0)
                 per_digit.append(("", 0.0))
+                per_digit_proba.append({})
                 continue
 
             proba = model.predict_proba(processed.reshape(1, -1))[0]
@@ -113,8 +119,14 @@ class LocalDigitOcrRecognizer:
             digits.append(label)
             confidences.append(float(proba[top_idx]))
             per_digit.append((label, float(proba[top_idx])))
+            per_digit_proba.append({
+                str(cls): float(p) for cls, p in zip(model.classes_, proba)
+            })
 
         value = "".join(digits) if all(d != "" for d in digits) else None
         overall_confidence = float(np.mean(confidences)) if confidences else 0.0
 
-        return DigitOcrCandidate(value=value, confidence=overall_confidence, per_digit=per_digit)
+        return DigitOcrCandidate(
+            value=value, confidence=overall_confidence,
+            per_digit=per_digit, per_digit_proba=per_digit_proba,
+        )

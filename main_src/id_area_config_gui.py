@@ -34,8 +34,15 @@ MAX_DISPLAY_HEIGHT = 750
 MIN_DRAG_SIZE = 6  # 表示座標でこの値未満のドラッグは無視する
 
 # 白い答案・赤い印刷枠のどちらからも見分けやすく、色覚差にも比較的強い組合せ。
+# 数字マス(青)と英字マス(オレンジ)は色相を大きく離し、パッと見で系統が
+# 違うと分かるようにしている（以前はどちらも濃い彩度の色で似て見えていた）。
 DIGIT_BOX_COLOR = "#0067C0"  # 青: 数字マス
-ALPHA_BOX_COLOR = "#C2185B"  # マゼンタ: 英字マス
+ALPHA_BOX_COLOR = "#FF6F00"  # オレンジ: 英字マス（目立つ暖色系）
+
+# 英字マスの上下の枠線だけ、この分(px、表示座標)だけ外側に広げて描画する。
+# マス内の記入スペース(実座標=_final_rects)は変えず、見た目の枠だけ太く
+# 張り出させて数字マスとの違いを強調する。
+ALPHA_BOX_VERTICAL_EXPAND = 4
 
 
 class IdAreaConfigDialog:
@@ -379,22 +386,39 @@ class IdAreaConfigDialog:
     def _redraw_final_overlay(self):
         """確定済みマスを描き直す。
 
-        数字マスは青の実線、英字マスはマゼンタの破線で示す。
-        記入内容を隠さないよう、マス上には文字ラベルを描かない。
+        数字マスは青の実線、英字マスはオレンジの破線で示す。記入内容を
+        隠さないよう、マス上には文字ラベルを描かない。
+
+        数字マス→英字マスの2パスで描画することで、隣接するマス同士の枠線が
+        接する境界では英字マスの色が上に乗るようにしている。また英字マスは
+        上下の枠線だけ表示上わずかに外側へ張り出させ（実座標は変えない）、
+        数字マスより太く目立つ見た目にする。
         """
         if not self._final_rects:
             return
         self._clear_overlay()
-        for i, rect in enumerate(self._final_rects):
-            is_alpha = i in self._alpha_positions
+
+        def _draw(i, rect, is_alpha):
             color = ALPHA_BOX_COLOR if is_alpha else DIGIT_BOX_COLOR
             x0, y0, x1, y1 = rect
             dx0, dy0 = x0 * self._display_ratio, y0 * self._display_ratio
             dx1, dy1 = x1 * self._display_ratio, y1 * self._display_ratio
+            if is_alpha:
+                dy0 -= ALPHA_BOX_VERTICAL_EXPAND
+                dy1 += ALPHA_BOX_VERTICAL_EXPAND
             rect_kwargs = {"outline": color, "width": 4, "tag": "id_box_preview"}
             if is_alpha:
                 rect_kwargs["dash"] = (5, 3)
             self.canvas.create_rectangle(dx0, dy0, dx1, dy1, **rect_kwargs)
+
+        # 数字マスを先に描画し、あとから英字マスを重ねる（前面表示）。
+        for i, rect in enumerate(self._final_rects):
+            if i not in self._alpha_positions:
+                _draw(i, rect, is_alpha=False)
+        for i, rect in enumerate(self._final_rects):
+            if i in self._alpha_positions:
+                _draw(i, rect, is_alpha=True)
+
         if self._alpha_positions:
             pos_str = "、".join(str(i + 1) for i in sorted(self._alpha_positions))
             self._alpha_guide_label.config(text=f"英字マスに指定: {pos_str}桁目")
