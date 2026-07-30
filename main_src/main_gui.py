@@ -3080,11 +3080,18 @@ class MarunosukeGUI:
             return
         self._run_summary_generation_descriptive_only()
 
-    def _run_student_id_ocr_flow(self, image_folder):
+    def _run_student_id_ocr_flow(self, image_folder, name_images=None):
         """学籍番号OCR: 矩形選択→OCR→名簿読込(任意)→確認GUI。
 
         チェックボックスがOFFの場合は何もしない。normal/記述のみモード
         どちらからも呼べるよう、対象フォルダの存在チェックも含めて自己完結させる。
+
+        Args:
+            name_images: 呼び出し元が既にトリミング済みの氏名欄画像
+                {ファイル名: パス}（「氏名画像を集計シートに表示する」機能で
+                生成されるものを流用する）。確認画面で学籍番号欄画像と並べて
+                表示するために使う。Noneまたは対応ファイルが無ければ、
+                従来通り学籍番号欄画像のみ表示する。
 
         Returns:
             (aborted, student_id_result, roster, trimmer) のタプル。
@@ -3126,46 +3133,21 @@ class MarunosukeGUI:
 
             self.log_message(f"✓ 学籍番号OCR完了: {len(ocr_results)}枚")
 
-            # 氏名欄のサムネイルも生成し、確認画面で学籍番号欄の画像と並べて
-            # 見比べられるようにする。氏名欄の位置(name_area_config)はStep1で
-            # 既に設定済みのはずなので、ここでは対話的選択なしで一括トリミング
-            # するだけ。設定が無い・失敗した場合は学籍番号欄画像のみの従来
-            # 表示にフォールバックする（エラーにはしない）。
-            name_thumb_dir = None
-            try:
-                from name_area_config import (
-                    NAME_AREA_CONFIG_FILE, load_name_area_config, resolve_rect_for_image,
-                )
-                results_data_folder = Path(image_folder) / RESULTS_FOLDER / RESULTS_DATA_FOLDER
-                name_area_config_path = results_data_folder / NAME_AREA_CONFIG_FILE
-                rect_frac = load_name_area_config(str(name_area_config_path))
-                if rect_frac is None:
-                    self.log_message(
-                        f"ℹ 氏名欄の位置設定が見つからないため、確認画面には学籍番号欄画像のみ表示します"
-                        f"（{name_area_config_path}）"
-                    )
+            # 氏名欄画像（呼び出し元で既にトリミング済みなら）を確認画面に渡し、
+            # 学籍番号欄の画像と並べて見比べられるようにする。
+            if name_images:
+                matched = 0
+                for fname in ocr_results:
+                    path = name_images.get(fname)
+                    if path:
+                        ocr_results[fname]['name_thumbnail_path'] = path
+                        matched += 1
+                if matched:
+                    self.log_message(f"✓ 氏名欄画像を確認画面に反映: {matched}枚")
                 else:
-                    from name_trimmer import get_image_files, trim_images
-                    image_files = get_image_files(str(boxed_folder))
-                    if image_files:
-                        with Image.open(image_files[0]) as img:
-                            img_w, img_h = img.size
-                        trim_rect = resolve_rect_for_image(rect_frac, img_w, img_h)
-                        import tempfile
-                        name_thumb_dir = tempfile.mkdtemp(
-                            prefix="name_thumb_", dir=get_app_temp_dir(image_folder)
-                        )
-                        saved_paths = trim_images(
-                            str(boxed_folder), trim_rect, name_thumb_dir,
-                            original_image_folder=image_folder,
-                        )
-                        for path in saved_paths:
-                            fname = Path(path).name
-                            if fname in ocr_results:
-                                ocr_results[fname]['name_thumbnail_path'] = path
-                        self.log_message(f"✓ 氏名欄サムネイル生成: {len(saved_paths)}枚")
-            except Exception as e:
-                self.log_message(f"⚠ 氏名欄サムネイル生成に失敗（学籍番号欄画像のみで続行）: {e}")
+                    self.log_message("ℹ 氏名欄画像とファイル名が一致しなかったため、確認画面には学籍番号欄画像のみ表示します")
+            else:
+                self.log_message("ℹ 氏名欄画像が無いため、確認画面には学籍番号欄画像のみ表示します")
 
             from roster_config import load_roster_config
             from multi_page_merger import resolve_roster_config_path
@@ -3185,12 +3167,6 @@ class MarunosukeGUI:
             )
             student_id_result = review.run()
             self.log_message(f"✓ 学籍番号OCR確認完了: {len(student_id_result)}枚")
-            if name_thumb_dir:
-                import shutil
-                try:
-                    shutil.rmtree(name_thumb_dir)
-                except Exception:
-                    pass
             return False, student_id_result, roster, ocr_trimmer
 
         except Exception as e:
@@ -3290,7 +3266,7 @@ class MarunosukeGUI:
 
         # 学籍番号OCR（チェックボックスで制御・実験的機能）
         aborted, student_id_result, roster, id_ocr_trimmer = self._run_student_id_ocr_flow(
-            self.image_folder_path.get()
+            self.image_folder_path.get(), name_images=name_images,
         )
         if aborted:
             return
