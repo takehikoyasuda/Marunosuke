@@ -99,7 +99,10 @@ def recognize_student_ids(
 
     Returns:
         {ファイル名: {'thumbnail_path': str, 'text': Optional[str],
-                      'confidence': float, 'per_digit': list}}
+                      'confidence': float, 'per_digit': list,
+                      'per_digit_proba': list}}
+        per_digit_proba は roster_matcher.rank_roster_candidates に渡すための
+        桁ごとの全クラス確率分布。
     """
     thumb_dir = Path(output_folder) / "thumbnails"
     thumb_dir.mkdir(parents=True, exist_ok=True)
@@ -150,6 +153,7 @@ def recognize_student_ids(
                 'text': candidate.value,
                 'confidence': candidate.confidence,
                 'per_digit': candidate.per_digit,
+                'per_digit_proba': candidate.per_digit_proba,
             }
         except Exception as e:
             logger.warning("学籍番号OCRエラー（スキップ）: %s — %s", filename, e)
@@ -158,6 +162,7 @@ def recognize_student_ids(
                 'text': None,
                 'confidence': 0.0,
                 'per_digit': [],
+                'per_digit_proba': [],
             }
 
     return results
