@@ -590,7 +590,7 @@ class MarunosukeGUI:
 
         tk.Label(
             input_group, text="作業スペースとページ数は、この案件で最初に1回だけ設定します。",
-            bg=SECTION_BG, fg="#607D8B", font=(UI_FONT, get_ui_font_size(8)),
+            bg=SECTION_BG, fg="#607D8B", font=(UI_FONT, get_ui_font_size(9)),
             justify=tk.CENTER,
         ).pack(fill=tk.X, pady=(0, 4))
 
@@ -672,7 +672,7 @@ class MarunosukeGUI:
                 "Step3〜5は1ページ分の作業です。ページ数分、繰り返します。\n"
                 "次のページに進むときも、もう一度「答案ファイルを追加＆採点準備」から始めてください。"
             ),
-            bg=SECTION_BG, fg="#607D8B", font=(UI_FONT, get_ui_font_size(8)),
+            bg=SECTION_BG, fg="#607D8B", font=(UI_FONT, get_ui_font_size(9)),
             justify=tk.CENTER,
         ).grid(row=0, column=0, sticky="ew", pady=(0, 6))
 
@@ -864,7 +864,7 @@ class MarunosukeGUI:
         tk.Checkbutton(
             step3_controls_row, text="氏名画像を集計シートに表示する",
             variable=self.name_trim_enabled, bg=SECTION_BG,
-            font=(UI_FONT, get_ui_font_size(8)), anchor=tk.W, cursor="hand2"
+            font=(UI_FONT, get_ui_font_size(9)), anchor=tk.W, cursor="hand2"
         ).pack(side=tk.LEFT, padx=(8, 0))
 
         # 採点済み答案画像（Step2「▶採点済み答案画像」）が既に生成されていれば、
@@ -872,7 +872,7 @@ class MarunosukeGUI:
         tk.Label(
             self._step3_run_row,
             text="※ 採点済み答案画像がある場合、それらを統合したPDFも出力されます",
-            bg=SECTION_BG, fg="#607D8B", font=(UI_FONT, get_ui_font_size(7)),
+            bg=SECTION_BG, fg="#607D8B", font=(UI_FONT, get_ui_font_size(9)),
             anchor=tk.W, justify=tk.LEFT,
         ).pack(side=tk.TOP, fill=tk.X, anchor=tk.W, pady=(2, 0))
 
