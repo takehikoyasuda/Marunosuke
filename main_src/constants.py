@@ -532,21 +532,30 @@ def extract_pdf_to_images(pdf_path, output_folder=None, dpi=200):
     return output_folder
 
 
-def combine_images_to_pdf(image_folder, output_pdf_path):
+def combine_images_to_pdf(image_folder, output_pdf_path, ordered_filenames=None):
     """
     フォルダ内の画像（jpg/png）を1つのPDFにまとめる。
-    
+
     Args:
         image_folder: 画像フォルダのパス
         output_pdf_path: 出力PDFファイルのパス
-    
+        ordered_filenames: 指定時、この順序（ファイル名のリスト）でPDFを
+            組み立てる。フォルダに存在しないファイル名は無視する。
+            省略時はファイル名の昇順（従来通り）。
+
     Returns:
         Path: 生成されたPDFのパス（画像がない場合はNone）
     """
     image_folder = Path(image_folder)
     output_pdf_path = Path(output_pdf_path)
-    
-    image_files = sorted(image_folder.glob('*.jpg')) + sorted(image_folder.glob('*.png'))
+
+    if ordered_filenames is not None:
+        image_files = [
+            image_folder / fname for fname in ordered_filenames
+            if (image_folder / fname).is_file()
+        ]
+    else:
+        image_files = sorted(image_folder.glob('*.jpg')) + sorted(image_folder.glob('*.png'))
     if not image_files:
         return None
     

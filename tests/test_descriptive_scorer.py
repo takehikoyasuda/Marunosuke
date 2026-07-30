@@ -521,6 +521,49 @@ class TestDrawDescriptiveOnImage:
             f"フォントサイズがボックスサイズに追従していない可能性がある"
         )
 
+    def test_aspect_scores_key_not_required(
+        self, blank_image_595x842, sample_config
+    ):
+        """観点別内訳の描画は廃止済みのため、'aspect_scores'キーが
+        mark_scoring_resultに無くてもエラーにならない（'aspect_max_scores'は
+        合計点計算に必要なため残す）。"""
+        mark_result = {
+            "total_score": 30,
+            "aspect_max_scores": {1: 20, 2: 15, 3: 10},
+            "results": {},
+        }
+        desc_scores = {"D1": 5, "D2": 7}
+        result = draw_combined_total(
+            blank_image_595x842, mark_result, sample_config, desc_scores,
+        )
+        assert result is not None
+
+    def test_aspect_values_do_not_affect_rendered_output(
+        self, blank_image_595x842, sample_config
+    ):
+        """観点別の内訳（aspect_scores）は描画されないため、その中身を変えても
+        出力画像は変わらないはず。"""
+        desc_scores = {"D1": 5, "D2": 7}
+        mark_result_a = {
+            "total_score": 30,
+            "aspect_scores": {1: 15, 2: 10, 3: 5},
+            "aspect_max_scores": {1: 20, 2: 15, 3: 10},
+            "results": {},
+        }
+        mark_result_b = {
+            "total_score": 30,
+            "aspect_scores": {1: 999, 2: 999, 3: 999},  # 内容が違っても
+            "aspect_max_scores": {1: 20, 2: 15, 3: 10},  # 合計計算に無関係
+            "results": {},
+        }
+        result_a = draw_combined_total(
+            blank_image_595x842, mark_result_a, sample_config, desc_scores,
+        )
+        result_b = draw_combined_total(
+            blank_image_595x842, mark_result_b, sample_config, desc_scores,
+        )
+        assert np.array_equal(result_a, result_b)
+
 
 # ============================================================
 # オーバーレイ画像生成テスト
@@ -723,7 +766,7 @@ class TestProcessingStateAndButtons:
         except tk.TclError:
             pytest.skip("Tkinter not available")
         try:
-            assert "採点済み答案を出力" in app._btn_run_scoring["text"]
+            assert "採点済み答案画像" in app._btn_run_scoring["text"]
             src = inspect.getsource(app._show_step2_more_menu)
             assert "合計点位置設定" in src
             assert "描画の詳細設定" in src

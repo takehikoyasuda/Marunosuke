@@ -67,6 +67,10 @@ GRID_COLUMNS = 4
 
 SINGLE_THUMB_WIDTH = 420
 
+# 氏名欄サムネイル（学籍番号欄と並べて表示し、見比べやすくする）
+GRID_NAME_THUMB_WIDTH = 100
+SINGLE_NAME_THUMB_WIDTH = 220
+
 
 class StudentIdReviewGUI:
     """学籍番号OCR候補の確認・修正画面。"""
@@ -202,20 +206,32 @@ class StudentIdReviewGUI:
             ).pack(fill=tk.X, padx=10, pady=6)
             warn.pack(fill=tk.X)
 
-        canvas = tk.Canvas(self._grid_frame, bg="#ECEFF1", highlightthickness=0)
-        scrollbar = tk.Scrollbar(self._grid_frame, orient=tk.VERTICAL, command=canvas.yview)
+        # 縦スクロールに加え、横スクロールバーも付ける（カード幅×列数が
+        # ウィンドウ幅を超えても、右側が見えないまま気付けない状態を防ぐ）。
+        canvas_frame = tk.Frame(self._grid_frame, bg="#ECEFF1")
+        canvas_frame.pack(fill=tk.BOTH, expand=True)
+        canvas_frame.grid_rowconfigure(0, weight=1)
+        canvas_frame.grid_columnconfigure(0, weight=1)
+
+        canvas = tk.Canvas(canvas_frame, bg="#ECEFF1", highlightthickness=0)
+        v_scrollbar = tk.Scrollbar(canvas_frame, orient=tk.VERTICAL, command=canvas.yview)
+        h_scrollbar = tk.Scrollbar(canvas_frame, orient=tk.HORIZONTAL, command=canvas.xview)
         inner = tk.Frame(canvas, bg="#ECEFF1")
 
         inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.create_window((0, 0), window=inner, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
 
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.grid(row=0, column=0, sticky="nsew")
+        v_scrollbar.grid(row=0, column=1, sticky="ns")
+        h_scrollbar.grid(row=1, column=0, sticky="ew")
 
         def _on_mousewheel(event):
             canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        def _on_shift_mousewheel(event):
+            canvas.xview_scroll(int(-1 * (event.delta / 120)), "units")
         canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        canvas.bind_all("<Shift-MouseWheel>", _on_shift_mousewheel)
 
         for i, filename in enumerate(self._filenames):
             row, col = divmod(i, GRID_COLUMNS)
@@ -258,12 +274,27 @@ class StudentIdReviewGUI:
         inner = tk.Frame(card, bg='white')
         inner.pack(fill=tk.BOTH, expand=True)
 
+        # 学籍番号欄画像の下に、氏名欄画像（あれば）を並べて表示し、見比べやすく
+        # する。氏名欄画像はStudentIdReviewGUI呼び出し側でトリミング済みの
+        # 場合のみ('name_thumbnail_path')渡ってくる（無くても従来通り動作する）。
+        img_col = tk.Frame(inner, bg='white')
+        img_col.pack(padx=2, pady=2)
+
+        clickable_widgets = [card, inner, img_col]
+
         photo = self._load_photo(info.get('thumbnail_path'), GRID_THUMB_WIDTH)
         if photo:
-            img_label = tk.Label(inner, image=photo, bg='white')
+            img_label = tk.Label(img_col, image=photo, bg='white')
         else:
-            img_label = tk.Label(inner, text="(画像なし)", bg='white', fg='gray')
-        img_label.pack(padx=2, pady=2)
+            img_label = tk.Label(img_col, text="(画像なし)", bg='white', fg='gray')
+        img_label.pack(side=tk.TOP)
+        clickable_widgets.append(img_label)
+
+        name_photo = self._load_photo(info.get('name_thumbnail_path'), GRID_NAME_THUMB_WIDTH)
+        if name_photo:
+            name_img_label = tk.Label(img_col, image=name_photo, bg='white')
+            name_img_label.pack(side=tk.TOP, pady=(3, 0))
+            clickable_widgets.append(name_img_label)
 
         name_text = info.get('name')
         candidates = info.get('roster_candidates') or []
@@ -288,10 +319,11 @@ class StudentIdReviewGUI:
             bg='white', fg='#333', justify=tk.CENTER,
         )
         info_label.pack(padx=2, pady=(0, 4))
+        clickable_widgets.append(info_label)
 
         def on_click(event, target=filename):
             self._switch_to_single(target)
-        for widget in (card, inner, img_label, info_label):
+        for widget in clickable_widgets:
             widget.bind("<Button-1>", on_click)
             widget.configure(cursor='hand2')
 
@@ -340,9 +372,17 @@ class StudentIdReviewGUI:
             bg="#546E7A", fg="black", font=(UI_FONT, get_ui_font_size(9)),
         ).pack(side=tk.RIGHT, padx=10, pady=6)
 
+        img_col = tk.Frame(self._single_frame)
+        img_col.pack(padx=20, pady=20)
+
         photo = self._load_photo(info.get('thumbnail_path'), SINGLE_THUMB_WIDTH)
-        img_label = tk.Label(self._single_frame, image=photo, bg='white', relief=tk.SUNKEN)
-        img_label.pack(padx=20, pady=20)
+        img_label = tk.Label(img_col, image=photo, bg='white', relief=tk.SUNKEN)
+        img_label.pack(side=tk.TOP)
+
+        name_photo = self._load_photo(info.get('name_thumbnail_path'), SINGLE_NAME_THUMB_WIDTH)
+        if name_photo:
+            name_img_label = tk.Label(img_col, image=name_photo, bg='white', relief=tk.SUNKEN)
+            name_img_label.pack(side=tk.TOP, pady=(12, 0))
 
         input_frame = tk.Frame(self._single_frame)
         input_frame.pack(pady=10)

@@ -824,11 +824,11 @@ class MarunosukeGUI:
         # 採点状況の詳細は必要時の確認画面で扱い、トップには表示しない。
         self._desc_status_frame.pack_forget()
 
-        # 採点済み答案を出力・結果フォルダ・採点結果を確認は、「4」の番号の
+        # 採点済み答案画像・結果フォルダ・採点結果を確認は、「4」の番号の
         # 真下ではなく、メインボタン（採点実行）と同じ行のその右側に置く。
         step2_run_row = tk.Frame(step2._main_header, bg=SECTION_BG)
         step2_run_row.pack(side=tk.LEFT, padx=(16, 0))
-        self._btn_run_scoring = ColoredButton(step2_run_row, text="▶ 採点済み答案を出力", command=self.run_scoring, bg="#90CAF9", fg="#263238", font=FONT_NORMAL, pady=3)
+        self._btn_run_scoring = ColoredButton(step2_run_row, text="▶ 採点済み答案画像", command=self.run_scoring, bg="#90CAF9", fg="#263238", font=FONT_NORMAL, pady=3)
         self._btn_run_scoring.pack(side=tk.LEFT)
         self.open_scored_btn = tk.Button(step2_run_row, text="📁", command=self.open_scored_folder, bg=BTN_GRAY, relief=tk.FLAT, state=tk.DISABLED, width=3, font=(UI_FONT, get_ui_font_size(10)))
         self.open_scored_btn.pack(side=tk.LEFT, padx=(3, 0), fill=tk.Y)
@@ -851,17 +851,30 @@ class MarunosukeGUI:
         # 真下ではなく、メインボタン（集計）と同じ行のその右側に置く。
         self._step3_run_row = tk.Frame(step3._main_header, bg=SECTION_BG)
         self._step3_run_row.pack(side=tk.LEFT, padx=(16, 0))
-        self.open_results_btn = tk.Button(self._step3_run_row, text="📁", command=self.open_results_folder, bg=BTN_GRAY, relief=tk.FLAT, state=tk.DISABLED, width=3, font=(UI_FONT, get_ui_font_size(10)))
+
+        step3_controls_row = tk.Frame(self._step3_run_row, bg=SECTION_BG)
+        step3_controls_row.pack(side=tk.TOP, fill=tk.X, anchor=tk.W)
+
+        self.open_results_btn = tk.Button(step3_controls_row, text="📁", command=self.open_results_folder, bg=BTN_GRAY, relief=tk.FLAT, state=tk.DISABLED, width=3, font=(UI_FONT, get_ui_font_size(10)))
         self.open_results_btn.pack(side=tk.LEFT)
 
         # 学籍番号OCRを実施するかどうかは、初期設定（学籍番号欄指定）で
         # 一度だけ決める。ここでは切り替えない。
         self.name_trim_enabled = tk.BooleanVar(value=True)
         tk.Checkbutton(
-            self._step3_run_row, text="氏名画像を集計シートに表示する",
+            step3_controls_row, text="氏名画像を集計シートに表示する",
             variable=self.name_trim_enabled, bg=SECTION_BG,
             font=(UI_FONT, get_ui_font_size(8)), anchor=tk.W, cursor="hand2"
         ).pack(side=tk.LEFT, padx=(8, 0))
+
+        # 採点済み答案画像（Step2「▶採点済み答案画像」）が既に生成されていれば、
+        # 集計と同時にそれらを統合したPDFも作られることを案内する。
+        tk.Label(
+            self._step3_run_row,
+            text="※ 採点済み答案画像がある場合、それらを統合したPDFも出力されます",
+            bg=SECTION_BG, fg="#607D8B", font=(UI_FONT, get_ui_font_size(7)),
+            anchor=tk.W, justify=tk.LEFT,
+        ).pack(side=tk.TOP, fill=tk.X, anchor=tk.W, pady=(2, 0))
 
         # 学籍番号OCRの実施可否は初期設定側で決めるが、既存コードとの
         # 互換のため変数自体はここで初期化しておく（トップ画面には出さない）。
@@ -1234,7 +1247,7 @@ class MarunosukeGUI:
         scored = has_images(base / SCORED_FOLDER) if base else False
         # 「採点実行」の完了は、採点済み答案の出力(SCORED_FOLDER)ではなく
         # 全問題×全画像の採点データ(descriptive_scores.json)が揃っているかで
-        # 判定する。出力は採点完了後の別工程（▶ 採点済み答案を出力）であり、
+        # 判定する。出力は採点完了後の別工程（▶ 採点済み答案画像）であり、
         # これを条件にすると採点自体は終わっているのにチェックが付かない。
         scoring_done = (
             self._check_descriptive_completeness(img_folder)[0]
@@ -2011,7 +2024,9 @@ class MarunosukeGUI:
                     f"・処理対象: {result['total_count']}件\n"
                     f"・成功: {result['success_count']}件\n"
                     f"・エラー: {result['error_count']}件\n\n"
-                    f"出力フォルダ: {output_folder}"
+                    f"出力フォルダ（答案1枚ずつの画像）: {output_folder}\n\n"
+                    f"※ 採点済み答案をまとめた1つのPDFは、この後「集計」を実行すると\n"
+                    f"　 別フォルダ（03_Final_Report）に生成されます。"
                 )
                 self.root.after(0, lambda: messagebox.showinfo("完了", summary))
 
@@ -2096,6 +2111,9 @@ class MarunosukeGUI:
                     self.log_message("✓ 採点結果の確認・修正が完了しました")
                     self._update_descriptive_status()
                     self._save_session_state()
+                    # 複数ページ案件のトップ画面（ページ別進捗チップ・工程マーカー）に
+                    # 反映されるよう更新する（呼び忘れると採点済みなのに反映されない）。
+                    self._update_step_availability()
             except Exception as e:
                 self.log_message(f"採点確認エラー: {e}")
                 import traceback
@@ -2369,6 +2387,7 @@ class MarunosukeGUI:
 
         self.log_message(f"✓ 初期設定と採点データを初期化しました（{', '.join(deleted)}）")
         self._update_descriptive_status()
+        self._update_step_availability()
 
     # ---------------------------------------------------------
     # セッション状態の保存・復元
@@ -2826,6 +2845,7 @@ class MarunosukeGUI:
                     )
                 self._update_descriptive_status()
                 self._save_session_state()
+                self._update_step_availability()
             else:
                 self.log_message("初期設定がキャンセルされました。")
         except Exception as e:
@@ -2950,6 +2970,9 @@ class MarunosukeGUI:
                 self.log_message(f"✓ 採点完了: {len(result)}枚")
                 self._update_descriptive_status()
                 self._save_session_state()
+                # 複数ページ案件のトップ画面（ページ別進捗チップ・工程マーカー）に
+                # 反映されるよう更新する（呼び忘れると採点済みなのに反映されない）。
+                self._update_step_availability()
             else:
                 self.log_message("採点がキャンセルされました。")
         except Exception as e:
@@ -3103,6 +3126,47 @@ class MarunosukeGUI:
 
             self.log_message(f"✓ 学籍番号OCR完了: {len(ocr_results)}枚")
 
+            # 氏名欄のサムネイルも生成し、確認画面で学籍番号欄の画像と並べて
+            # 見比べられるようにする。氏名欄の位置(name_area_config)はStep1で
+            # 既に設定済みのはずなので、ここでは対話的選択なしで一括トリミング
+            # するだけ。設定が無い・失敗した場合は学籍番号欄画像のみの従来
+            # 表示にフォールバックする（エラーにはしない）。
+            name_thumb_dir = None
+            try:
+                from name_area_config import (
+                    NAME_AREA_CONFIG_FILE, load_name_area_config, resolve_rect_for_image,
+                )
+                results_data_folder = Path(image_folder) / RESULTS_FOLDER / RESULTS_DATA_FOLDER
+                name_area_config_path = results_data_folder / NAME_AREA_CONFIG_FILE
+                rect_frac = load_name_area_config(str(name_area_config_path))
+                if rect_frac is None:
+                    self.log_message(
+                        f"ℹ 氏名欄の位置設定が見つからないため、確認画面には学籍番号欄画像のみ表示します"
+                        f"（{name_area_config_path}）"
+                    )
+                else:
+                    from name_trimmer import get_image_files, trim_images
+                    image_files = get_image_files(str(boxed_folder))
+                    if image_files:
+                        with Image.open(image_files[0]) as img:
+                            img_w, img_h = img.size
+                        trim_rect = resolve_rect_for_image(rect_frac, img_w, img_h)
+                        import tempfile
+                        name_thumb_dir = tempfile.mkdtemp(
+                            prefix="name_thumb_", dir=get_app_temp_dir(image_folder)
+                        )
+                        saved_paths = trim_images(
+                            str(boxed_folder), trim_rect, name_thumb_dir,
+                            original_image_folder=image_folder,
+                        )
+                        for path in saved_paths:
+                            fname = Path(path).name
+                            if fname in ocr_results:
+                                ocr_results[fname]['name_thumbnail_path'] = path
+                        self.log_message(f"✓ 氏名欄サムネイル生成: {len(saved_paths)}枚")
+            except Exception as e:
+                self.log_message(f"⚠ 氏名欄サムネイル生成に失敗（学籍番号欄画像のみで続行）: {e}")
+
             from roster_config import load_roster_config
             from multi_page_merger import resolve_roster_config_path
             roster_config_path = resolve_roster_config_path(image_folder)
@@ -3121,6 +3185,12 @@ class MarunosukeGUI:
             )
             student_id_result = review.run()
             self.log_message(f"✓ 学籍番号OCR確認完了: {len(student_id_result)}枚")
+            if name_thumb_dir:
+                import shutil
+                try:
+                    shutil.rmtree(name_thumb_dir)
+                except Exception:
+                    pass
             return False, student_id_result, roster, ocr_trimmer
 
         except Exception as e:
@@ -3345,6 +3415,19 @@ class MarunosukeGUI:
                     combined_note = ""
 
                 stats = result["stats"]
+                generated_files = [
+                    f"・{STUDENT_SUMMARY_FILE} (学生別得点)",
+                    f"・{EXAM_SUMMARY_FILE} (試験統計)",
+                ]
+                if result.get("scored_pdf_path"):
+                    generated_files.append(
+                        f"・{Path(result['scored_pdf_path']).name} (採点済み答案の統合PDF)"
+                    )
+                elif result.get("scored_pdf_error"):
+                    generated_files.append(
+                        "・（採点済み答案の統合PDFは生成できませんでした — "
+                        f"{result['scored_pdf_error']}）"
+                    )
                 summary = (
                     f"サマリー生成が正常に完了しました！\n\n"
                     f"【試験統計】（記述のみ）\n"
@@ -3356,9 +3439,8 @@ class MarunosukeGUI:
                     f"・最低点: {stats['最低点']}点\n\n"
                     f"出力フォルダ: {final_report}\n\n"
                     f"生成されたファイル:\n"
-                    f"・{STUDENT_SUMMARY_FILE} (学生別得点)\n"
-                    f"・{EXAM_SUMMARY_FILE} (試験統計)"
-                    f"{combined_note}"
+                    + "\n".join(generated_files)
+                    + f"{combined_note}"
                 )
                 self.root.after(0, lambda: messagebox.showinfo("完了", summary))
                 self.root.after(0, self._update_multi_page_dashboard)

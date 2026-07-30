@@ -330,28 +330,6 @@ def draw_combined_total(
     combined_total = mark_total + desc_total
     combined_max = mark_max + desc_max
 
-    # --- 観点別スコア計算 ---
-    aspect_scores = dict(mark_scoring_result['aspect_scores'])
-    aspect_max_scores = dict(mark_scoring_result['aspect_max_scores'])
-
-    for q in config["questions"]:
-        asp = q.get("aspect", 1)
-        if asp not in aspect_max_scores:
-            aspect_max_scores[asp] = 0
-        if asp not in aspect_scores:
-            aspect_scores[asp] = 0
-        aspect_max_scores[asp] += q["max_score"]
-        sc = descriptive_scores_for_image.get(q["id"])
-        if sc is not None:
-            aspect_scores[asp] += sc
-
-    sorted_aspects = sorted(aspect_max_scores.keys())
-    parts = []
-    for asp in sorted_aspects:
-        circled = number_to_circled(asp)
-        parts.append(f"観点{circled}:{aspect_scores.get(asp, 0)}/{aspect_max_scores[asp]}")
-    line2_text = " ".join(parts) if parts else ""
-
     # --- 描画位置の決定 ---
     total_region = config.get("total_display_region")
 
@@ -384,7 +362,7 @@ def draw_combined_total(
     pil_img = Image.fromarray(cv2.cvtColor(result, cv2.COLOR_BGR2RGB))
     draw = ImageDraw.Draw(pil_img)
 
-    # テキスト
+    # テキスト（観点別の内訳表示は廃止済みのため、合計点のみ描画する）
     line1 = f"得点：{combined_total} / {combined_max}"
 
     # フォントサイズの自動調整（ボックスサイズ基準）
@@ -394,53 +372,20 @@ def draw_combined_total(
     max_font = max(box_based_font, scale_based_font)
     min_font = max(int(box_h * 0.1), int(6 * s), 6)
     font_size = max_font
-    line2_font_size = max(min_font, max_font - 2)
     for attempt_size in range(max_font, min_font - 1, -1):
         font_test = _get_font(attempt_size)
         bbox1 = draw.textbbox((0, 0), line1, font=font_test)
         w1 = bbox1[2] - bbox1[0]
         h1 = bbox1[3] - bbox1[1]
-        total_h = h1 + int(4 * s)
-        max_w = w1
 
-        if line2_text:
-            font_test2 = _get_font(max(min_font, attempt_size - int(2 * s)))
-            bbox2 = draw.textbbox((0, 0), line2_text, font=font_test2)
-            w2 = bbox2[2] - bbox2[0]
-            h2 = bbox2[3] - bbox2[1]
-            total_h += h2
-            max_w = max(max_w, w2)
-
-        if max_w <= box_w - int(6 * s) and total_h <= box_h - int(4 * s):
+        if w1 <= box_w - int(6 * s) and h1 <= box_h - int(4 * s):
             font_size = attempt_size
-            line2_font_size = max(min_font, attempt_size - int(2 * s))
             break
     else:
         font_size = min_font
-        line2_font_size = max(min_font - 2, 6)
 
     font = _get_font(font_size)
-    font_small = _get_font(line2_font_size)
 
-    # 1行目: 合計得点
     draw.text((box_x1 + int(3 * s), box_y1 + int(2 * s)), line1, font=font, fill=TOTAL_COLOR_RGB)
-
-    # 2行目: 観点別
-    if line2_text:
-        line1_bbox = draw.textbbox((0, 0), line1, font=font)
-        line1_h = line1_bbox[3] - line1_bbox[1]
-
-        # 2行目がボックスに収まるか確認、収まらなければ省略表示
-        bbox2_test = draw.textbbox((0, 0), line2_text, font=font_small)
-        w2_test = bbox2_test[2] - bbox2_test[0]
-        if w2_test > box_w - int(6 * s):
-            # 省略: 観点記号だけ
-            short_parts = []
-            for asp in sorted_aspects:
-                circled = number_to_circled(asp)
-                short_parts.append(f"{circled}:{aspect_scores.get(asp, 0)}")
-            line2_text = " ".join(short_parts)
-
-        draw.text((box_x1 + int(3 * s), box_y1 + line1_h + int(4 * s)), line2_text, font=font_small, fill=TOTAL_COLOR_RGB)
 
     return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
