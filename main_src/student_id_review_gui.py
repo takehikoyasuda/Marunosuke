@@ -119,6 +119,7 @@ class StudentIdReviewGUI:
 
             self.confirmed[filename] = {
                 'thumbnail_path': info.get('thumbnail_path'),
+                'name_thumbnail_path': info.get('name_thumbnail_path'),
                 'text': text,
                 'confidence': info.get('confidence', 0.0),
                 'name': name,

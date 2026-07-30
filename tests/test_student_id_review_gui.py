@@ -198,6 +198,34 @@ class TestStudentIdReviewGuiRosterAutoApply(unittest.TestCase):
         finally:
             gui.window.destroy()
 
+    def test_11_name_thumbnail_path_is_carried_into_confirmed(self):
+        """呼び出し側がocr_resultsに 'name_thumbnail_path' を入れていれば、
+        self.confirmed（グリッド・単体表示が実際に参照する辞書）にも
+        コピーされること。これが抜けていると、氏名欄画像を渡しても
+        画面には一切表示されない（過去に実際に起きた不具合）。"""
+        info = _make_ocr_result([], "12345678")
+        info['name_thumbnail_path'] = "/tmp/fake_name_thumb.jpg"
+        ocr_results = {"a.jpg": info}
+        gui = StudentIdReviewGUI(self.root, ocr_results, roster=None)
+        try:
+            self.assertEqual(
+                gui.confirmed["a.jpg"]["name_thumbnail_path"],
+                "/tmp/fake_name_thumb.jpg",
+            )
+        finally:
+            gui.window.destroy()
+
+    def test_12_missing_name_thumbnail_path_defaults_to_none(self):
+        """氏名欄画像パスが渡されなかった場合、confirmed側もNoneのままで
+        エラーにならないこと（従来通り学籍番号欄画像のみの表示にフォール
+        バックできる）。"""
+        ocr_results = {"a.jpg": _make_ocr_result([], "12345678")}
+        gui = StudentIdReviewGUI(self.root, ocr_results, roster=None)
+        try:
+            self.assertIsNone(gui.confirmed["a.jpg"].get("name_thumbnail_path"))
+        finally:
+            gui.window.destroy()
+
 
 if __name__ == "__main__":
     unittest.main()
