@@ -1087,6 +1087,14 @@ class MarunosukeGUI:
         setup = bool(data and (data / "descriptive_config.json").exists())
         boxed = has_images(base / BOXED_FOLDER) if base else False
         scored = has_images(base / SCORED_FOLDER) if base else False
+        # 「採点実行」の完了は、採点済み答案の出力(SCORED_FOLDER)ではなく
+        # 全問題×全画像の採点データ(descriptive_scores.json)が揃っているかで
+        # 判定する。出力は採点完了後の別工程（▶ 採点済み答案を出力）であり、
+        # これを条件にすると採点自体は終わっているのにチェックが付かない。
+        scoring_done = (
+            self._check_descriptive_completeness(img_folder)[0]
+            if (img_folder and setup and boxed) else False
+        )
         reviewed = bool(data and (data / "descriptive_scores.json").exists())
         summary = bool(base and (base / FINAL_REPORT_FOLDER).exists())
         states = {
@@ -1099,7 +1107,7 @@ class MarunosukeGUI:
         # 複数ページ案件では、Step3〜5のチェックは「今見ているページ」だけでなく
         # 全ページの完了状況で判定する。1ページ目だけ終えた時点で✓が付くと
         # 紛らわしいため。
-        all_boxed, all_scored, all_summary = boxed, scored, summary
+        all_boxed, all_scored, all_summary = boxed, scoring_done, summary
         multi_status = None
         pending_page = None
         if img_folder:
@@ -1111,7 +1119,7 @@ class MarunosukeGUI:
                     page_base = Path(page['workspace']) / RESULTS_FOLDER
                     if not has_images(page_base / BOXED_FOLDER):
                         all_boxed = False
-                    if not has_images(page_base / SCORED_FOLDER):
+                    if not self._check_descriptive_completeness(page['workspace'])[0]:
                         all_scored = False
                     if not (page_base / FINAL_REPORT_FOLDER).exists():
                         all_summary = False
@@ -2016,13 +2024,19 @@ class MarunosukeGUI:
         except Exception as e:
             self._set_desc_status(f"📋 採点ステータス: 読み込みエラー ({e})")
 
-    def _check_descriptive_completeness(self) -> tuple:
+    def _check_descriptive_completeness(self, img_folder=None) -> tuple:
         """記述採点の完了状態をチェックする。
+
+        Args:
+            img_folder: チェック対象のワークスペースフォルダ。省略時は現在選択中の
+                画像フォルダ(self.image_folder_path.get())を使う。複数ページ案件で
+                他ページのワークスペースの完了状態を判定する際に指定する。
 
         Returns:
             (is_complete: bool, unscored_count: int, total_images: int, detail_lines: list)
         """
-        img_folder = self.image_folder_path.get()
+        if img_folder is None:
+            img_folder = self.image_folder_path.get()
         results_data = Path(img_folder) / RESULTS_FOLDER / RESULTS_DATA_FOLDER
         config_path = results_data / "descriptive_config.json"
         scores_path = results_data / "descriptive_scores.json"
