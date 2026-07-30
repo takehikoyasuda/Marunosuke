@@ -2007,6 +2007,7 @@ class _SingleQuestionScorer:
         rubric_save_callback: Optional[Callable[[], None]] = None,
         annotations: Optional[dict] = None,
         annotations_save_callback: Optional[Callable[[], None]] = None,
+        initial_filename: Optional[str] = None,
     ):
         self.parent = parent
         self.q_config = question_config
@@ -2030,6 +2031,8 @@ class _SingleQuestionScorer:
 
         self.filenames = sorted(image_paths.keys())
         self.current_idx = 0
+        if initial_filename and initial_filename in self.filenames:
+            self.current_idx = self.filenames.index(initial_filename)
 
         # この問題のローカル採点結果
         self.local_scores: Dict[str, int] = {}
@@ -2137,8 +2140,15 @@ class _SingleQuestionScorer:
             tk.Button(
                 top_bar, text="確定", command=self._submit_entry_score,
                 font=(UI_FONT, get_ui_font_size(8)), bg="#90CAF9", relief=tk.FLAT,
-            ).pack(side=tk.LEFT, padx=(0, 8))
+            ).pack(side=tk.LEFT, padx=(0, 4))
             self.score_entry.bind("<Return>", lambda e: self._submit_entry_score())
+            self.score_entry.bind("<Right>", self._on_entry_right_key)
+
+            # 「確定」と「〇 正解」の押し間違いを防ぐための区切り。
+            tk.Label(
+                top_bar, text="│", font=(UI_FONT, get_ui_font_size(10)),
+                bg="#37474F", fg="#607D8B",
+            ).pack(side=tk.LEFT, padx=(4, 10))
 
         # 〇/× ボタン (コンパクト版)
         self._btn_maru = tk.Button(
@@ -2264,6 +2274,21 @@ class _SingleQuestionScorer:
         )
         open_link.pack(side=tk.RIGHT, padx=5)
         open_link.bind("<Button-1>", lambda e: self._open_current_original())
+
+        # --- 部分点ボタン行: 配点<=9の場合、正解/不正解以外の得点も
+        #     キーボードを使わずクリックだけで入力できるようにする。
+        if not self.use_entry:
+            score_btn_bar = tk.Frame(self._single_frame, bg="#ECEFF1", padx=6, pady=2)
+            score_btn_bar.pack(fill=tk.X)
+            tk.Label(score_btn_bar, text="部分点:", bg="#ECEFF1",
+                     font=(UI_FONT, get_ui_font_size(8))).pack(side=tk.LEFT, padx=(0, 4))
+            for i in range(min(10, self.max_score + 1)):
+                tk.Button(
+                    score_btn_bar, text=str(i), width=3,
+                    command=lambda s=i: self._on_partial_score_btn(s),
+                    font=(UI_FONT, get_ui_font_size(9), "bold"),
+                    bg="#FFF3E0", relief=tk.RAISED, cursor="hand2",
+                ).pack(side=tk.LEFT, padx=1)
 
         # --- メイン: 画像キャンバス（横長で広く表示） ---
         canvas_frame = tk.Frame(self._single_frame)
@@ -2962,6 +2987,14 @@ class _SingleQuestionScorer:
         sort_combo.pack(side=tk.LEFT, padx=(3, 10))
         sort_combo.bind("<<ComboboxSelected>>", lambda e: self._refresh_grid())
 
+        tk.Label(top_bar, text="表示:", font=(UI_FONT, get_ui_font_size(9)), bg=BG).pack(side=tk.LEFT)
+        self._grid_filter_var = tk.StringVar(value="全件")
+        filter_combo = ttk.Combobox(top_bar, textvariable=self._grid_filter_var,
+                                    values=["全件", "未採点", "保留"],
+                                    state="readonly", width=7)
+        filter_combo.pack(side=tk.LEFT, padx=(3, 10))
+        filter_combo.bind("<<ComboboxSelected>>", lambda e: self._refresh_grid())
+
         self._grid_progress_var = tk.StringVar()
         tk.Label(top_bar, textvariable=self._grid_progress_var,
                  font=(UI_FONT, get_ui_font_size(9), "bold"), bg=BG, fg="#555").pack(side=tk.LEFT, padx=(10, 0))
@@ -3196,9 +3229,20 @@ class _SingleQuestionScorer:
 
         BG = "#F5F7FA"
 
+        # フィルタ
+        filter_mode = self._grid_filter_var.get() if hasattr(self, "_grid_filter_var") else "全件"
+        filenames = list(self.filenames)
+        if filter_mode == "未採点":
+            filenames = [f for f in filenames if f not in self.local_scores]
+        elif filter_mode == "保留":
+            answers = self.annotations.get("answers", {})
+            filenames = [
+                f for f in filenames
+                if answers.get(f, {}).get(self.q_id, {}).get("held", False)
+            ]
+
         # ソート
         sort_key = self._grid_sort_var.get()
-        filenames = list(self.filenames)
         if sort_key == "得点 昇順":
             filenames.sort(key=lambda f: (self.local_scores.get(f) is None,
                                           self.local_scores.get(f, 0)))
@@ -3215,12 +3259,21 @@ class _SingleQuestionScorer:
         cols = max(1, canvas_w // (self._grid_thumb_size + 14))
         self._grid_cols = cols
 
-        # 進捗更新
+        # 進捗更新（フィルタに関わらず全体の進捗を表示）
         self._update_grid_progress()
 
         # カード配置
         cols = self._grid_cols
         thumb_size = self._grid_thumb_size
+
+        if not filenames:
+            message = "保留中の答案はありません" if filter_mode == "保留" else "未採点の答案はありません"
+            tk.Label(
+                self._grid_inner, text=message, bg=BG,
+                font=(UI_FONT, get_ui_font_size(11)), fg="#666",
+            ).grid(row=0, column=0, padx=40, pady=40)
+            self._win.after_idle(self._ensure_scroll_binding)
+            return
 
         for i, fn in enumerate(filenames):
             row, col = divmod(i, cols)
@@ -3585,11 +3638,23 @@ class _SingleQuestionScorer:
         if not self.filenames:
             return
 
-        # メモや得点入力欄への文字入力を採点ショートカットとして扱わない。
-        if isinstance(event.widget, (tk.Entry, tk.Text, ttk.Entry, tk.Listbox)):
+        widget = event.widget
+        key = event.keysym
+
+        # 得点入力欄（数字専用）にフォーカスがある場合は、m/b だけを
+        # 正解・不正解ショートカットとして特別に扱う（数字はEntryの通常入力に任せる）。
+        if self.use_entry and hasattr(self, "score_entry") and widget is self.score_entry:
+            if key == "m":
+                self._on_maru()
+                return "break"
+            elif key == "b":
+                self._on_batsu()
+                return "break"
             return
 
-        key = event.keysym
+        # メモや注釈欄など自由入力欄への文字入力を採点ショートカットとして扱わない。
+        if isinstance(widget, (tk.Entry, tk.Text, ttk.Entry, tk.Listbox)):
+            return
 
         # p / P: 元画像をビューアで開く
         # m / b はモード問わず常に有効
@@ -3600,9 +3665,15 @@ class _SingleQuestionScorer:
             self._on_batsu()
             return "break"
 
-        # 数値入力モードでは Entry にフォーカスがあるため、
-        # Entry へのキー入力はここでは処理しない
         if self.use_entry:
+            # 得点入力欄にフォーカスが無い状態で数字キーを押しても反応がないと
+            # 分かりにくいため、フォーカスを移してそのまま入力できるようにする。
+            if key in [str(i) for i in range(10)]:
+                self.score_entry.focus_set()
+                self.score_entry.delete(0, tk.END)
+                self.score_entry.insert(0, key)
+                self.score_entry.icursor(tk.END)
+                return "break"
             return
 
         if key in [str(i) for i in range(10)]:
@@ -3642,6 +3713,15 @@ class _SingleQuestionScorer:
             return
         fn = self.filenames[self.current_idx]
         self._assign_score(fn, 0)
+
+    def _on_partial_score_btn(self, score: int):
+        """部分点ボタンのクリック。キーボードの数字キーと同じ入力可否判定を行う。"""
+        if not self.filenames:
+            return
+        if score in getattr(self, "score_checks", {}) and not self.score_checks[score].get():
+            return
+        fn = self.filenames[self.current_idx]
+        self._assign_score(fn, score)
 
     def _assign_score(self, fn: str, score: int):
         """スコアを設定し、背景色フィードバックを表示して次へ進む。"""
@@ -3763,13 +3843,44 @@ class _SingleQuestionScorer:
             unscored = sum(1 for f in self.filenames if f not in self.local_scores)
             if unscored == 0:
                 self._show_all_scored_dialog()
+            elif unscored == self._count_unscored_held():
+                # 残りは保留中の答案のみ。何も起きないと不具合に見えるため案内する。
+                self._show_held_remaining_dialog(unscored)
+
+    def _count_unscored_held(self) -> int:
+        """未採点かつ保留中の答案数を返す。"""
+        answers = self.annotations.get("answers", {})
+        return sum(
+            1 for f in self.filenames
+            if f not in self.local_scores
+            and answers.get(f, {}).get(self.q_id, {}).get("held", False)
+        )
+
+    def _show_held_remaining_dialog(self, count: int):
+        """未採点の答案が保留分だけ残っている場合の案内ダイアログ。"""
+        messagebox.showinfo(
+            "保留中の答案があります",
+            f"採点済みでない答案は、保留中のもの {count} 枚のみです。\n"
+            "画面上部のフィルタを「保留」に切り替えて確認・採点してください。",
+            parent=self._win,
+        )
 
     def _next(self, event=None):
-        """次の画像（フィルタ考慮）"""
+        """次の画像（フィルタ考慮）。得点未入力のまま進んだ場合も、
+        未採点のままにするだけで保留扱いにはしない。"""
         next_idx = self._find_next_filtered(self.current_idx)
         if next_idx is not None:
             self.current_idx = next_idx
             self._show_current()
+
+    def _on_entry_right_key(self, event):
+        """得点入力欄で右矢印キー。カーソルが末尾にあれば次の答案へ進み、
+        入力途中（カーソルが文字の間）ならカーソル移動を優先する。"""
+        entry = event.widget
+        if entry.index(tk.INSERT) >= len(entry.get()):
+            self._next()
+            return "break"
+        return None
 
     def _prev(self, event=None):
         """前の画像（フィルタ考慮）"""
@@ -4405,7 +4516,7 @@ class DescriptiveReviewGUI:
                      fg="#37474F", anchor=tk.W, justify=tk.LEFT,
                      wraplength=annotation_wraplength).pack(fill=tk.X)
             tk.Button(cell, text="採点画面へ",
-                      command=lambda q_=qid: self._open_scoring_screen(q_),
+                      command=lambda f=fname, q_=qid: self._open_scoring_screen(q_, f),
                       font=(UI_FONT, get_ui_font_size(7))).pack(side=tk.LEFT, pady=(2, 0))
             tk.Button(cell, text="注釈を編集",
                       command=lambda f=fname, q_=qid: self._edit_annotation(f, q_),
@@ -4460,13 +4571,13 @@ class DescriptiveReviewGUI:
                                  relief=tk.SOLID, highlightthickness=0)
                 label.grid(row=row, column=col, sticky="nsew")
                 label.bind("<Double-Button-1>",
-                           lambda e, q_=qid: self._open_scoring_screen(q_))
+                           lambda e, f=fname, q_=qid: self._open_scoring_screen(q_, f))
             actions = tk.Frame(
                 self._grid_frame, bg=bg, bd=1, relief=tk.SOLID,
                 highlightthickness=0,
             )
             actions.grid(row=row, column=len(columns) - 1, sticky="nsew")
-            tk.Button(actions, text="採点", command=lambda q_=qid: self._open_scoring_screen(q_),
+            tk.Button(actions, text="採点", command=lambda f=fname, q_=qid: self._open_scoring_screen(q_, f),
                       font=(UI_FONT, get_ui_font_size(6))).pack(side=tk.LEFT, padx=(1, 0), pady=1)
             tk.Button(actions, text="注釈", command=lambda f=fname, q_=qid: self._edit_annotation(f, q_),
                       font=(UI_FONT, get_ui_font_size(6))).pack(side=tk.LEFT, padx=1, pady=1)
@@ -4670,8 +4781,8 @@ class DescriptiveReviewGUI:
         fit_window_to_content(dialog, min_width=420, min_height=300)
         dialog.grab_set()
 
-    def _open_scoring_screen(self, qid: str):
-        """一覧から選択中の設問の通常採点画面へ移動する。"""
+    def _open_scoring_screen(self, qid: str, fname: Optional[str] = None):
+        """一覧から選択中の設問の通常採点画面へ移動する。fname指定時はその答案から表示する。"""
         q_config = next((q for q in self.questions if q["id"] == qid), None)
         if not q_config:
             return
@@ -4682,6 +4793,7 @@ class DescriptiveReviewGUI:
             image_folder=str(self.boxed_folder), annotations=self.annotations,
             annotations_save_callback=lambda: save_descriptive_annotations(
                 self.annotations_path, self.annotations),
+            initial_filename=fname,
         )
         result = scorer.run()
         if result is not None:

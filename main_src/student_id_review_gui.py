@@ -21,7 +21,7 @@ name_trimmer.select_region_on_image() と同様に「モーダルで開いて、
 import logging
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 from typing import Dict, List, Optional
 
 from PIL import Image, ImageTk
@@ -35,9 +35,14 @@ UI_FONT = get_ui_font_family()
 LOW_CONFIDENCE_THRESHOLD = 0.80
 
 GRID_THUMB_WIDTH = 140
+GRID_THUMB_MIN = 60
+GRID_THUMB_MAX = 320
+GRID_THUMB_STEP = 1.25
 GRID_COLUMNS = 4
 
 SINGLE_THUMB_WIDTH = 420
+
+FILTER_MODES = ("全件", "要確認のみ", "番号重複", "未入力")
 
 
 class StudentIdReviewGUI:
@@ -62,6 +67,9 @@ class StudentIdReviewGUI:
             }
 
         self._current_index = 0
+        self._grid_thumb_width = GRID_THUMB_WIDTH
+        self._grid_scroll_pos = 0.0
+        self._filter_mode = "全件"
 
         self.window = tk.Toplevel(parent)
         self.window.title("学籍番号OCR候補の確認")
@@ -86,21 +94,109 @@ class StudentIdReviewGUI:
     # グリッド一覧
     # ------------------------------------------------------------
 
+    def _count_needs_review(self) -> int:
+        """未修正かつ低確信度の（オレンジ/赤枠で要確認扱いの）件数。"""
+        return sum(
+            1 for info in self.confirmed.values()
+            if not info.get('edited') and info.get('confidence', 0.0) < LOW_CONFIDENCE_THRESHOLD
+        )
+
+    def _filtered_filenames(self) -> List[str]:
+        """現在のフィルタ条件に一致するファイル名のみを返す。"""
+        if self._filter_mode == "要確認のみ":
+            return [
+                f for f in self._filenames
+                if not self.confirmed[f].get('edited')
+                and self.confirmed[f].get('confidence', 0.0) < LOW_CONFIDENCE_THRESHOLD
+            ]
+        if self._filter_mode == "番号重複":
+            counts: Dict[str, int] = {}
+            for f in self._filenames:
+                text = (self.confirmed[f].get('text') or '').strip()
+                if text:
+                    counts[text] = counts.get(text, 0) + 1
+            return [
+                f for f in self._filenames
+                if (self.confirmed[f].get('text') or '').strip()
+                and counts.get((self.confirmed[f].get('text') or '').strip(), 0) > 1
+            ]
+        if self._filter_mode == "未入力":
+            return [f for f in self._filenames if not (self.confirmed[f].get('text') or '').strip()]
+        return list(self._filenames)
+
+    def _zoom_in(self):
+        self._grid_thumb_width = min(GRID_THUMB_MAX, int(self._grid_thumb_width * GRID_THUMB_STEP))
+        self._build_grid_view()
+
+    def _zoom_out(self):
+        self._grid_thumb_width = max(GRID_THUMB_MIN, int(self._grid_thumb_width / GRID_THUMB_STEP))
+        self._build_grid_view()
+
+    def _zoom_reset(self):
+        self._grid_thumb_width = GRID_THUMB_WIDTH
+        self._build_grid_view()
+
+    def _on_filter_change(self, mode: str):
+        self._filter_mode = mode
+        self._grid_scroll_pos = 0.0
+        self._build_grid_view()
+
     def _build_grid_view(self):
         for child in self._grid_frame.winfo_children():
             child.destroy()
 
         header = tk.Frame(self._grid_frame, bg="#37474F")
         header.pack(fill=tk.X)
+
+        title_row = tk.Frame(header, bg="#37474F")
+        title_row.pack(fill=tk.X)
         tk.Label(
-            header,
+            title_row,
             text="学籍番号OCR候補の確認 — おかしいものだけクリックして修正してください",
             font=(UI_FONT, get_ui_font_size(11), 'bold'), bg="#37474F", fg="white",
-        ).pack(side=tk.LEFT, padx=10, pady=8)
+        ).pack(side=tk.LEFT, padx=10, pady=(8, 2))
         tk.Button(
-            header, text="完了", command=self._finish,
+            title_row, text="完了", command=self._finish,
             bg="#2E7D32", fg="black", font=(UI_FONT, get_ui_font_size(10), 'bold'),
         ).pack(side=tk.RIGHT, padx=10, pady=6)
+
+        # 要確認件数（画面を開き直す/フィルタを変えるたびに再計算されるので常に最新）
+        review_count = self._count_needs_review()
+        status_row = tk.Frame(header, bg="#37474F")
+        status_row.pack(fill=tk.X)
+        if review_count:
+            status_text = f"⚠ 要確認: {review_count} 件"
+            status_color = "#FFB74D"
+        else:
+            status_text = "✅ 要確認の項目はありません"
+            status_color = "#A5D6A7"
+        tk.Label(
+            status_row, text=status_text,
+            font=(UI_FONT, get_ui_font_size(9), 'bold'), bg="#37474F", fg=status_color,
+        ).pack(side=tk.LEFT, padx=10, pady=(0, 6))
+
+        # 拡大・縮小
+        tk.Label(status_row, text="🔍", bg="#37474F", fg="white",
+                 font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT, padx=(16, 2))
+        tk.Button(status_row, text="－", command=self._zoom_out, width=2,
+                  font=(UI_FONT, get_ui_font_size(8))).pack(side=tk.LEFT)
+        tk.Button(status_row, text="＋", command=self._zoom_in, width=2,
+                  font=(UI_FONT, get_ui_font_size(8))).pack(side=tk.LEFT, padx=(2, 2))
+        tk.Button(status_row, text="リセット", command=self._zoom_reset,
+                  font=(UI_FONT, get_ui_font_size(8))).pack(side=tk.LEFT, padx=(0, 12))
+
+        # フィルタ
+        tk.Label(status_row, text="表示:", bg="#37474F", fg="white",
+                 font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT)
+        filter_var = tk.StringVar(value=self._filter_mode)
+        filter_combo = ttk.Combobox(
+            status_row, textvariable=filter_var, state="readonly", width=12,
+            values=FILTER_MODES, font=(UI_FONT, get_ui_font_size(9)),
+        )
+        filter_combo.pack(side=tk.LEFT, padx=(4, 10), pady=(0, 6))
+        filter_combo.bind(
+            "<<ComboboxSelected>>", lambda e: self._on_filter_change(filter_var.get())
+        )
 
         canvas = tk.Canvas(self._grid_frame, bg="#ECEFF1", highlightthickness=0)
         scrollbar = tk.Scrollbar(self._grid_frame, orient=tk.VERTICAL, command=canvas.yview)
@@ -108,7 +204,12 @@ class StudentIdReviewGUI:
 
         inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.create_window((0, 0), window=inner, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
+
+        def _on_yscroll(first, last):
+            # スクロール位置を覚えておき、次回グリッド再構築時に復元する。
+            self._grid_scroll_pos = float(first)
+            scrollbar.set(first, last)
+        canvas.configure(yscrollcommand=_on_yscroll)
 
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
@@ -117,9 +218,21 @@ class StudentIdReviewGUI:
             canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
         canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
-        for i, filename in enumerate(self._filenames):
-            row, col = divmod(i, GRID_COLUMNS)
-            self._create_grid_card(inner, filename, row, col)
+        filtered = self._filtered_filenames()
+        if not filtered:
+            tk.Label(
+                inner, text="条件に一致する答案はありません",
+                font=(UI_FONT, get_ui_font_size(11)), bg="#ECEFF1", fg="#666",
+            ).grid(row=0, column=0, padx=40, pady=40)
+        else:
+            cols = max(1, round(GRID_COLUMNS * GRID_THUMB_WIDTH / self._grid_thumb_width))
+            for i, filename in enumerate(filtered):
+                row, col = divmod(i, cols)
+                self._create_grid_card(inner, filename, row, col)
+
+        # 直前のスクロール位置を復元（初回表示時は 0.0 のまま）。
+        canvas.update_idletasks()
+        canvas.yview_moveto(self._grid_scroll_pos)
 
     def _create_grid_card(self, parent, filename, row, col):
         info = self.confirmed[filename]
@@ -140,7 +253,7 @@ class StudentIdReviewGUI:
         inner = tk.Frame(card, bg='white')
         inner.pack(fill=tk.BOTH, expand=True)
 
-        photo = self._load_photo(info.get('thumbnail_path'), GRID_THUMB_WIDTH)
+        photo = self._load_photo(info.get('thumbnail_path'), self._grid_thumb_width)
         if photo:
             img_label = tk.Label(inner, image=photo, bg='white')
         else:
