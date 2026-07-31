@@ -13,6 +13,16 @@ from conftest import get_shared_tk_root  # noqa: E402
 from student_id_review_gui import StudentIdReviewGUI  # noqa: E402
 
 
+def _collect_widgets(parent, widget_class):
+    """*parent* 以下のウィジェットを再帰的に集める（該当クラスのみ）。"""
+    found = []
+    for child in parent.winfo_children():
+        if isinstance(child, widget_class):
+            found.append(child)
+        found.extend(_collect_widgets(child, widget_class))
+    return found
+
+
 def _make_ocr_result(per_digit_proba, text, confidence=0.9):
     return {
         'thumbnail_path': None,
@@ -153,6 +163,137 @@ class TestStudentIdReviewGuiRosterAutoApply(unittest.TestCase):
             self.assertEqual(entry['name'], "末尾1さん")
             self.assertTrue(entry['edited'])
             self.assertFalse(entry['auto_applied'])
+        finally:
+            gui.window.destroy()
+
+    def test_07b_selecting_top_candidate_clears_needs_review(self):
+        """1位候補（＝すでに採用中の値）をクリックした場合も「教員が確認した」
+        として要確認から外れること。
+
+        以前は値が変わったときだけ edited を立てていたため、2位以下を選ぶと
+        要確認が消えるのに、画像を見て1位で合っていると確認した答案だけが
+        いつまでも要確認のまま残っていた（実機で報告された不具合）。
+        """
+        per_digit_proba = [{"7": 0.55, "1": 0.45}]
+        # 確信度を低くして「要確認（赤枠）」の状態を作る
+        ocr_results = {"a.jpg": _make_ocr_result(per_digit_proba, "7", confidence=0.4)}
+        roster = {"7": "末尾7さん", "1": "末尾1さん"}
+        gui = StudentIdReviewGUI(self.root, ocr_results, roster)
+        try:
+            self.assertEqual(gui._count_needs_review(), 1)
+            top_id = gui.confirmed["a.jpg"]['roster_candidates'][0][0]
+            self.assertEqual(top_id, gui.confirmed["a.jpg"]['text'],
+                             "前提: 1位候補は現在の確定値と同じ")
+            gui._quick_select_candidate("a.jpg", top_id)
+            self.assertTrue(gui.confirmed["a.jpg"]['edited'])
+            self.assertEqual(gui._count_needs_review(), 0)
+        finally:
+            gui.window.destroy()
+
+    def test_07c_explicit_confirm_clears_needs_review_without_change(self):
+        """単体表示で値を変えずに「確定」した場合も要確認から外れること。
+        単に前へ/次へで通過しただけの場合は要確認のまま残ること。"""
+        ocr_results = {
+            "a.jpg": _make_ocr_result([], "111", confidence=0.3),
+            "b.jpg": _make_ocr_result([], "222", confidence=0.3),
+        }
+        gui = StudentIdReviewGUI(self.root, ocr_results, roster=None)
+        try:
+            self.assertEqual(gui._count_needs_review(), 2)
+            gui._current_index = gui._filenames.index("a.jpg")
+            gui._current_entry = tk.Entry(self.root)
+            gui._current_entry.insert(0, "111")
+
+            gui._confirm_current()  # 通過しただけ（値は変わっていない）
+            self.assertFalse(gui.confirmed["a.jpg"]['edited'])
+            self.assertEqual(gui._count_needs_review(), 2)
+
+            gui._confirm_current(explicit=True)  # 確定ボタン / Enter
+            self.assertTrue(gui.confirmed["a.jpg"]['edited'])
+            self.assertEqual(gui._count_needs_review(), 1)
+        finally:
+            gui.window.destroy()
+
+    def test_07d_auto_applied_counts_as_needs_review(self):
+        """名簿候補を自動採用した（橙枠の）答案は、OCRの確信度が高くても
+        要確認に数え、「要確認のみ」フィルタにも出ること。"""
+        per_digit_proba = [
+            {"7": 0.55, "1": 0.40, "0": 0.05},
+            {"2": 0.97, "8": 0.03},
+            {"3": 0.98, "9": 0.02},
+        ]
+        ocr_results = {"a.jpg": _make_ocr_result(per_digit_proba, "723", confidence=0.99)}
+        roster = {"123": "正解太郎", "156": "無関係次郎"}
+        gui = StudentIdReviewGUI(self.root, ocr_results, roster)
+        try:
+            self.assertTrue(gui.confirmed["a.jpg"]['auto_applied'])
+            self.assertEqual(gui._count_needs_review(), 1)
+            gui._filter_mode = "要確認のみ"
+            self.assertEqual(gui._filtered_filenames(), ["a.jpg"])
+
+            gui._quick_select_candidate("a.jpg", "123")
+            self.assertEqual(gui._count_needs_review(), 0)
+            self.assertEqual(gui._filtered_filenames(), [])
+        finally:
+            gui.window.destroy()
+
+    def test_07e_grid_columns_follow_window_width(self):
+        """カードの列数が表示領域の幅から決まること（ウィンドウを広げたら
+        並べられる枚数が増えること）。以前は固定列数で、広げても余白が
+        増えるだけだった。"""
+        ocr_results = {f"{i}.jpg": _make_ocr_result([], str(i)) for i in range(12)}
+        gui = StudentIdReviewGUI(self.root, ocr_results, roster=None)
+        try:
+            narrow = gui._compute_grid_columns(500)
+            wide = gui._compute_grid_columns(1800)
+            self.assertGreaterEqual(narrow, 1)
+            self.assertGreater(wide, narrow)
+            # 極端に狭くても必ず1列は確保する
+            self.assertEqual(gui._compute_grid_columns(50), 1)
+        finally:
+            gui.window.destroy()
+
+    def test_07f_single_view_pairs_image_and_candidate_texts(self):
+        """単体表示で、学籍番号側（左列）と氏名側（右列）に候補テキストが
+        分かれて並ぶこと。画像の真下に対応するテキストが来る配置の担保。"""
+        per_digit_proba = [{"7": 0.55, "1": 0.45}]
+        ocr_results = {"a.jpg": _make_ocr_result(per_digit_proba, "7")}
+        roster = {"7": "末尾7さん", "1": "末尾1さん"}
+        gui = StudentIdReviewGUI(self.root, ocr_results, roster)
+        try:
+            gui._switch_to_single("a.jpg")
+            buttons = _collect_widgets(gui._single_frame, tk.Button)
+            by_column = {}
+            for btn in buttons:
+                grid_info = btn.grid_info()
+                if not grid_info:  # pack配置のナビゲーションボタン
+                    continue
+                by_column.setdefault(int(grid_info['column']), []).append(btn.cget('text'))
+            id_texts = " ".join(by_column.get(0, []))
+            name_texts = " ".join(by_column.get(1, []))
+            for cand_id in ("7", "1"):
+                self.assertIn(cand_id, id_texts)
+            for cand_name in ("末尾7さん", "末尾1さん"):
+                self.assertIn(cand_name, name_texts)
+                self.assertNotIn(cand_name, id_texts)
+        finally:
+            gui.window.destroy()
+
+    def test_07g_single_view_candidate_click_confirms_value(self):
+        """単体表示の候補ボタンを押した時点で確定値に反映され、要確認から
+        外れること（Entryに入れるだけだと閉じた際に採用が失われる）。"""
+        per_digit_proba = [{"7": 0.55, "1": 0.45}]
+        ocr_results = {"a.jpg": _make_ocr_result(per_digit_proba, "7", confidence=0.4)}
+        roster = {"7": "末尾7さん", "1": "末尾1さん"}
+        gui = StudentIdReviewGUI(self.root, ocr_results, roster)
+        try:
+            gui._switch_to_single("a.jpg")
+            gui._apply_candidate("1")
+            entry = gui.confirmed["a.jpg"]
+            self.assertEqual(entry['text'], "1")
+            self.assertEqual(entry['name'], "末尾1さん")
+            self.assertTrue(entry['edited'])
+            self.assertEqual(gui._count_needs_review(), 0)
         finally:
             gui.window.destroy()
 

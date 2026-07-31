@@ -50,6 +50,15 @@ logger = logging.getLogger(__name__)
 MAX_KEYBOARD_SCORE = 9
 
 
+# 日本語を入力するテキスト欄の折り返しモード。
+# Tk には日本語の禁則・分かち書き処理が無いため、wrap="word" だと空白だけが
+# 唯一の改行位置になる。日本語をベタ書きしている途中でスペースを1つ押すと、
+# そこが改行位置と判定されて後続の文字がまるごと次の行へ送られ、
+# 「スペースを押すと改行される」ように見えてしまう（実機で報告された不具合）。
+# 文字単位で折り返せば、スペースが特別扱いされなくなりこの現象は起きない。
+JP_TEXT_WRAP = tk.CHAR
+
+
 # オーバーレイ色定義（_create_overlay_image と共有）
 _OVERLAY_COLORS_RGB = [
     (255, 100, 100), (100, 100, 255), (100, 200, 100),
@@ -883,7 +892,7 @@ class IntegratedDescriptiveSetup:
         tk.Label(frame, text="採点中に参照する教員用メモ（答案には印字されません）",
                  font=(UI_FONT, get_ui_font_size(9))).pack(anchor=tk.W, pady=(0, 6))
         memo = tk.Text(
-            frame, width=55, height=8, wrap=tk.WORD,
+            frame, width=55, height=8, wrap=JP_TEXT_WRAP,
             font=(UI_FONT, get_ui_font_size(9)),
             bg="#FFFFFF", fg="#222222", insertbackground="#222222",
             relief=tk.SOLID, bd=1, highlightthickness=1,
@@ -1306,7 +1315,7 @@ def _ask_question_info(
     tk.Label(frame, text="採点基準メモ（教員用）:",
              font=(UI_FONT, get_ui_font_size(9))).pack(anchor=tk.W, pady=(8, 2))
     rubric_text = tk.Text(
-        frame, width=45, height=4, wrap=tk.WORD,
+        frame, width=45, height=4, wrap=JP_TEXT_WRAP,
         font=(UI_FONT, get_ui_font_size(9)),
         bg="#FFFFFF", fg="#222222", insertbackground="#222222",
         relief=tk.SOLID, bd=1, highlightthickness=1,
@@ -1694,7 +1703,7 @@ class DescriptiveScorerGUI:
         tk.Label(frame, text="採点基準メモ（教員用）:",
                  font=(UI_FONT, get_ui_font_size(9))).pack(anchor=tk.W, pady=(8, 2))
         rubric_text = tk.Text(
-            frame, width=48, height=5, wrap=tk.WORD,
+            frame, width=48, height=5, wrap=JP_TEXT_WRAP,
             font=(UI_FONT, get_ui_font_size(9)),
             bg="#FFFFFF", fg="#222222", insertbackground="#222222",
             relief=tk.SOLID, bd=1, highlightthickness=1,
@@ -2363,7 +2372,7 @@ class _SingleQuestionScorer:
             font=(UI_FONT, get_ui_font_size(7)),
         ).pack(anchor=tk.W, pady=(2, 3))
         self._rubric_text = tk.Text(
-            rubric_panel, width=28, height=4, wrap=tk.WORD,
+            rubric_panel, width=28, height=4, wrap=JP_TEXT_WRAP,
             font=(UI_FONT, get_ui_font_size(8)),
             bg="#FFFFFF", fg="#222222", insertbackground="#222222",
             relief=tk.SOLID, bd=1, highlightthickness=1,
@@ -2413,7 +2422,7 @@ class _SingleQuestionScorer:
                  bg="#FFF8E1", fg="#5D4037",
                  font=(UI_FONT, get_ui_font_size(7))).pack(anchor=tk.W, pady=(2, 1))
         self._answer_memo_text = tk.Text(
-            rubric_panel, width=28, height=3, wrap=tk.WORD,
+            rubric_panel, width=28, height=3, wrap=JP_TEXT_WRAP,
             font=(UI_FONT, get_ui_font_size(7)), bg="#FFFFFF", fg="#222222",
             insertbackground="#222222", relief=tk.SOLID, bd=1,
             highlightthickness=1, highlightbackground="#9E9E9E",
@@ -2439,7 +2448,7 @@ class _SingleQuestionScorer:
                  bg="#FFF8E1", fg="#5D4037",
                  font=(UI_FONT, get_ui_font_size(7))).pack(anchor=tk.W, pady=(3, 1))
         self._answer_comment_text = tk.Text(
-            rubric_panel, width=28, height=3, wrap=tk.WORD,
+            rubric_panel, width=28, height=3, wrap=JP_TEXT_WRAP,
             font=(UI_FONT, get_ui_font_size(7)), bg="#FFFFFF", fg="#222222",
             insertbackground="#222222", relief=tk.SOLID, bd=1,
             highlightthickness=1, highlightbackground="#9E9E9E",
@@ -2949,7 +2958,7 @@ class _SingleQuestionScorer:
         frame = tk.Frame(dialog, padx=15, pady=12)
         frame.pack(fill=tk.BOTH, expand=True)
         memo = tk.Text(
-            frame, width=55, height=10, wrap=tk.WORD,
+            frame, width=55, height=10, wrap=JP_TEXT_WRAP,
             font=(UI_FONT, get_ui_font_size(9)), bg="#FFFFFF", fg="#222222",
             insertbackground="#222222", relief=tk.SOLID, bd=1,
             highlightthickness=1, highlightbackground="#9E9E9E",

@@ -638,7 +638,7 @@ class TestCodeStructure:
         source = inspect.getsource(_SingleQuestionScorer.run)
         assert "rubric_canvas" in source
         assert "rubric_scrollbar" in source
-        assert 'height=4, wrap=tk.WORD' in source
+        assert 'height=4, wrap=JP_TEXT_WRAP' in source
         assert 'height=90' in source
         assert "_bind_rubric_scroll" in source
 
@@ -842,3 +842,81 @@ class TestMaruBatsuLogic:
         mode = "一覧（グリッド）"
         result = "1枚ずつ" if "1枚" in mode else "一覧"
         assert result == "一覧"
+
+
+# ============================================================
+# 採点基準メモ等・日本語テキスト欄の折り返し
+# ============================================================
+
+class TestJapaneseTextWrap:
+    """日本語を入力するテキスト欄で、スペースが改行位置にならないこと。
+
+    Tk には日本語の分かち書き・禁則処理が無いため、wrap="word" では
+    空白だけが唯一の改行候補になる。日本語をベタ書きしている途中で
+    スペースを1つ押すと、そこから後ろがまるごと次の行へ送られ
+    「スペースを押すと改行される」ように見えてしまう。
+    """
+
+    def _text_widgets_using_wrap(self):
+        """descriptive_gui.py 内の tk.Text 生成箇所と wrap 指定を抜き出す。"""
+        import re
+        source = (Path(__file__).parent.parent / "main_src" / "descriptive_gui.py").read_text(
+            encoding="utf-8"
+        )
+        return re.findall(r"tk\.Text\(\s*[^)]*?wrap=([A-Za-z_.]+)", source)
+
+    def test_memo_text_widgets_do_not_wrap_by_word(self):
+        """採点基準メモ・注釈欄などの入力欄が wrap=tk.WORD を使っていないこと。"""
+        wraps = self._text_widgets_using_wrap()
+        assert wraps, "tk.Text の wrap 指定が見つからない（テストの前提が壊れている）"
+        assert all(w == "JP_TEXT_WRAP" for w in wraps), f"想定外の折り返し指定: {wraps}"
+
+    def test_jp_text_wrap_is_char(self):
+        import tkinter as tk
+        from descriptive_gui import JP_TEXT_WRAP
+        assert JP_TEXT_WRAP == tk.CHAR
+
+    def _space_line_shift(self, wrap_mode):
+        """日本語の途中にスペースを1つ入れたとき、直後の文字が
+        何ピクセル下へ送られたかを返す（0 なら同じ行のまま）。"""
+        import tkinter as tk
+        from tkinter import font as tkfont
+        import pytest as _pytest
+        from conftest import get_shared_tk_root
+
+        sample = "あいうえおかきくけこさしすせそたちつてと"
+        root = get_shared_tk_root()
+        top = tk.Toplevel(root)
+        top.withdraw()  # テスト中に画面へ出さない
+        text = tk.Text(top, wrap=wrap_mode)
+        # pack だと非表示ウィンドウでは実サイズが決まらないため、
+        # 折り返し幅をピクセル指定で固定する。スペースを入れる位置(10文字目)
+        # より後ろで折り返しが起きるよう、14文字分の幅にしておく。
+        measured = tkfont.Font(font=text.cget("font")).measure(sample[:14])
+        text.place(x=0, y=0, width=measured + 8, height=120)
+        try:
+            text.insert("1.0", sample)
+            top.update()
+            before = text.dlineinfo("1.10")
+            text.insert("1.10", " ")  # 10文字目の後ろでスペースを押す
+            top.update()
+            after = text.dlineinfo("1.11")
+            if before is None or after is None:
+                _pytest.skip("表示情報を取得できない環境のためスキップ")
+            return after[1] - before[1]
+        finally:
+            top.destroy()
+
+    def test_space_does_not_push_following_japanese_to_next_line(self):
+        """実際のTextウィジェットで、日本語の途中にスペースを入れても
+        後続の文字が次の行へ送られないこと。"""
+        from descriptive_gui import JP_TEXT_WRAP
+        assert self._space_line_shift(JP_TEXT_WRAP) == 0, \
+            "スペースの入力で後続の文字が改行されている"
+
+    def test_word_wrap_reproduces_the_reported_bug(self):
+        """比較用: wrap=WORD だと同じ操作で後続の文字が次の行へ送られる
+        （＝報告された「スペースを押すと改行される」現象）。この差が無く
+        なったら、上のテストは何も検証していないことになる。"""
+        import tkinter as tk
+        assert self._space_line_shift(tk.WORD) > 0

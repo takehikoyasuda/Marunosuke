@@ -22,6 +22,8 @@ CANDIDATE_PROB以上)な場合は、グリッド一覧を開いた時点で確�
 にその候補を自動採用する。これは、候補を「表示するだけ」だと教員が全カード
 を単体表示で開いて確認しない限り集計（学籍番号(確認済み)列）へ反映されない
 ためで、自動採用したカードは橙色の枠で「要確認」と分かるようにする。
+「要確認」は、教員が候補ボタンを押す・単体表示で確定するといった確認操作を
+した時点で外れる（1位候補をそのまま選んだ場合＝値が変わらない場合も含む）。
 
 MarkCheckerGUI が独立ツール(fire-and-forget)として動くのに対し、この画面は
 name_trimmer.select_region_on_image() と同様に「モーダルで開いて、閉じたら
@@ -68,13 +70,21 @@ GRID_THUMB_MAX = 320
 GRID_THUMB_STEP = 1.25
 GRID_COLUMNS = 4
 
+# カード1枚が必要とする最小幅。サムネイルより名簿候補ボタン（"1位 山田太郎（85%）"）
+# の方が横に長くなるため、サムネイル幅だけで列数を決めると候補ボタンが潰れる。
+GRID_CARD_MIN_WIDTH = 180
+# カードの外側マージン（grid の padx×2 ＋ 枠線）。列数計算に使う。
+GRID_CARD_MARGIN = 24
+
 SINGLE_THUMB_WIDTH = 420
 
 FILTER_MODES = ("全件", "要確認のみ", "番号重複", "未入力")
 
 # 氏名欄サムネイル（学籍番号欄と並べて表示し、見比べやすくする）
 GRID_NAME_THUMB_WIDTH = 100
-SINGLE_NAME_THUMB_WIDTH = 220
+# 単体表示では学籍番号欄画像と横に並べるため、2枚の合計が既定のウィンドウ幅
+# (900px)に収まる範囲でなるべく大きくする。
+SINGLE_NAME_THUMB_WIDTH = 260
 
 
 class StudentIdReviewGUI:
@@ -137,6 +147,9 @@ class StudentIdReviewGUI:
         self._grid_thumb_width = GRID_THUMB_WIDTH
         self._grid_scroll_pos = 0.0
         self._filter_mode = "全件"
+        # ウィンドウ幅から算出した現在の列数と、リサイズ再構築の予約ID。
+        self._grid_cols: Optional[int] = None
+        self._grid_rebuild_job = None
 
         self.window = tk.Toplevel(parent)
         title = "学籍番号OCR候補の確認"
@@ -164,21 +177,31 @@ class StudentIdReviewGUI:
     # グリッド一覧
     # ------------------------------------------------------------
 
-    def _count_needs_review(self) -> int:
-        """未修正かつ低確信度の（オレンジ/赤枠で要確認扱いの）件数。"""
-        return sum(
-            1 for info in self.confirmed.values()
-            if not info.get('edited') and info.get('confidence', 0.0) < LOW_CONFIDENCE_THRESHOLD
+    @staticmethod
+    def _needs_review(info: Dict) -> bool:
+        """赤枠（低確信度）／橙枠（名簿候補の自動採用）で「要確認」とみなす状態か。
+
+        教員が確認済み（edited）なら、確信度が低くても・自動採用値であっても
+        要確認から外す。答案画像を見て人が確定した以上、機械の確信度で
+        警告し続けても意味がないため。1位候補をそのまま採用した場合でも
+        「人が確認した」ことに変わりはないので、_quick_select_candidate /
+        確定ボタンは値が変わらなくても edited を立てる。
+        """
+        if info.get('edited'):
+            return False
+        return (
+            info.get('confidence', 0.0) < LOW_CONFIDENCE_THRESHOLD
+            or bool(info.get('auto_applied'))
         )
+
+    def _count_needs_review(self) -> int:
+        """未確認かつ低確信度／自動採用の（赤・橙枠で要確認扱いの）件数。"""
+        return sum(1 for info in self.confirmed.values() if self._needs_review(info))
 
     def _filtered_filenames(self) -> List[str]:
         """現在のフィルタ条件に一致するファイル名のみを返す。"""
         if self._filter_mode == "要確認のみ":
-            return [
-                f for f in self._filenames
-                if not self.confirmed[f].get('edited')
-                and self.confirmed[f].get('confidence', 0.0) < LOW_CONFIDENCE_THRESHOLD
-            ]
+            return [f for f in self._filenames if self._needs_review(self.confirmed[f])]
         if self._filter_mode == "番号重複":
             counts: Dict[str, int] = {}
             for f in self._filenames:
@@ -335,6 +358,13 @@ class StudentIdReviewGUI:
         canvas.bind_all("<MouseWheel>", _on_mousewheel)
         canvas.bind_all("<Shift-MouseWheel>", _on_shift_mousewheel)
 
+        # 列数はウィンドウの実幅から決める。固定列数だとウィンドウを広げても
+        # 右側に余白が増えるだけでカードが並ばず、拡大する意味が無くなるため。
+        canvas.update_idletasks()
+        cols = self._compute_grid_columns(canvas.winfo_width())
+        self._grid_cols = cols
+        canvas.bind("<Configure>", self._on_grid_canvas_configure)
+
         filtered = self._filtered_filenames()
         if not filtered:
             tk.Label(
@@ -342,7 +372,6 @@ class StudentIdReviewGUI:
                 font=(UI_FONT, get_ui_font_size(11)), bg="#ECEFF1", fg="#666",
             ).grid(row=0, column=0, padx=40, pady=40)
         else:
-            cols = max(1, round(GRID_COLUMNS * GRID_THUMB_WIDTH / self._grid_thumb_width))
             for i, filename in enumerate(filtered):
                 row, col = divmod(i, cols)
                 self._create_grid_card(inner, filename, row, col, duplicates)
@@ -351,12 +380,53 @@ class StudentIdReviewGUI:
         canvas.update_idletasks()
         canvas.yview_moveto(self._grid_scroll_pos)
 
+    def _compute_grid_columns(self, available_width: int) -> int:
+        """表示領域の幅に収まるカード列数を返す。"""
+        card_width = max(self._grid_thumb_width, GRID_CARD_MIN_WIDTH) + GRID_CARD_MARGIN
+        if not available_width or available_width <= 1:
+            # まだウィンドウが実サイズを持たない（初回構築時）。ウィンドウ幅で代用し、
+            # それも取れなければ従来の既定列数にフォールバックする。
+            available_width = self.window.winfo_width()
+            if available_width <= 1:
+                return max(1, round(GRID_COLUMNS * GRID_THUMB_WIDTH / self._grid_thumb_width))
+        return max(1, int(available_width // card_width))
+
+    def _on_grid_canvas_configure(self, event):
+        """ウィンドウ幅の変化に追従して列数を組み直す。
+
+        列数が変わるときだけ再構築する（<Configure> のたびに作り直すと
+        イベントが再帰し、ちらつきの原因になる）。
+        """
+        cols = self._compute_grid_columns(event.width)
+        if cols == self._grid_cols:
+            return
+        self._grid_cols = cols
+        if self._grid_rebuild_job is not None:
+            try:
+                self.window.after_cancel(self._grid_rebuild_job)
+            except Exception:
+                pass
+        self._grid_rebuild_job = self.window.after(80, self._rebuild_grid_after_resize)
+
+    def _rebuild_grid_after_resize(self):
+        self._grid_rebuild_job = None
+        try:
+            if not self.window.winfo_exists() or not self._grid_frame.winfo_ismapped():
+                return
+        except tk.TclError:
+            return
+        self._build_grid_view()
+
     def _quick_select_candidate(self, filename: str, student_id: str):
         """グリッドカード上の候補ボタンから直接学籍番号を選び直す（単体表示を
         開かなくても、目視確認だけでその場で修正できるようにするため）。"""
         info = self.confirmed[filename]
         name = self.roster.get(student_id) if self.roster else None
-        info['edited'] = info['edited'] or (student_id != (info.get('text') or ''))
+        # 候補ボタンを押した＝教員が画像を見て確定した、という意思表示。
+        # 1位候補（＝すでに採用中の値）を押した場合も確認済みとして扱い、
+        # 要確認から外す（値が変わったときだけ edited を立てると、
+        # 「1位で合っている」と確認しても警告が消えなかった）。
+        info['edited'] = True
         info['text'] = student_id
         info['name'] = name
         info['auto_applied'] = False
@@ -487,17 +557,72 @@ class StudentIdReviewGUI:
             bg="#546E7A", fg="black", font=(UI_FONT, get_ui_font_size(9)),
         ).pack(side=tk.RIGHT, padx=10, pady=6)
 
-        img_col = tk.Frame(self._single_frame)
-        img_col.pack(padx=20, pady=20)
+        # 左列＝学籍番号（欄画像の真下に候補の学籍番号）、右列＝氏名（欄画像の
+        # 真下に候補の氏名）。画像と、それに対応する候補テキストを上下に並べる
+        # ことで、視線を横に動かさずに「画像の数字」と「候補の数字」、
+        # 「画像の氏名」と「候補の氏名」をそれぞれ見比べられるようにする。
+        candidates = info.get('roster_candidates') or []
+        current_text = (info.get('text') or '').strip()
+
+        compare = tk.Frame(self._single_frame)
+        compare.pack(fill=tk.X, padx=20, pady=(14, 4))
+        compare.columnconfigure(0, weight=1)
+        compare.columnconfigure(1, weight=1)
+
+        tk.Label(compare, text="学籍番号欄", font=(UI_FONT, get_ui_font_size(9), 'bold'),
+                 fg='#37474F').grid(row=0, column=0, pady=(0, 3))
+        tk.Label(compare, text="氏名欄", font=(UI_FONT, get_ui_font_size(9), 'bold'),
+                 fg='#37474F').grid(row=0, column=1, pady=(0, 3))
 
         photo = self._load_photo(info.get('thumbnail_path'), SINGLE_THUMB_WIDTH)
-        img_label = tk.Label(img_col, image=photo, bg='white', relief=tk.SUNKEN)
-        img_label.pack(side=tk.TOP)
+        if photo:
+            id_img_label = tk.Label(compare, image=photo, bg='white', relief=tk.SUNKEN)
+        else:
+            id_img_label = tk.Label(compare, text="(画像なし)", bg='white', fg='gray',
+                                    relief=tk.SUNKEN, width=24, height=3)
+        id_img_label.grid(row=1, column=0, padx=6, sticky='n')
 
         name_photo = self._load_photo(info.get('name_thumbnail_path'), SINGLE_NAME_THUMB_WIDTH)
         if name_photo:
-            name_img_label = tk.Label(img_col, image=name_photo, bg='white', relief=tk.SUNKEN)
-            name_img_label.pack(side=tk.TOP, pady=(12, 0))
+            name_img_label = tk.Label(compare, image=name_photo, bg='white', relief=tk.SUNKEN)
+        else:
+            name_img_label = tk.Label(compare, text="(氏名欄画像なし)", bg='white', fg='gray',
+                                      relief=tk.SUNKEN, width=24, height=3)
+        name_img_label.grid(row=1, column=1, padx=6, sticky='n')
+
+        # 現在の確定値（画像の直下に置き、まずこれと画像を見比べてもらう）
+        tk.Label(
+            compare, text=current_text or "(空欄)",
+            font=(UI_FONT, get_ui_font_size(14), 'bold'), fg='#1B5E20',
+        ).grid(row=2, column=0, pady=(6, 0))
+        if self.roster:
+            current_name = info.get('name') or "名簿に一致なし"
+            name_color = '#1B5E20' if info.get('name') else '#C62828'
+        else:
+            current_name, name_color = '', '#333'
+        tk.Label(
+            compare, text=current_name,
+            font=(UI_FONT, get_ui_font_size(14), 'bold'), fg=name_color,
+        ).grid(row=2, column=1, pady=(6, 0))
+
+        if candidates:
+            tk.Label(
+                compare, text="名簿候補（確信度順・クリックで採用）",
+                font=(UI_FONT, get_ui_font_size(8)), fg='#555',
+            ).grid(row=3, column=0, columnspan=2, pady=(8, 2))
+            for rank, (cand_id, cand_name, pct) in enumerate(candidates, start=1):
+                is_selected = (cand_id == current_text)
+                row_index = 3 + rank
+                for col, label in ((0, f"{cand_id}"), (1, f"{cand_name}")):
+                    tk.Button(
+                        compare,
+                        text=f"{'✓ ' if is_selected else ''}{rank}位 {label}（{pct:.0f}%）",
+                        font=(UI_FONT, get_ui_font_size(10),
+                              'bold' if is_selected else 'normal'),
+                        bg='#C8E6C9' if is_selected else '#F5F5F5', fg='#333',
+                        relief=tk.FLAT if is_selected else tk.RAISED, cursor='hand2',
+                        command=lambda cid=cand_id: self._apply_candidate(cid),
+                    ).grid(row=row_index, column=col, padx=6, pady=2, sticky='ew')
 
         input_frame = tk.Frame(self._single_frame)
         input_frame.pack(pady=10)
@@ -515,23 +640,6 @@ class StudentIdReviewGUI:
         entry.bind('<KeyRelease>', lambda e: self._update_match_label(entry.get()))
         entry.bind('<Return>', lambda e: self._confirm_and_next())
 
-        candidates = info.get('roster_candidates') or []
-        if candidates:
-            cand_frame = tk.Frame(self._single_frame)
-            cand_frame.pack(pady=(0, 10))
-            tk.Label(
-                cand_frame, text="名簿候補（確信度順・クリックで採用）:",
-                font=(UI_FONT, get_ui_font_size(8)), fg='#555',
-            ).pack(anchor=tk.W)
-            btn_row = tk.Frame(cand_frame)
-            btn_row.pack()
-            for cand_id, cand_name, pct in candidates:
-                tk.Button(
-                    btn_row, text=f"{cand_id} {cand_name}（{pct:.0f}%）",
-                    font=(UI_FONT, get_ui_font_size(9)),
-                    command=lambda cid=cand_id: self._apply_candidate(cid),
-                ).pack(side=tk.LEFT, padx=3)
-
         nav_frame = tk.Frame(self._single_frame)
         nav_frame.pack(pady=10)
         tk.Button(nav_frame, text="◀ 前へ", command=self._go_previous,
@@ -541,11 +649,39 @@ class StudentIdReviewGUI:
         tk.Button(nav_frame, text="次へ ▶", command=self._go_next,
                   font=(UI_FONT, get_ui_font_size(9))).pack(side=tk.LEFT, padx=5)
 
+        self._grow_window_to_fit(self._single_frame)
+
+    def _grow_window_to_fit(self, frame):
+        """必要ならウィンドウを広げて、フレームの内容が切れないようにする。
+
+        単体表示は学籍番号欄と氏名欄を横に並べるため、一覧より広い領域を
+        必要とする。一覧の内容に合わせて小さくなったウィンドウのままだと
+        下端の「確定」ボタンなどが隠れてしまうので、足りない分だけ広げる。
+        教員が自分で広げたウィンドウを勝手に縮めないよう、拡大のみ行う。
+        """
+        self.window.update_idletasks()
+        screen_w = max(1, self.window.winfo_screenwidth())
+        screen_h = max(1, self.window.winfo_screenheight())
+        need_w = min(frame.winfo_reqwidth() + 16, screen_w - 40)
+        need_h = min(frame.winfo_reqheight() + 16, screen_h - 80)
+        cur_w = self.window.winfo_width()
+        cur_h = self.window.winfo_height()
+        if need_w <= cur_w and need_h <= cur_h:
+            return
+        self.window.geometry(f"{max(cur_w, need_w)}x{max(cur_h, need_h)}")
+
     def _apply_candidate(self, student_id: str):
-        """名簿候補ボタンのクリック時、Entryへ候補の学籍番号を反映する。"""
+        """名簿候補ボタンのクリック時、その候補を確定値として採用する。
+
+        Entryへ入れるだけだと、そのままウィンドウを閉じた場合に採用が
+        失われる。候補ボタンのクリックは教員の明示的な確認操作なので、
+        その場で確定（＝要確認からも外す）してから画面を作り直し、
+        ✓表示と確定値表示を更新する。
+        """
         self._current_entry.delete(0, tk.END)
         self._current_entry.insert(0, student_id)
-        self._update_match_label(student_id)
+        self._confirm_current(explicit=True)
+        self._build_single_view()
 
     def _update_match_label(self, text):
         text = text.strip()
@@ -557,20 +693,27 @@ class StudentIdReviewGUI:
         else:
             self._match_label.config(text="名簿に一致する学籍番号がありません", fg='#C62828')
 
-    def _confirm_current(self):
+    def _confirm_current(self, explicit: bool = False):
+        """Entryの内容を確定値へ書き戻す。
+
+        *explicit* は「確定ボタン／Enter／候補ボタン」など、教員が答案画像を
+        見た上で確定した操作から呼ばれたことを表す。この場合は値が変わって
+        いなくても確認済み(edited)として扱い、要確認から外す。単に前へ／次へ
+        で通過しただけのものは、従来どおり値が変わった場合のみ確認済みにする。
+        """
         filename = self._filenames[self._current_index]
         info = self.confirmed[filename]
         new_text = self._current_entry.get().strip()
         name = self.roster.get(new_text) if self.roster else None
-        info['edited'] = info['edited'] or (new_text != (info.get('text') or ''))
+        info['edited'] = info['edited'] or explicit or (new_text != (info.get('text') or ''))
         info['text'] = new_text
         info['name'] = name
         if info['edited']:
-            # 教員が値を変えた時点で「自動採用（推定）」の表示は役目を終える。
+            # 教員が確認・修正した時点で「自動採用（推定）」の表示は役目を終える。
             info['auto_applied'] = False
 
     def _confirm_and_next(self):
-        self._confirm_current()
+        self._confirm_current(explicit=True)
         self._go_next()
 
     def _go_next(self):
@@ -598,6 +741,12 @@ class StudentIdReviewGUI:
         self._grid_frame.pack(fill=tk.BOTH, expand=True)
 
     def _finish(self):
+        if self._grid_rebuild_job is not None:
+            try:
+                self.window.after_cancel(self._grid_rebuild_job)
+            except Exception:
+                pass
+            self._grid_rebuild_job = None
         try:
             self.window.grab_release()
         except Exception:
